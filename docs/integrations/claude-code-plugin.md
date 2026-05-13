@@ -14,7 +14,7 @@ curl -fsSL https://bun.sh/install | bash
 Then install and launch Teamem:
 
 ```bash
-npm install -g teamem
+npm install -g @rubiyh05/teamem
 teamem init
 teamem cc
 ```

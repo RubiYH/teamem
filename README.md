@@ -54,7 +54,7 @@ curl -fsSL https://bun.sh/install | bash
 Then install the bootstrapper CLI and run the guided Claude Code setup:
 
 ```bash
-npm install -g teamem
+npm install -g @rubiyh05/teamem
 teamem init
 teamem cc
 ```

@@ -5,13 +5,13 @@
 
 ## Purpose
 
-Publishable npm package for the `teamem` CLI. This package is the first-run bootstrapper users install with `npm install -g teamem`; it prepares Claude Code marketplace/plugin state, delegates to Teamem setup, installs optional git hooks, updates the plugin, and launches Claude Code with Teamem enabled.
+Publishable npm package for the `teamem` CLI. This package is the first-run bootstrapper users install with `npm install -g @rubiyh05/teamem`; it prepares Claude Code marketplace/plugin state, delegates to Teamem setup, installs optional git hooks, updates the plugin, and launches Claude Code with Teamem enabled.
 
 ## Key Files
 
 | File | Description |
 |------|-------------|
-| `package.json` | npm package metadata; published package name is `teamem`, bin points at `dist/bin/teamem.js` |
+| `package.json` | npm package metadata; published package name is `@rubiyh05/teamem`, bin points at `dist/bin/teamem.js` |
 | `src/bin/teamem.ts` | executable entry point; must keep the Bun shebang |
 | `src/cli.ts` | command parser and command orchestration for `init`, `update`, and `cc` |
 | `src/plugin-installer.ts` | marketplace add/update/install flow, plugin scope resolution, scope memory |
@@ -75,7 +75,7 @@ For packaging or bin/runtime changes, also run a temporary-prefix smoke:
 
 ```bash
 npm pack
-npm install -g --prefix /tmp/teamem-prefix ./teamem-*.tgz
+npm install -g --prefix /tmp/teamem-prefix ./rubiyh05-teamem-*.tgz
 PATH="/tmp/teamem-prefix/bin:$PATH" teamem init --dry-run --scope project
 PATH="/tmp/teamem-prefix/bin:$PATH" teamem update --dry-run --scope project
 PATH="/tmp/teamem-prefix/bin:$PATH" teamem cc --dry-run --scope project

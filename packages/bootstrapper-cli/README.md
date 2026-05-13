@@ -1,6 +1,6 @@
 # Teamem Bootstrapper CLI
 
-The `teamem` npm package is a bootstrapper for installing and updating the
+The `@rubiyh05/teamem` npm package is a bootstrapper for installing and updating the
 Teamem Claude Code plugin. It is not the Teamem runtime server and it does not
 own MCP configuration directly; the installed Claude Code plugin does that.
 
@@ -14,7 +14,7 @@ curl -fsSL https://bun.sh/install | bash
 ```
 
 ```bash
-npm install -g teamem
+npm install -g @rubiyh05/teamem
 teamem init
 ```
 

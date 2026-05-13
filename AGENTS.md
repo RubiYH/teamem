@@ -91,7 +91,7 @@ See `.docs/integrations/agent-prompt-snippet.md` for the internal system-prompt 
 
 ## npm bootstrapper CLI (2026-05-13)
 
-`packages/bootstrapper-cli` is the publishable npm package named `teamem`. Its purpose is to make `npm install -g teamem` usable as a bootstrapper for Claude Code marketplace onboarding, not to replace the plugin runtime.
+`packages/bootstrapper-cli` is the publishable npm package named `@rubiyh05/teamem`. Its purpose is to make `npm install -g @rubiyh05/teamem` usable as a bootstrapper for Claude Code marketplace onboarding, not to replace the plugin runtime. The installed binary command remains `teamem`.
 
 ### Contracts new agents MUST respect
 

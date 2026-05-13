@@ -41,7 +41,7 @@ curl -fsSL https://bun.sh/install | bash
 ```
 
 ```bash
-npm install -g teamem
+npm install -g @rubiyh05/teamem
 teamem init
 ```
 

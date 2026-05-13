@@ -51,7 +51,7 @@ curl -fsSL https://bun.sh/install | bash
 그 다음 부트스트래퍼 CLI를 설치하고 Claude Code 설정을 진행하세요:
 
 ```bash
-npm install -g teamem
+npm install -g @rubiyh05/teamem
 teamem init
 teamem cc
 ```
