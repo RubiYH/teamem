@@ -1,8 +1,13 @@
 # Teamem
 
 [English](README.md) | [한국어](README.ko.md)
-
-<p align="center"><em>Tired of merge conflicts on every PR, even with coding agents? With Teamem, no more "my Claude Code edited that first," "can I edit this file now?", "how did you fix that?", or "wait, are we skipping the user page implementation? I never heard of that!"</em></p>
+  
+  
+> <p align="center"><em>Tired of merge conflicts on every PR, even with coding agents?</em></p>
+>  
+> <p align="center"><em>With Teamem, no more "my Claude Code edited that first," "can I edit this file now?", "how did you fix that?", or "wait, are we skipping the user page implementation? I never heard of that!"</em></p>
+  
+  
 
 Teamem is team memory for humans and their coding agents. It is built to help
 teammates using Claude Code in the same repository share work context,
@@ -188,3 +193,9 @@ User-scope installs work for personal testing.
 Teamem is in an early public PoC stage. I haven't tested much in real-life situations but will test soon in real projects with my teammate, so expect further improvements and features!
 The npm package is a bootstrapper for the
 Claude Code plugin; the plugin and shared server are the runtime.
+
+## Contribution
+
+I always welcome contributions and am open to improving Teamem together. I'll set
+up contribution rules and related guidance very soon. If you have any questions,
+feel free to contact me at imrubi5555@gmail.com.
