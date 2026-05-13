@@ -2,6 +2,8 @@
 
 [English](README.md) | [한국어](README.ko.md)
 
+<p align="center"><em>Tired of merge conflicts on every PR, even with coding agents? With Teamem, no more "my Claude Code edited that first," "can I edit this file now?", "how did you fix that?", or "wait, are we skipping the user page implementation? I never heard of that!"</em></p>
+
 Teamem is team memory for humans and their coding agents. It is built to help
 teammates using Claude Code in the same repository share work context,
 coordinate code-editing scope, record important decisions, and keep work moving
@@ -87,29 +89,26 @@ conflicts or queued work through the plugin.
 
 ```mermaid
 flowchart LR
-  subgraph TA["Teammate A"]
-    A["Claude Code"] <--> PA["Plugin + bridge"]
+  subgraph Clients[" "]
+    direction TB
+    TA["Teammate A<br/>Claude Code<br/>plugin + bridge + git hooks"]
+    TB["Teammate B<br/>Claude Code<br/>plugin + bridge + git hooks"]
+    TC["Teammate C<br/>Claude Code<br/>plugin + bridge + git hooks"]
   end
 
-  subgraph TB["Teammate B"]
-    B["Claude Code"] <--> PB["Plugin + bridge"]
-  end
+  S["Teamem server"]
+  DB["SQLite event store"]
 
-  subgraph TC["Teammate C"]
-    C["Claude Code"] <--> PC["Plugin + bridge"]
-  end
+  TA <-->|tools / events| S
+  TB <-->|tools / events| S
+  TC <-->|tools / events| S
+  S <--> DB
 
-  PA -- tools --> S["Teamem server"]
-  PB -- tools --> S
-  PC -- tools --> S
-  S -- events --> PA
-  S -- events --> PB
-  S -- events --> PC
-  S <--> DB["SQLite event store"]
+  style Clients fill:transparent,stroke:transparent
 ```
 
 ```text
-Claude Code plugin
+Claude Code plugin + git hooks
   -> local Teamem bridge
   -> shared Teamem HTTP server
   -> SQLite event store and projections
