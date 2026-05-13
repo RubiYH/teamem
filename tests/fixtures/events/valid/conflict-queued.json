@@ -1,0 +1,18 @@
+{
+  "schema_version": "1.0",
+  "event_id": "01JFIX001CONFLICTQUEUED01",
+  "idempotency_key": "idem-conflict-queued-1",
+  "space_id": "teamem-poc",
+  "timestamp": "2026-05-01T10:25:00.000Z",
+  "principal": "bob",
+  "actor": "claude-code/session-7",
+  "delegation": "bob->claude-code",
+  "event_type": "conflict_queued",
+  "scope": { "paths": ["src/auth/login.ts"] },
+  "payload": {
+    "pending_id": "01JFIX002PENDINGEDIT0001",
+    "blocking_claim_id": "01JFIX003CLAIMOFALICE0001",
+    "intent": "fix the redirect on logout",
+    "expires_at": "2026-05-02T10:25:00.000Z"
+  }
+}

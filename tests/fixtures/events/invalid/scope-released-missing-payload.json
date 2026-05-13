@@ -1,0 +1,12 @@
+{
+  "schema_version": "1.0",
+  "event_id": "01JFIXINV002SCOPERELEASE",
+  "idempotency_key": "idem-inv-scope-released-1",
+  "space_id": "teamem-poc",
+  "timestamp": "2026-05-01T10:45:00.000Z",
+  "principal": "alice",
+  "actor": "claude-code/session-1",
+  "delegation": "alice->claude-code",
+  "event_type": "scope_released",
+  "scope": { "paths": ["src/server/routes.ts"] }
+}

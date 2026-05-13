@@ -1,0 +1,13 @@
+{
+  "schema_version": "1.0",
+  "event_id": "01JFIXINV009BLOCKERRESV1",
+  "idempotency_key": "idem-inv-blocker-resolved-1",
+  "space_id": "teamem-poc",
+  "timestamp": "2026-05-01T12:00:00.000Z",
+  "principal": "carol",
+  "actor": "carol",
+  "delegation": "carol->carol",
+  "event_type": "blocker_closed",
+  "scope": { "modules": ["infra/db"] },
+  "payload": { "blocker_id": "blocker-1", "resolution": "Installed Bun" }
+}

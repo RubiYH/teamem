@@ -1,0 +1,26 @@
+{
+  "schema_version": "1.0",
+  "event_id": "01JFIX0017DISPMOVE0001",
+  "idempotency_key": "idem-dispute-move-missing-target",
+  "space_id": "teamem-poc",
+  "timestamp": "2026-05-03T15:01:00.000Z",
+  "principal": "bob",
+  "actor": "bob",
+  "delegation": "bob->bob",
+  "event_type": "discussion_posted",
+  "scope": {},
+  "payload": {
+    "message_id": "01JMSG0017DISPMOVE0001",
+    "thread_id": "01JTHR0017DISPUTE0003",
+    "recipient_principal": "alice",
+    "body": "[propose_release_subset]",
+    "in_reply_to": null,
+    "dispute_move": {
+      "move_type": "propose_release_subset",
+      "side": "opener",
+      "payload": { "paths": ["src/auth/login.ts"] },
+      "target_proposal_id": null
+    },
+    "opened_by": "bob"
+  }
+}

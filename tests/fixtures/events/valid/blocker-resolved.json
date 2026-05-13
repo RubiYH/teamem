@@ -1,0 +1,16 @@
+{
+  "schema_version": "1.0",
+  "event_id": "01JFIX0008BLOCKERRESOLV01",
+  "idempotency_key": "idem-blocker-resolved-1",
+  "space_id": "teamem-poc",
+  "timestamp": "2026-05-01T12:00:00.000Z",
+  "principal": "carol",
+  "actor": "carol",
+  "delegation": "carol->carol",
+  "event_type": "blocker_resolved",
+  "scope": { "modules": ["infra/db"] },
+  "payload": {
+    "blocker_id": "blocker-bun-missing",
+    "resolution": "Installed Bun 1.2.14 via curl -fsSL https://bun.sh/install | bash"
+  }
+}

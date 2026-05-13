@@ -1,0 +1,397 @@
+#!/usr/bin/env bun
+// teamem-monitor — long-lived poller that streams peer events from Teamem
+// to Claude Code as Notification entries (one JSON line per event).
+//
+// Why polling instead of SSE: the existing /mcp GET-SSE endpoint exists but
+// no server-side path currently calls fanout.emitNotification on event
+// publish, so SSE returns nothing useful in v1. Polling get_updates with a
+// cursor is robust, simple, and works against any Teamem deployment without
+// a server-side push refactor. Future v2 can swap to SSE without touching
+// the rest of the plugin.
+
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  unlinkSync,
+  writeFileSync
+} from 'node:fs';
+import { join } from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { homedir } from 'node:os';
+
+// Codex F6 fix: resolve the bundled bridge from `${CLAUDE_PLUGIN_ROOT}/lib/bridge.js`
+// (mirrors the F4 pattern used by `plugin/bin/teamem-call`). The pre-#1
+// design read `CLAUDE_PLUGIN_OPTION_TEAMEM_ROOT` and shelled out to
+// `${TEAMEM_ROOT}/src/bridge/index.ts`; the manifest no longer exposes
+// `teamem_root`, so a marketplace install ran the monitor with no path
+// to invoke and silently dropped every peer event.
+const PLUGIN_ROOT =
+  process.env.CLAUDE_PLUGIN_ROOT ?? join(import.meta.dir ?? '.', '..');
+const BRIDGE_JS = join(PLUGIN_ROOT, 'lib', 'bridge.js');
+const PLUGIN_DATA =
+  process.env.CLAUDE_PLUGIN_DATA ??
+  join(homedir(), '.claude/plugins/data/teamem');
+const SESSION_ID = process.env.CLAUDE_SESSION_ID ?? 'default';
+// 1000ms floor — guards against accidental tight-loop polling that would burn the bridge subprocess
+const POLL_MS = Math.max(
+  1000,
+  Number.parseInt(process.env.TEAMEM_MONITOR_POLL_MS ?? '10000', 10)
+);
+const RATE_PER_MIN = Math.min(
+  60,
+  Math.max(
+    1,
+    Number.parseInt(
+      process.env.CLAUDE_PLUGIN_OPTION_WATCHER_RATE_PER_MIN ?? '6',
+      10
+    )
+  )
+);
+
+const SESSION_DIR = join(PLUGIN_DATA, 'sessions', SESSION_ID);
+const CURSOR_FILE = join(SESSION_DIR, 'monitor-cursor');
+const NOTIF_LOG = join(SESSION_DIR, 'notifications.log');
+const PID_FILE = join(SESSION_DIR, 'monitor.pid');
+
+function logInternal(msg: string): void {
+  try {
+    mkdirSync(PLUGIN_DATA, { recursive: true });
+    const ts = new Date().toISOString();
+    appendFileSync(
+      join(PLUGIN_DATA, 'monitor.log'),
+      JSON.stringify({ ts, msg }) + '\n'
+    );
+  } catch {
+    /* swallow */
+  }
+}
+
+if (!existsSync(BRIDGE_JS)) {
+  process.stderr.write(
+    `teamem-monitor: bridge_bundle_missing at ${BRIDGE_JS}. ` +
+      'Reinstall the plugin or rebuild via `bun run build:plugin` from a Teamem source checkout.\n'
+  );
+  process.exit(1);
+}
+
+mkdirSync(SESSION_DIR, { recursive: true });
+mkdirSync(PLUGIN_DATA, { recursive: true });
+
+// Best-effort: refuse to start if another monitor is already running for
+// this plugin install. PID-only check; orphaned files are reaped silently.
+if (existsSync(PID_FILE)) {
+  const prevPid = Number.parseInt(
+    readFileSync(PID_FILE, 'utf-8').trim() || '0',
+    10
+  );
+  if (prevPid && prevPid !== process.pid) {
+    try {
+      process.kill(prevPid, 0);
+      process.stderr.write(
+        `teamem-monitor: another monitor is already running (pid=${prevPid}). Exiting.\n`
+      );
+      process.exit(0);
+    } catch {
+      // stale; overwrite
+    }
+  }
+}
+writeFileSync(PID_FILE, String(process.pid));
+
+// Codex F19 — mirror `_teamem_resolve_space` (in `plugin/scripts/_common.sh`)
+// in TS so the monitor honors the same per-session pin the hooks do.
+//
+// Pre-#22 the monitor read `process.env.TEAMEM_SPACE ??
+// process.env.CLAUDE_PLUGIN_OPTION_DEFAULT_SPACE ?? creds.default_space_id`,
+// which IGNORED the per-session pin written by `/teamem-on <space>` to
+// `${SESSION_DIR}/space`. After a session-pin to space-B, hooks claimed
+// in space-B but the monitor kept polling space-A and self-filtered
+// against the wrong principal. The user got peer events from a space
+// they weren't actually working in, and their own events leaked through
+// because `myPrincipal` referenced the wrong member row.
+//
+// Resolution order (matches `_teamem_resolve_space` in _common.sh):
+//   1. `${SESSION_DIR}/space` — per-session pin from /teamem-on <space>
+//   2. process.env.TEAMEM_SPACE — explicit override (rare; not set in marketplace)
+//   3. process.env.CLAUDE_PLUGIN_OPTION_DEFAULT_SPACE — manifest default
+//   4. creds.default_space_id — credentials fallback (single-space install)
+function resolveSpaceInput(): string {
+  try {
+    const pin = readFileSync(join(SESSION_DIR, 'space'), 'utf-8').trim();
+    if (pin) return pin;
+  } catch {
+    /* no per-session pin */
+  }
+  const override = process.env.TEAMEM_SPACE;
+  if (override) return override;
+  const fromManifest = process.env.CLAUDE_PLUGIN_OPTION_DEFAULT_SPACE;
+  if (fromManifest) return fromManifest;
+  return '';
+}
+
+// Codex F16 — resolve the local principal so we can filter out our own
+// events. Codex F19 — also captures the resolved space so we can pass it
+// as `--space` on every `get_updates` call (otherwise the bridge falls
+// back to `credentials.default_space_id` and the monitor polls the wrong
+// space when a session is pinned).
+//
+// Fix mirrors `pickEntry` precedence (try as space_id key first, fall
+// back to label match). Inlined here rather than imported because the
+// monitor is a lean Bun script and we don't want to drag in the
+// credentials module's full dep tree.
+let myPrincipal = '';
+let resolvedSpace = '';
+try {
+  const credPath = join(homedir(), '.teamem/credentials.json');
+  const creds = JSON.parse(readFileSync(credPath, 'utf-8')) as {
+    default_space_id: string | null;
+    spaces: Record<string, { member_name: string; label?: string }>;
+  };
+  const input = resolveSpaceInput() || creds.default_space_id || '';
+  if (input) {
+    resolvedSpace = input;
+    const byId = creds.spaces?.[input];
+    if (byId) {
+      myPrincipal = byId.member_name ?? '';
+    } else {
+      const labelMatches = Object.values(creds.spaces ?? {}).filter(
+        (e) => e.label === input
+      );
+      if (labelMatches.length === 1) {
+        myPrincipal = labelMatches[0]!.member_name ?? '';
+      } else if (labelMatches.length > 1) {
+        // Ambiguous label — can't deterministically self-filter. Log a
+        // warning so users can debug the silent-self-events case.
+        logInternal(
+          `space_label_ambiguous: '${input}' matches ${labelMatches.length} entries; self-filter disabled`
+        );
+      } else {
+        logInternal(
+          `space_unknown: '${input}' not in credentials.json; self-filter disabled`
+        );
+      }
+    }
+  }
+} catch {
+  // No credentials yet — proceed without self-filtering. Hook layer will
+  // still gate on active flag, so worst case is the user sees their own
+  // events for a session.
+}
+
+let cursor: string | null = null;
+try {
+  cursor = readFileSync(CURSOR_FILE, 'utf-8').trim() || null;
+} catch {
+  /* fresh start */
+}
+
+const recentTs: number[] = [];
+function rateOk(): boolean {
+  const now = Date.now();
+  while (recentTs.length && recentTs[0]! < now - 60_000) recentTs.shift();
+  if (recentTs.length >= RATE_PER_MIN) return false;
+  recentTs.push(now);
+  return true;
+}
+
+type AnyEvent = {
+  event_id: string;
+  event_type: string;
+  principal: string;
+  scope?: { paths?: string[] };
+  payload?: Record<string, unknown>;
+};
+
+/**
+ * Codex F20 + F21 — classify which Notification name carries this event.
+ *
+ * Two notification names exist instead of a single matcher with subtype
+ * regex: Claude Code's hook matcher syntax doesn't reliably support
+ * event-subtype branching, and a separate name guarantees the routing is
+ * deterministic across harness versions.
+ *
+ * Routing:
+ *   - `teamem.dispute_event` → classified distinctly for logs and future
+ *     roadmap work. No Notification agent consumes it in this plugin build.
+ *   - `teamem.peer_event`    → classified distinctly for logs and fallback
+ *     inspection. Channels, SessionStart, and unread queues own delivery.
+ *
+ * F21 fix: classify by *payload shape* for moves. The server emits each
+ * `disputePostMove` result as a `discussion_posted` event with a
+ * structured `payload.dispute_move` field (per slice #12 — moves ride
+ * on the discussion thread substrate; they do NOT have their own
+ * event_type). The #22 implementation looked for a `dispute_move_posted`
+ * event type that no server code emits — so after the first real move
+ * the counterparty fell back to the peer-event lane and the dispute stalled.
+ *
+ * Production sequence:
+ *   1. opener calls `open_dispute` → server emits `dispute_opened`
+ *      (state-transition event with its own type) → routed via
+ *      `teamem.dispute_event`.
+ *   2. a dispute move posts → server emits a `discussion_posted` event with
+ *      `payload.dispute_move` set → the monitor MUST classify it as
+ *      `teamem.dispute_event` so it does not look like an ordinary peer
+ *      discussion in logs or future routing.
+ *
+ * Plain `discussion_posted` (no `dispute_move` payload) stays on the
+ * peer-event channel — that's the regular discussion thread substrate.
+ */
+function classifyNotificationName(ev: AnyEvent): string {
+  if (ev.event_type === 'dispute_opened') return 'teamem.dispute_event';
+  if (
+    ev.event_type === 'discussion_posted' &&
+    ev.payload != null &&
+    typeof ev.payload === 'object' &&
+    (ev.payload as Record<string, unknown>).dispute_move != null
+  ) {
+    return 'teamem.dispute_event';
+  }
+  return 'teamem.peer_event';
+}
+
+function summarize(ev: AnyEvent): string {
+  const p = ev.principal;
+  const t = ev.event_type;
+  const paths = ev.scope?.paths;
+  const pathSummary =
+    paths && paths.length > 0 ? ` [${paths.slice(0, 3).join(', ')}]` : '';
+  switch (t) {
+    case 'scope_claimed':
+      return `${p} claimed scope${pathSummary}`;
+    case 'scope_released':
+      return `${p} released a claim`;
+    case 'decision_recorded':
+      return `${p} recorded decision: ${(ev.payload?.title as string) ?? ''}`;
+    case 'discussion_posted': {
+      const to = (ev.payload?.recipient_principal as string | null) ?? 'space';
+      const body = ((ev.payload?.body as string) ?? '')
+        .replace(/\s+/g, ' ')
+        .slice(0, 120);
+      return `${p} → ${to}: ${body}`;
+    }
+    case 'blocker_raised':
+      return `${p} raised blocker: ${(ev.payload?.summary as string) ?? ''}`;
+    case 'blocker_resolved':
+      return `${p} resolved a blocker`;
+    case 'task_started':
+    case 'task_progressed':
+    case 'task_completed':
+      return `${p} ${t.replace('task_', '')} ${(ev.payload?.task_id as string) ?? ''}`;
+    case 'conflict_detected':
+      return `${p} detected a conflict`;
+    case 'conflict_resolved':
+      return `${p} resolved a conflict`;
+    default:
+      return `${p} ${t}`;
+  }
+}
+
+function isNoiseEvent(ev: AnyEvent): boolean {
+  // Don't record routine session-start beacons that the plugin itself emits.
+  if (ev.event_type === 'task_started') {
+    const taskId = (ev.payload?.task_id as string) ?? '';
+    if (taskId.startsWith('session-')) return true;
+  }
+  return false;
+}
+
+function pollOnce(): void {
+  // Codex F19 — pass `--space` so the bridge polls the session-pinned
+  // space rather than falling through to `credentials.default_space_id`.
+  // Empty `resolvedSpace` means "no resolution" (single-space install) —
+  // we omit the flag and the bridge uses the credentials default.
+  const args = [
+    'run',
+    BRIDGE_JS,
+    'call',
+    'teamem.get_updates',
+    ...(resolvedSpace ? ['--space', resolvedSpace] : []),
+    '--json',
+    JSON.stringify(cursor ? { since: cursor, limit: 50 } : { limit: 20 })
+  ];
+  const r = spawnSync('bun', args, {
+    encoding: 'utf-8',
+    env: process.env
+  });
+  if (r.status !== 0) {
+    logInternal(`bridge_call_failed status=${r.status}`);
+    return;
+  }
+  let parsed: { ok: boolean; data?: { events?: AnyEvent[] } } | null = null;
+  try {
+    parsed = JSON.parse(r.stdout);
+  } catch {
+    logInternal('bridge_parse_failed');
+    return;
+  }
+  if (!parsed?.ok) {
+    logInternal('bridge_returned_not_ok');
+    return;
+  }
+  const events = parsed.data?.events ?? [];
+  if (events.length === 0) return;
+
+  for (const ev of events) {
+    if (myPrincipal && ev.principal === myPrincipal) continue;
+    if (isNoiseEvent(ev)) continue;
+    if (!rateOk()) continue;
+
+    const notifName = classifyNotificationName(ev);
+
+    const line = JSON.stringify({
+      name: notifName,
+      principal: ev.principal,
+      event_type: ev.event_type,
+      event_id: ev.event_id,
+      scope: ev.scope,
+      payload: ev.payload,
+      summary: summarize(ev)
+    });
+    process.stdout.write(line + '\n');
+    try {
+      appendFileSync(NOTIF_LOG, line + '\n');
+    } catch {
+      /* swallow */
+    }
+  }
+
+  const last = events[events.length - 1];
+  if (last?.event_id) {
+    cursor = last.event_id;
+    try {
+      writeFileSync(CURSOR_FILE, cursor);
+    } catch {
+      /* swallow */
+    }
+  }
+}
+
+let stopped = false;
+function shutdown(): never {
+  stopped = true;
+  try {
+    if (existsSync(PID_FILE)) unlinkSync(PID_FILE);
+  } catch {
+    /* swallow */
+  }
+  process.exit(0);
+}
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);
+
+logInternal(
+  `start session=${SESSION_ID} principal=${myPrincipal || '(unknown)'} poll_ms=${POLL_MS} rate=${RATE_PER_MIN}/min`
+);
+
+void (async () => {
+  while (!stopped) {
+    try {
+      pollOnce();
+    } catch (e) {
+      logInternal(`poll_error: ${(e as Error).message}`);
+    }
+    await new Promise((r) => setTimeout(r, POLL_MS));
+  }
+})();

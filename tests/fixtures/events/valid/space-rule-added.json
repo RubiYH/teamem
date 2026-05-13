@@ -1,0 +1,17 @@
+{
+  "schema_version": "1.0",
+  "event_id": "evt-space-rule-added-1",
+  "idempotency_key": "idem-space-rule-added-1",
+  "space_id": "space-rules",
+  "timestamp": "2026-05-10T00:00:00.000Z",
+  "principal": "alice",
+  "actor": "claude/session-1",
+  "delegation": "alice->claude",
+  "event_type": "space_rule_added",
+  "scope": {},
+  "payload": {
+    "rules_markdown": "Prefer focused diffs.",
+    "rules_version": 1,
+    "rules_hash": "2a33b36266ae01c7781be15a110564b9efeeb188fff4ab580455e4f1378f6758"
+  }
+}

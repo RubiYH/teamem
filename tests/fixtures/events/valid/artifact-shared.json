@@ -1,0 +1,19 @@
+{
+  "schema_version": "1.0",
+  "event_id": "01JFIX0001ARTIFACTSHARED01",
+  "idempotency_key": "idem-artifact-shared-1",
+  "space_id": "teamem-poc",
+  "timestamp": "2026-05-03T15:00:00.000Z",
+  "principal": "alice",
+  "actor": "claude-code/session-1",
+  "delegation": "alice->claude-code",
+  "event_type": "artifact_shared",
+  "scope": {},
+  "payload": {
+    "artifact_id": "01JFIX0001ARTIFACT0001",
+    "kind": "spec",
+    "uri": "docs/auth-redesign.md",
+    "title": "Auth redesign v3",
+    "summary": "RS256 migration plan and rollout sequencing"
+  }
+}

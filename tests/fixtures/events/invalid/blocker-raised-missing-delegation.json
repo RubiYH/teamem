@@ -1,0 +1,12 @@
+{
+  "schema_version": "1.0",
+  "event_id": "01JFIXINV008BLOCKERRASD1",
+  "idempotency_key": "idem-inv-blocker-raised-1",
+  "space_id": "teamem-poc",
+  "timestamp": "2026-05-01T10:00:00.000Z",
+  "principal": "carol",
+  "actor": "carol",
+  "event_type": "blocker_raised",
+  "scope": { "modules": ["infra/db"] },
+  "payload": { "blocker_id": "blocker-1", "summary": "Bun not installed" }
+}

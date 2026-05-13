@@ -1,0 +1,17 @@
+{
+  "schema_version": "1.0",
+  "event_id": "01JFIX0007BLOCKERRAISED01",
+  "idempotency_key": "idem-blocker-raised-1",
+  "space_id": "teamem-poc",
+  "timestamp": "2026-05-01T10:00:00.000Z",
+  "principal": "carol",
+  "actor": "carol",
+  "delegation": "carol->carol",
+  "event_type": "blocker_raised",
+  "scope": { "modules": ["infra/db"] },
+  "payload": {
+    "blocker_id": "blocker-bun-missing",
+    "summary": "Bun is not installed on the local machine; bun test cannot run",
+    "owner_principal": "carol"
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "schema_version": "1.0",
+  "event_id": "01JFIX0006DECISIONPUB01",
+  "idempotency_key": "idem-decision-published-1",
+  "space_id": "teamem-poc",
+  "timestamp": "2026-05-01T09:05:00.000Z",
+  "principal": "alice",
+  "actor": "alice",
+  "delegation": "alice->alice",
+  "event_type": "decision_published",
+  "scope": {},
+  "payload": {
+    "decision_id": "dec-space-memory",
+    "title": "Adopt Space Memory v1 lifecycle events",
+    "summary": "Explicit publish and supersede events preserve decision history.",
+    "body": "Decision bodies remain durable so delivery and replay can send full context later.",
+    "kind": "architectural",
+    "version": 1
+  }
+}

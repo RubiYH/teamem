@@ -1,0 +1,44 @@
+{
+  "name": "teamem",
+  "version": "0.1.0",
+  "private": true,
+  "author": "RubiYH <imrubi5555@gmail.com> (https://rubi.codes)",
+  "homepage": "https://rubi.codes",
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "build": "bun build src/server/index.ts --outfile dist/server.js --target bun",
+    "build:bridge": "bun build src/bridge/index.ts --outfile dist/bridge.js --target bun",
+    "build:channel": "bun build src/channel/index.ts --outfile plugin/lib/channel.js --target bun --external bun:sqlite",
+    "build:plugin": "bun build src/bridge/index.ts --outfile plugin/lib/bridge.js --target bun --external bun:sqlite && bun build src/cli/setup.ts --outfile plugin/lib/setup.js --target bun --external bun:sqlite && bun build src/channel/index.ts --outfile plugin/lib/channel.js --target bun --external bun:sqlite",
+    "bridge": "bun run src/bridge/index.ts",
+    "channel": "bun run src/channel/index.ts",
+    "server": "bun run src/server/index.ts",
+    "setup": "bun run src/setup/index.ts",
+    "reset": "bun run src/cli/reset.ts",
+    "teamem": "bun run src/cli/teamem.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@clack/prompts": "^1.3.0",
+    "@modelcontextprotocol/sdk": "^1.0.4",
+    "hono": "^4.6.0",
+    "nanoid": "^5.1.11",
+    "ulidx": "^2.3.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.2.14",
+    "@types/node": "^22.19.17",
+    "@typescript-eslint/eslint-plugin": "^8.59.1",
+    "@typescript-eslint/parser": "^8.59.1",
+    "eslint": "^9.39.4",
+    "fast-check": "^3.23.2",
+    "prettier": "^3.8.3",
+    "typescript": "^5.9.3"
+  }
+}

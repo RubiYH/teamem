@@ -1,0 +1,21 @@
+{
+  "schema_version": "1.0",
+  "event_id": "01JFIX0004CLAIMFORCEREL01",
+  "idempotency_key": "force-release-claim-001-bob",
+  "space_id": "teamem-poc",
+  "timestamp": "2026-05-01T12:00:00.000Z",
+  "principal": "bob",
+  "actor": "claude-code/session-2",
+  "delegation": "bob->claude-code",
+  "event_type": "claim_force_released",
+  "scope": { "paths": ["src/Form.jsx"] },
+  "payload": {
+    "claim_id": "claim-abc123",
+    "repo_id": "github.com/org/repo",
+    "branch": "feature/alice",
+    "path": "src/Form.jsx",
+    "released_by": "bob",
+    "original_holder": "alice",
+    "released_at": "2026-05-01T12:00:00.000Z"
+  }
+}

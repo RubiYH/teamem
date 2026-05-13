@@ -1,0 +1,17 @@
+{
+  "schema_version": "1.0",
+  "event_id": "01JFIX0006CLAIMRESUMED01",
+  "idempotency_key": "idem-claim-resumed-1",
+  "space_id": "teamem-poc",
+  "timestamp": "2026-05-01T14:00:00.000Z",
+  "principal": "alice",
+  "actor": "post-checkout",
+  "delegation": "alice->post-checkout",
+  "event_type": "claim_resumed",
+  "scope": { "paths": ["src/Form.jsx"] },
+  "payload": {
+    "claim_id": "claim-abc123",
+    "repo_id": "github.com/org/repo",
+    "branch": "feature/alice"
+  }
+}

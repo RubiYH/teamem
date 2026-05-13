@@ -1,0 +1,12 @@
+{
+  "schema_version": "1.0",
+  "event_id": "01JFIXINV007CONTRACTCHNG",
+  "idempotency_key": "idem-inv-contract-1",
+  "timestamp": "2026-05-01T10:30:00.000Z",
+  "principal": "bob",
+  "actor": "codex-cli/session-2",
+  "delegation": "bob->codex-cli",
+  "event_type": "contract_changed",
+  "scope": { "contracts": ["api/v1/events"] },
+  "payload": { "contract_key": "api/v1/events", "breaking": false }
+}

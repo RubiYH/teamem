@@ -1,0 +1,163 @@
+#!/usr/bin/env bash
+# teamem post-commit hook — fires after every git commit.
+# Parses paths in the commit, calls teamem.release_scope_via_git via the bridge.
+# Forks-and-detaches so the user's git command returns immediately.
+# Never blocks the commit — all failures are Tier-W silent.
+
+set -euo pipefail
+
+PLUGIN_ROOT="${TEAMEM_PLUGIN_ROOT:-}"
+if [ -z "$PLUGIN_ROOT" ]; then
+  _TEMPLATE_PLUGIN_ROOT="__TEAMEM_PLUGIN_ROOT__"
+  if [ "$_TEMPLATE_PLUGIN_ROOT" != "__TEAMEM_PLUGIN""_ROOT__" ]; then
+    PLUGIN_ROOT="$_TEMPLATE_PLUGIN_ROOT"
+  fi
+fi
+if [ -z "$PLUGIN_ROOT" ]; then
+  # Try to find the plugin root relative to the hook location
+  _HOOK_DIR="$(cd "$(dirname "$0")" && pwd)"
+  # post-commit lives in .git/hooks/; plugin is typically at repo_root/plugin
+  _REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || echo "")"
+  if [ -n "$_REPO_ROOT" ] && [ -f "${_REPO_ROOT}/plugin/scripts/_common.sh" ]; then
+    PLUGIN_ROOT="${_REPO_ROOT}/plugin"
+  fi
+fi
+
+_teamem_warn_post_commit() {
+  printf 'teamem: [warn] post-commit: %s\n' "$1" >&2
+}
+
+if [ -z "$PLUGIN_ROOT" ] || [ ! -f "${PLUGIN_ROOT}/scripts/_common.sh" ]; then
+  _teamem_warn_post_commit "plugin root not found — skipping release"
+  exit 0
+fi
+
+if ! command -v bun >/dev/null 2>&1; then
+  _teamem_warn_post_commit "bun not found — skipping release"
+  exit 0
+fi
+
+BRIDGE_JS="${PLUGIN_ROOT}/lib/bridge.js"
+if [ ! -f "$BRIDGE_JS" ]; then
+  _teamem_warn_post_commit "bridge bundle missing at ${BRIDGE_JS} — skipping release"
+  exit 0
+fi
+
+_teamem_post_commit_run() {
+  # Collect git evidence
+  GIT_TOPLEVEL=$(git rev-parse --show-toplevel 2>/dev/null || echo "")
+  if [ -z "$GIT_TOPLEVEL" ]; then return 0; fi
+
+  HEAD_SHA=$(git rev-parse HEAD 2>/dev/null || echo "")
+  BRANCH=$(git symbolic-ref --short HEAD 2>/dev/null || echo "")
+  PARENT_COUNT=$(git rev-list --parents -n 1 HEAD 2>/dev/null | awk '{print NF - 1}' || echo "0")
+
+  # Parse paths from the commit. Root commits need --root so newly added
+  # files are visible; non-root empty commits still produce no paths.
+  if [ "${PARENT_COUNT:-0}" -eq 0 ] 2>/dev/null; then
+    DIFF_OUTPUT=$(git diff-tree --root --name-status -r -M50% HEAD 2>/dev/null || echo "")
+  else
+    DIFF_OUTPUT=$(git diff-tree --name-status -r -M50% HEAD 2>/dev/null || echo "")
+  fi
+
+  # Get post-commit porcelain dirty paths
+  PORCELAIN_OUTPUT=$(git status --porcelain 2>/dev/null || echo "")
+
+  # Get remote URL for repo_id
+  GIT_REMOTE_URL=$(git config --get remote.origin.url 2>/dev/null || echo "")
+  if [ -z "$GIT_REMOTE_URL" ]; then
+    REPO_ID="$GIT_TOPLEVEL"
+  else
+    REPO_ID=$(GIT_REMOTE_URL="$GIT_REMOTE_URL" bun -e '
+const url = process.env.GIT_REMOTE_URL || "";
+let s = url.trim();
+// MUST stay in lockstep with src/domain/claim-identity-core.ts
+// canonicalizeRepoId — server and client must agree on repo_id.
+s = s.replace(/^(https?|ssh|git):\/\//, "");
+s = s.replace(/^[^@/]+@/, "");
+s = s.replace(/^([^/:]+):(?!\d+\/)/, "$1/");
+s = s.replace(/\.git$/, "");
+s = s.toLowerCase();
+s = s.replace(/\/+$/, "");
+process.stdout.write(s);
+' 2>/dev/null || echo "$GIT_TOPLEVEL")
+  fi
+
+  # Build the JSON payload via bun
+  PAYLOAD=$(DIFF_OUTPUT="$DIFF_OUTPUT" PORCELAIN_OUTPUT="$PORCELAIN_OUTPUT" REPO_ID="$REPO_ID" BRANCH="$BRANCH" HEAD_SHA="$HEAD_SHA" bun -e '
+const diffOutput = process.env.DIFF_OUTPUT || "";
+const porcelainOutput = process.env.PORCELAIN_OUTPUT || "";
+const repoId = process.env.REPO_ID || "";
+const branch = process.env.BRANCH || "";
+const headSha = process.env.HEAD_SHA || "";
+
+const pathsWithStatus = [];
+for (const line of diffOutput.split("\n").filter(Boolean)) {
+  const parts = line.split("\t");
+  const statusChar = (parts[0] || "").charAt(0);
+  if (statusChar === "M" || statusChar === "A") {
+    pathsWithStatus.push({ status: statusChar, path: parts[1] || "" });
+  } else if (statusChar === "R" && parts.length >= 3) {
+    pathsWithStatus.push({ status: "R", old_path: parts[1] || "", path: parts[2] || "" });
+  } else if (statusChar === "D") {
+    pathsWithStatus.push({ status: "D", path: parts[1] || "" });
+  }
+}
+
+const porcelainDirtyPaths = [];
+for (const line of porcelainOutput.split("\n").filter(Boolean)) {
+  const filePath = line.slice(3).trim();
+  if (filePath) porcelainDirtyPaths.push(filePath);
+}
+
+process.stdout.write(JSON.stringify({
+  repo_id: repoId,
+  branch,
+  paths_with_status: pathsWithStatus,
+  current_head_sha: headSha,
+  porcelain_dirty_paths: porcelainDirtyPaths
+}));
+' 2>/dev/null) || { _teamem_warn_post_commit "payload build failed"; return 0; }
+
+  PATH_COUNT=$(PAYLOAD="$PAYLOAD" bun -e '
+try {
+  const payload = JSON.parse(process.env.PAYLOAD || "{}");
+  process.stdout.write(String(Array.isArray(payload.paths_with_status) ? payload.paths_with_status.length : 0));
+} catch {
+  process.stdout.write("0");
+}
+' 2>/dev/null || echo "0")
+  if [ "${PATH_COUNT:-0}" -eq 0 ] 2>/dev/null && [ "${PARENT_COUNT:-0}" -gt 0 ] 2>/dev/null; then
+    _teamem_warn_post_commit "no changed paths in commit; skipping release"
+    return 0
+  fi
+
+  # Resolve space
+  SPACE=""
+  SESSION_ID="${GIT_TEAMEM_SESSION_ID:-}"
+  if [ -n "$SESSION_ID" ]; then
+    _SESSION_DIR="${TEAMEM_DATA:-${HOME}/.claude/plugins/data/teamem}/sessions/${SESSION_ID}"
+    if [ -f "${_SESSION_DIR}/space" ]; then
+      SPACE=$(cat "${_SESSION_DIR}/space" 2>/dev/null || echo "")
+    fi
+  fi
+
+  if [ -n "$SPACE" ]; then
+    bun run "$BRIDGE_JS" call teamem.release_scope_via_git --space "$SPACE" --json "$PAYLOAD" >/dev/null 2>&1 || \
+      _teamem_warn_post_commit "bridge call failed (fail-open)"
+  else
+    bun run "$BRIDGE_JS" call teamem.release_scope_via_git --json "$PAYLOAD" >/dev/null 2>&1 || \
+      _teamem_warn_post_commit "bridge call failed (fail-open)"
+  fi
+}
+
+if [ "${TEAMEM_POST_COMMIT_SYNC:-}" = "1" ]; then
+  _teamem_post_commit_run
+else
+  # Fork-and-detach: run the actual work in background so git returns immediately.
+  # The subshell captures all variables it needs before detaching.
+  ( _teamem_post_commit_run ) &
+  disown $! 2>/dev/null || true
+fi
+
+exit 0

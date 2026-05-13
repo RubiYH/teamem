@@ -1,0 +1,17 @@
+{
+  "schema_version": "1.0",
+  "event_id": "01JFIX0003TASKPROGRESSED1",
+  "idempotency_key": "idem-task-progressed-1",
+  "space_id": "teamem-poc",
+  "timestamp": "2026-05-01T10:15:00.000Z",
+  "principal": "alice",
+  "actor": "claude-code/session-1",
+  "delegation": "alice->claude-code",
+  "event_type": "task_progressed",
+  "scope": { "paths": ["src/server/routes.ts"] },
+  "payload": {
+    "task_id": "TASK-2",
+    "what": "implemented route handler, tests pending"
+  },
+  "confidence": 0.7
+}

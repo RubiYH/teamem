@@ -1,0 +1,12 @@
+{
+  "schema_version": "1.0",
+  "idempotency_key": "idem-inv-task-completed-1",
+  "space_id": "teamem-poc",
+  "timestamp": "2026-05-01T11:00:00.000Z",
+  "principal": "alice",
+  "actor": "claude-code/session-1",
+  "delegation": "alice->claude-code",
+  "event_type": "task_completed",
+  "scope": { "paths": ["src/server/routes.ts"] },
+  "payload": { "task_id": "TASK-2" }
+}

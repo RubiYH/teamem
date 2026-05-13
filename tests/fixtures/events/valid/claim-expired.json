@@ -1,0 +1,17 @@
+{
+  "schema_version": "1.0",
+  "event_id": "01JFIX0002CLAIMEXPIRED001",
+  "idempotency_key": "idem-claim-expired-1",
+  "space_id": "teamem-poc",
+  "timestamp": "2026-05-01T11:00:00.000Z",
+  "principal": "alice",
+  "actor": "claude-code/session-1",
+  "delegation": "alice->claude-code",
+  "event_type": "claim_expired",
+  "scope": { "paths": ["src/Form.jsx"] },
+  "payload": {
+    "claim_id": "claim-ttl-xyz123",
+    "expired_at": "2026-05-01T11:00:00.000Z"
+  },
+  "refs": { "branch": "feature/alice" }
+}

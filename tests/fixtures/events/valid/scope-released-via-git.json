@@ -1,0 +1,21 @@
+{
+  "schema_version": "1.0",
+  "event_id": "01JFIX0003SCOPERELGIT001",
+  "idempotency_key": "idem-scope-released-via-git-1",
+  "space_id": "teamem-poc",
+  "timestamp": "2026-05-01T11:00:00.000Z",
+  "principal": "alice",
+  "actor": "claude-code/session-1",
+  "delegation": "alice->claude-code",
+  "event_type": "scope_released_via_git",
+  "scope": { "paths": ["src/Form.jsx"] },
+  "payload": {
+    "claim_id": "claim-git-001",
+    "repo_id": "github.com/org/repo",
+    "branch": "feature/alice",
+    "path": "src/Form.jsx",
+    "head_sha": "deadbeef",
+    "released_at": "2026-05-01T11:00:00.000Z"
+  },
+  "refs": { "branch": "feature/alice", "commit": "deadbeef" }
+}

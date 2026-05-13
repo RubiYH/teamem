@@ -1,0 +1,15 @@
+{
+  "schema_version": "1.0",
+  "event_id": "01JFIX0013SPACEWIPED00001",
+  "idempotency_key": "space_wiped:teamem-poc:2026-05-03T12:00:00.000Z",
+  "space_id": "teamem-poc",
+  "timestamp": "2026-05-03T12:00:00.000Z",
+  "principal": "system",
+  "actor": "system",
+  "delegation": "system",
+  "event_type": "space_wiped",
+  "scope": {},
+  "payload": {
+    "hard": false
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "schema_version": "1.0",
+  "event_id": "01JFIX0008DECISIONSUP01",
+  "idempotency_key": "idem-decision-superseded-1",
+  "space_id": "teamem-poc",
+  "timestamp": "2026-05-01T09:15:00.000Z",
+  "principal": "carol",
+  "actor": "carol",
+  "delegation": "carol->carol",
+  "event_type": "decision_superseded",
+  "scope": {},
+  "payload": {
+    "decision_id": "dec-space-memory",
+    "title": "Adopt Space Memory v1 lifecycle events",
+    "summary": "The original direction has been replaced by a follow-up decision.",
+    "body": "A successor decision now governs this area.",
+    "kind": "architectural",
+    "version": 3,
+    "superseded_by_decision_id": "dec-space-memory-v2"
+  }
+}

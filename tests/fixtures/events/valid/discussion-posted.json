@@ -1,0 +1,19 @@
+{
+  "schema_version": "1.0",
+  "event_id": "01JFIX0013DISCUSSIONPOST1",
+  "idempotency_key": "idem-discussion-posted-1",
+  "space_id": "teamem-poc",
+  "timestamp": "2026-05-03T11:00:00.000Z",
+  "principal": "alice",
+  "actor": "alice",
+  "delegation": "alice->alice",
+  "event_type": "discussion_posted",
+  "scope": {},
+  "payload": {
+    "message_id": "01JMSG0001ALICE000000001",
+    "thread_id": "01JTHR0001ALICEBOB000001",
+    "recipient_principal": "bob",
+    "body": "Hey, I'm blocked by your claim on src/auth/* — could you release it once you ship the migration? Mine ships today.",
+    "in_reply_to": null
+  }
+}

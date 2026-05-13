@@ -1,0 +1,49 @@
+# Dependencies
+node_modules/
+
+# Environment and local secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+
+# Build and test output
+dist/
+coverage/
+*.tsbuildinfo
+*.tgz
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Runtime state and local scratch work
+data/
+.teamem/
+TEAMEM.md
+.omc/
+.omx/
+.scratch/
+.cache/
+logs/
+*.log
+.docs/
+
+# SQLite/runtime database sidecars
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.sqlite-*
+*.sqlite3-*
+*.bak
+*.backup
+
+# OS/editor noise
+.DS_Store
+.AppleDouble
+.LSOverride
+.idea/
+.vscode/

@@ -1,0 +1,17 @@
+{
+  "schema_version": "1.0",
+  "event_id": "01JFIX0001PERMGRANT001",
+  "idempotency_key": "idem-permgrant-1",
+  "space_id": "teamem-poc",
+  "timestamp": "2026-05-03T16:00:01.000Z",
+  "principal": "alice",
+  "actor": "claude-code/session-2",
+  "delegation": "alice->claude-code",
+  "event_type": "permission_granted",
+  "scope": { "paths": ["src/auth/login.ts"] },
+  "payload": {
+    "req_id": "01JFIX0001PERMREQ0000001",
+    "granted_to": "bob",
+    "new_claim_id": "claim-bob-login"
+  }
+}

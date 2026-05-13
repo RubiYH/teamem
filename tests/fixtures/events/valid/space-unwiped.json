@@ -1,0 +1,15 @@
+{
+  "schema_version": "1.0",
+  "event_id": "01JFIX0013SPACEUNWIPED001",
+  "idempotency_key": "space_unwiped:teamem-poc:2026-05-03T13:00:00.000Z",
+  "space_id": "teamem-poc",
+  "timestamp": "2026-05-03T13:00:00.000Z",
+  "principal": "system",
+  "actor": "system",
+  "delegation": "system",
+  "event_type": "space_unwiped",
+  "scope": {},
+  "payload": {
+    "wipe_timestamp": "2026-05-03T12:00:00.000Z"
+  }
+}

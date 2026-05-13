@@ -1,0 +1,14 @@
+{
+  "schema_version": "1.0",
+  "event_id": "01JFIX0002SCOPERELEASED01",
+  "idempotency_key": "idem-scope-released-1",
+  "space_id": "teamem-poc",
+  "timestamp": "2026-05-01T10:45:00.000Z",
+  "principal": "alice",
+  "actor": "claude-code/session-1",
+  "delegation": "alice->claude-code",
+  "event_type": "scope_released",
+  "scope": { "paths": ["src/server/routes.ts", "src/server/auth.ts"] },
+  "payload": { "claim_id": "claim-abc123" },
+  "refs": { "branch": "feat/auth-middleware", "commit": "abc1234" }
+}

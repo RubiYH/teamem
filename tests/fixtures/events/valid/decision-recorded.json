@@ -1,0 +1,18 @@
+{
+  "schema_version": "1.0",
+  "event_id": "01JFIX0005DECISIONRECORD1",
+  "idempotency_key": "idem-decision-recorded-1",
+  "space_id": "teamem-poc",
+  "timestamp": "2026-05-01T09:00:00.000Z",
+  "principal": "alice",
+  "actor": "alice",
+  "delegation": "alice->alice",
+  "event_type": "decision_recorded",
+  "scope": {},
+  "payload": {
+    "decision_id": "dec-bun-runtime",
+    "title": "Use Bun as the canonical server runtime",
+    "summary": "Bun is chosen for its native SQLite support and faster startup. Node is permitted for the bridge if MCP SDK is incompatible.",
+    "kind": "architectural"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "schema_version": "1.0",
+  "event_id": "01JFIX0005CLAIMPAUSED001",
+  "idempotency_key": "idem-claim-paused-1",
+  "space_id": "teamem-poc",
+  "timestamp": "2026-05-01T13:00:00.000Z",
+  "principal": "alice",
+  "actor": "post-checkout",
+  "delegation": "alice->post-checkout",
+  "event_type": "claim_paused",
+  "scope": { "paths": ["src/Form.jsx"] },
+  "payload": {
+    "claim_id": "claim-abc123",
+    "repo_id": "github.com/org/repo",
+    "branch": "feature/alice",
+    "paused_at": "2026-05-01T13:00:00.000Z",
+    "paused_reason": "branch_switch"
+  }
+}

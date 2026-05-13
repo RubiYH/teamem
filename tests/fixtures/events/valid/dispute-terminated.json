@@ -1,0 +1,17 @@
+{
+  "schema_version": "1.0",
+  "event_id": "01JFIX0017DISPUTETERM0001",
+  "idempotency_key": "idem-dispute-terminated-1",
+  "space_id": "teamem-poc",
+  "timestamp": "2026-05-03T15:05:00.000Z",
+  "principal": "system",
+  "actor": "system",
+  "delegation": "system",
+  "event_type": "dispute_terminated",
+  "scope": {},
+  "payload": {
+    "thread_id": "01JTHR0017DISPUTE0001",
+    "reason": "turns",
+    "outcome": "skip"
+  }
+}

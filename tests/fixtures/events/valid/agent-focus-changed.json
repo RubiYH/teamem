@@ -1,0 +1,18 @@
+{
+  "schema_version": "1.0",
+  "event_id": "01JFIX004FOCUSCHANGED01",
+  "idempotency_key": "idem-focus-1",
+  "space_id": "teamem-poc",
+  "timestamp": "2026-05-03T10:30:00.000Z",
+  "principal": "alice",
+  "actor": "claude-code/session-3",
+  "delegation": "alice->claude-code",
+  "event_type": "agent_focus_changed",
+  "scope": { "paths": ["src/auth/login.ts", "src/auth/session.ts"] },
+  "payload": {
+    "focus_id": "01JFIX005FOCUS001",
+    "scope_hash": "0a1b2c3d4e5f60718293a4b5c6d7e8f9",
+    "intent": "wiring SSO callback into the session refresh flow",
+    "bypass_dedup": false
+  }
+}

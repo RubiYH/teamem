@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# teamem-call — thin wrapper that invokes the plugin's bundled MCP bridge
+# in argv mode. Used by slash commands that need to call MCP tools
+# synchronously (e.g. /teamem-briefing, /teamem-gotcha).
+#
+# Usage:
+#   teamem-call <tool> [--space SPACE] [--actor X] [--delegation D]
+#                      [--token-budget N] [--json '<payload>']
+#
+# Exits with the bridge's exit code; emits the bridge's JSON to stdout.
+#
+# This script is self-contained against the plugin marketplace install:
+# it resolves CLAUDE_PLUGIN_ROOT (or falls back to the script's parent
+# directory) and spawns `bun run ${PLUGIN_ROOT}/lib/bridge.js`. There is
+# no dependency on `TEAMEM_ROOT` or any source-tree path — the bundled
+# `lib/bridge.js` carries the full bridge runtime (see ADR-0003).
+
+set -euo pipefail
+
+PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
+# shellcheck source=../scripts/_common.sh
+. "${PLUGIN_ROOT}/scripts/_common.sh"
+
+BRIDGE_JS=$(teamem_bridge_js)
+
+if [ ! -f "${BRIDGE_JS}" ]; then
+  printf '{"ok":false,"error":"bridge_bundle_missing","path":"%s","hint":"Reinstall the plugin or rebuild via bun run build:plugin from a Teamem source checkout."}\n' \
+    "${BRIDGE_JS}" >&2
+  exit 1
+fi
+
+if ! command -v bun >/dev/null 2>&1; then
+  printf '{"ok":false,"error":"bun_not_found","hint":"Install Bun (https://bun.sh) and re-run."}\n' >&2
+  exit 1
+fi
+
+if [ $# -lt 1 ]; then
+  printf 'usage: teamem-call <tool> [bridge args...]\n' >&2
+  exit 2
+fi
+
+tool="$1"
+shift
+
+# Default the --space flag to the configured default if the caller didn't pass one.
+have_space=0
+for a in "$@"; do
+  case "$a" in --space) have_space=1; break ;; esac
+done
+if [ "${have_space}" = "0" ] && [ -n "${TEAMEM_DEFAULT_SPACE:-}" ]; then
+  set -- "$@" --space "${TEAMEM_DEFAULT_SPACE}"
+fi
+
+exec bun run "${BRIDGE_JS}" call "${tool}" "$@"

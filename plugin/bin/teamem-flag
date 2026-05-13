@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+# teamem-flag — toggle the per-session activation flag.
+#
+# Usage:
+#   teamem-flag enable [--persist] [--space SPACE]
+#   teamem-flag disable
+#   teamem-flag status
+#
+# Storage:
+#   ${CLAUDE_PLUGIN_DATA}/sessions/${SID}/active   — per-session opt-in
+#   ${CLAUDE_PLUGIN_DATA}/sessions/${SID}/space    — pinned space (text)
+#   ${CLAUDE_PLUGIN_DATA}/auto-on                  — project-wide auto-opt-in
+#
+# Exit 0 unless arguments are malformed.
+
+set -euo pipefail
+
+PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
+# shellcheck source=../scripts/_common.sh
+. "${PLUGIN_ROOT}/scripts/_common.sh"
+
+teamem_resolve_session_dir
+
+cmd="${1:-status}"
+shift || true
+
+persist=0
+space=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --persist) persist=1; shift ;;
+    --space)   space="${2:-}"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+
+case "$cmd" in
+  enable)
+    date -u +"%Y-%m-%dT%H:%M:%SZ" > "${ACTIVE_FLAG}" 2>/dev/null || true
+    if [ -n "${space}" ]; then
+      printf '%s' "${space}" > "${SESSION_DIR}/space" 2>/dev/null || true
+    fi
+    if [ "${persist}" = "1" ]; then
+      mkdir -p "$(dirname "${PERSIST_FLAG}")" 2>/dev/null || true
+      date -u +"%Y-%m-%dT%H:%M:%SZ" > "${PERSIST_FLAG}" 2>/dev/null || true
+    fi
+    teamem_log "enabled"
+    printf 'teamem: ENABLED for session %s%s%s\n' \
+      "${SESSION_ID}" \
+      "${space:+ (space=${space})}" \
+      "$( [ "${persist}" = "1" ] && printf ' (persisted for this project, root: %s)' "${PROJECT_ROOT}" )"
+    ;;
+  disable)
+    rm -f "${ACTIVE_FLAG}" 2>/dev/null || true
+    # Kill the monitor if its PID file is present and the process is alive.
+    pidf="${SESSION_DIR}/monitor.pid"
+    if [ -f "${pidf}" ]; then
+      pid=$(cat "${pidf}" 2>/dev/null || echo "")
+      if [ -n "${pid}" ] && kill -0 "${pid}" 2>/dev/null; then
+        kill "${pid}" 2>/dev/null || true
+      fi
+      rm -f "${pidf}" 2>/dev/null || true
+    fi
+    teamem_log "disabled"
+    printf 'teamem: DISABLED for session %s\n' "${SESSION_ID}"
+    ;;
+  forget)
+    rm -f "${PERSIST_FLAG}" 2>/dev/null || true
+    teamem_log "persist_cleared"
+    printf 'teamem: project-wide auto-on cleared\n'
+    ;;
+  status)
+    if teamem_is_active; then
+      printf 'teamem: ACTIVE'
+      [ -f "${ACTIVE_FLAG}" ] && printf ' [session]'
+      if [ -f "${PERSIST_FLAG}" ]; then
+        printf ' [persistent, root: %s]' "${PROJECT_ROOT}"
+      fi
+      printf '\n'
+      [ -f "${SESSION_DIR}/space" ] && printf '  space: %s\n' "$(cat "${SESSION_DIR}/space" 2>/dev/null)"
+      printf '  session_dir: %s\n' "${SESSION_DIR}"
+    else
+      printf 'teamem: idle (run /teamem-on to activate)\n'
+    fi
+    pidf="${SESSION_DIR}/monitor.pid"
+    if [ -f "${pidf}" ]; then
+      pid=$(cat "${pidf}" 2>/dev/null || echo "")
+      if [ -n "${pid}" ] && kill -0 "${pid}" 2>/dev/null; then
+        printf '  monitor: running (pid=%s)\n' "${pid}"
+      else
+        printf '  monitor: stale pidfile (pid=%s)\n' "${pid:-?}"
+      fi
+    else
+      printf '  monitor: stopped\n'
+    fi
+    ;;
+  *)
+    printf 'usage: teamem-flag {enable [--persist] [--space SPACE]|disable|forget|status}\n' >&2
+    exit 2
+    ;;
+esac

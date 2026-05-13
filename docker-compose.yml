@@ -1,0 +1,33 @@
+version: '3.9'
+
+services:
+  teamem:
+    build:
+      context: .
+      target: runtime
+    container_name: teamem
+    ports:
+      - '${PORT:-3000}:${PORT:-3000}'
+    env_file:
+      - .env
+    environment:
+      - PORT=${PORT:-3000}
+      - TEAMEM_DB_PATH=/app/data/teamem.db
+      - TEAMEM_MIGRATIONS_DIR=/app/src/infra/db/migrations
+    volumes:
+      - teamem-data:/app/data
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          'wget -qO- http://localhost:${PORT:-3000}/health || exit 1'
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  teamem-data:
+    driver: local

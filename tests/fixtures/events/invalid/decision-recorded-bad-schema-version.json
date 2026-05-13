@@ -1,0 +1,13 @@
+{
+  "schema_version": "2.0",
+  "event_id": "01JFIXINV006DECISIONREC1",
+  "idempotency_key": "idem-inv-decision-1",
+  "space_id": "teamem-poc",
+  "timestamp": "2026-05-01T09:00:00.000Z",
+  "principal": "alice",
+  "actor": "alice",
+  "delegation": "alice->alice",
+  "event_type": "decision_recorded",
+  "scope": {},
+  "payload": { "decision_id": "dec-1", "title": "Use Bun" }
+}

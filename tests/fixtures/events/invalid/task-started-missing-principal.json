@@ -1,0 +1,12 @@
+{
+  "schema_version": "1.0",
+  "event_id": "01JFIXINV003TASKSTARTED1",
+  "idempotency_key": "idem-inv-task-started-1",
+  "space_id": "teamem-poc",
+  "timestamp": "2026-05-01T10:00:00.000Z",
+  "actor": "claude-code/session-1",
+  "delegation": "alice->claude-code",
+  "event_type": "task_started",
+  "scope": { "paths": ["src/index.ts"] },
+  "payload": { "task_id": "TASK-1" }
+}

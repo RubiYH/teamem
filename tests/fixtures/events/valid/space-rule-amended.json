@@ -1,0 +1,17 @@
+{
+  "schema_version": "1.0",
+  "event_id": "evt-space-rule-amended-1",
+  "idempotency_key": "idem-space-rule-amended-1",
+  "space_id": "space-rules",
+  "timestamp": "2026-05-10T00:10:00.000Z",
+  "principal": "alice",
+  "actor": "claude/session-1",
+  "delegation": "alice->claude",
+  "event_type": "space_rule_amended",
+  "scope": {},
+  "payload": {
+    "rules_markdown": "Prefer focused diffs.\nRead the briefing first.",
+    "rules_version": 2,
+    "rules_hash": "5797b8e8a572908a5b812e5e89d5c368dd3415f860b9a19f12ac56879da79ac8"
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "name": "teamem",
+  "version": "0.1.0",
+  "description": "Bootstrapper CLI for Teamem marketplace onboarding",
+  "author": "RubiYH <imrubi5555@gmail.com> (https://rubi.codes)",
+  "license": "Apache-2.0",
+  "homepage": "https://rubi.codes",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/RubiYH/teamem.git",
+    "directory": "packages/bootstrapper-cli"
+  },
+  "bugs": {
+    "url": "https://github.com/RubiYH/teamem/issues"
+  },
+  "keywords": [
+    "teamem",
+    "claude-code",
+    "mcp",
+    "team-memory",
+    "coordination"
+  ],
+  "type": "module",
+  "bin": {
+    "teamem": "./dist/bin/teamem.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": "./dist/index.js",
+    "./action-plan": "./dist/action-plan.js",
+    "./cli": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepack": "bun run build",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "bun test ./tests"
+  }
+}

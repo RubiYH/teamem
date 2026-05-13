@@ -1,0 +1,16 @@
+{
+  "schema_version": "1.0",
+  "event_id": "01JFIX0010CONFLICTRESOLV1",
+  "idempotency_key": "idem-conflict-resolved-1",
+  "space_id": "teamem-poc",
+  "timestamp": "2026-05-01T10:35:00.000Z",
+  "principal": "alice",
+  "actor": "alice",
+  "delegation": "alice->alice",
+  "event_type": "conflict_resolved",
+  "scope": { "paths": ["src/server/routes.ts"] },
+  "payload": {
+    "conflict_id": "conflict-routes-overlap",
+    "resolution": "alice and bob coordinated; bob will work on a separate route module"
+  }
+}

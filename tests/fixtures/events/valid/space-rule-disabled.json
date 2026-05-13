@@ -1,0 +1,17 @@
+{
+  "schema_version": "1.0",
+  "event_id": "evt-space-rule-disabled-1",
+  "idempotency_key": "idem-space-rule-disabled-1",
+  "space_id": "space-rules",
+  "timestamp": "2026-05-10T00:20:00.000Z",
+  "principal": "alice",
+  "actor": "claude/session-1",
+  "delegation": "alice->claude",
+  "event_type": "space_rule_disabled",
+  "scope": {},
+  "payload": {
+    "rules_markdown": "",
+    "rules_version": 3,
+    "rules_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  }
+}

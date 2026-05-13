@@ -1,0 +1,18 @@
+{
+  "schema_version": "1.0",
+  "event_id": "01JFIX0017DISPUTEOPEN0002",
+  "idempotency_key": "idem-dispute-opened-2",
+  "space_id": "teamem-poc",
+  "timestamp": "2026-05-03T15:00:01.000Z",
+  "principal": "bob",
+  "actor": "bob",
+  "delegation": "bob->bob",
+  "event_type": "dispute_opened",
+  "scope": { "paths": ["src/auth/login.ts"] },
+  "payload": {
+    "thread_id": "01JTHR0017DISPUTE0002",
+    "blocking_claim_id": "01JCLAIM00ALICE000000002",
+    "target_principal": "alice",
+    "intent": "ship oauth refactor"
+  }
+}

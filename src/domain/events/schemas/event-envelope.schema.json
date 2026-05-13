@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://teamem.dev/schemas/event-envelope.schema.json",
+  "title": "Teamem Event Envelope",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "event_id",
+    "idempotency_key",
+    "space_id",
+    "timestamp",
+    "principal",
+    "actor",
+    "delegation",
+    "event_type",
+    "scope",
+    "payload"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "event_id": { "type": "string" },
+    "idempotency_key": { "type": "string" },
+    "space_id": { "type": "string" },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "principal": { "type": "string" },
+    "actor": { "type": "string" },
+    "delegation": { "type": "string" },
+    "event_type": {
+      "type": "string",
+      "enum": [
+        "scope_claimed",
+        "scope_released",
+        "task_started",
+        "task_progressed",
+        "task_completed",
+        "decision_published",
+        "decision_amended",
+        "decision_superseded",
+        "decision_recorded",
+        "contract_changed",
+        "blocker_raised",
+        "blocker_resolved",
+        "conflict_detected",
+        "conflict_queued",
+        "conflict_resolved",
+        "acknowledgment_recorded",
+        "discussion_posted",
+        "space_wiped",
+        "space_unwiped",
+        "finding_shared",
+        "artifact_shared",
+        "permission_requested",
+        "permission_granted",
+        "permission_denied",
+        "permission_expired",
+        "agent_focus_changed",
+        "dispute_opened",
+        "dispute_resolved",
+        "dispute_terminated",
+        "scope_released_via_git",
+        "claim_force_released",
+        "claim_paused",
+        "claim_resumed",
+        "claim_expired",
+        "space_rule_added",
+        "space_rule_amended",
+        "space_rule_disabled"
+      ]
+    },
+    "scope": { "type": "object" },
+    "payload": { "type": "object" },
+    "refs": { "type": "object" },
+    "confidence": { "type": "number", "minimum": 0, "maximum": 1 }
+  },
+  "additionalProperties": true,
+  "allOf": [
+    {
+      "$comment": "Codex F25 — dispute_opened payload must carry opened_by + target_principal so the auto-negotiator can derive side without re-query (see ADR-0002, slice #24 F22 fix).",
+      "if": {
+        "properties": { "event_type": { "const": "dispute_opened" } },
+        "required": ["event_type"]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "required": ["opened_by", "target_principal"],
+            "properties": {
+              "opened_by": { "type": "string", "minLength": 1 },
+              "target_principal": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      }
+    },
+    {
+      "$comment": "Codex F25 — discussion_posted events whose payload.dispute_move is set are dispute moves and MUST carry the same opener/target metadata as dispute_opened, for the same reason. Plain discussion_posted events (no dispute_move) are unconstrained.",
+      "if": {
+        "properties": {
+          "event_type": { "const": "discussion_posted" },
+          "payload": {
+            "type": "object",
+            "required": ["dispute_move"]
+          }
+        },
+        "required": ["event_type", "payload"]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "required": ["opened_by", "target_principal"],
+            "properties": {
+              "opened_by": { "type": "string", "minLength": 1 },
+              "target_principal": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

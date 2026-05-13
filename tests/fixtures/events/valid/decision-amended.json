@@ -1,0 +1,20 @@
+{
+  "schema_version": "1.0",
+  "event_id": "01JFIX0007DECISIONAMD01",
+  "idempotency_key": "idem-decision-amended-1",
+  "space_id": "teamem-poc",
+  "timestamp": "2026-05-01T09:10:00.000Z",
+  "principal": "bob",
+  "actor": "bob",
+  "delegation": "bob->bob",
+  "event_type": "decision_amended",
+  "scope": {},
+  "payload": {
+    "decision_id": "dec-space-memory",
+    "title": "Adopt Space Memory v1 lifecycle events",
+    "summary": "Amendments stay explicit instead of replacing prior direction.",
+    "body": "This amendment clarifies that reusing a decision id appends a new lifecycle event and bumps the current version.",
+    "kind": "architectural",
+    "version": 2
+  }
+}

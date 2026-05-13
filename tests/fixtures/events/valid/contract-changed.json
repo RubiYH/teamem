@@ -1,0 +1,18 @@
+{
+  "schema_version": "1.0",
+  "event_id": "01JFIX0006CONTRACTCHANGE1",
+  "idempotency_key": "idem-contract-changed-1",
+  "space_id": "teamem-poc",
+  "timestamp": "2026-05-01T10:30:00.000Z",
+  "principal": "bob",
+  "actor": "codex-cli/session-2",
+  "delegation": "bob->codex-cli",
+  "event_type": "contract_changed",
+  "scope": { "contracts": ["api/v1/events", "api/v1/tools"] },
+  "payload": {
+    "contract_key": "api/v1/events",
+    "change_summary": "Added token_budget parameter to get_briefing endpoint",
+    "breaking": false
+  },
+  "refs": { "branch": "feat/briefing-token-budget", "commit": "cde9012" }
+}

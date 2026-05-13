@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.0",
+  "event_id": "01JFIX0014FINDINGSHARED01",
+  "idempotency_key": "idem-finding-shared-1",
+  "space_id": "teamem-poc",
+  "timestamp": "2026-05-03T10:00:00.000Z",
+  "principal": "alice",
+  "actor": "alice",
+  "delegation": "alice->alice",
+  "event_type": "finding_shared",
+  "scope": {},
+  "payload": {
+    "finding_id": "01JFIX0014FINDINGSHARED02",
+    "summary": "TOCTOU race in auth middleware kick check",
+    "body": "createRequireMemberMiddleware reads members.left_at outside the request transaction. A concurrent kick can flip left_at between the SELECT and the next call's predicate.",
+    "tags": ["auth", "security", "toctou"],
+    "severity": "warning",
+    "refs": {
+      "paths": ["src/server/auth.ts"],
+      "modules": ["server/auth"]
+    },
+    "expires_at": "2026-05-10T10:00:00.000Z"
+  }
+}

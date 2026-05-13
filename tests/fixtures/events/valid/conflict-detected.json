@@ -1,0 +1,19 @@
+{
+  "schema_version": "1.0",
+  "event_id": "01JFIX0009CONFLICTDETECT1",
+  "idempotency_key": "idem-conflict-detected-1",
+  "space_id": "teamem-poc",
+  "timestamp": "2026-05-01T10:20:00.000Z",
+  "principal": "bob",
+  "actor": "codex-cli/session-2",
+  "delegation": "bob->codex-cli",
+  "event_type": "conflict_detected",
+  "scope": { "paths": ["src/server/routes.ts"] },
+  "payload": {
+    "conflict_id": "conflict-routes-overlap",
+    "summary": "alice and bob both have active claims on src/server/routes.ts",
+    "risk_score": 0.85,
+    "reasons": ["scope_overlap"]
+  },
+  "confidence": 0.85
+}

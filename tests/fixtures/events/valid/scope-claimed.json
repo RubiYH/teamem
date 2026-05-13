@@ -1,0 +1,18 @@
+{
+  "schema_version": "1.0",
+  "event_id": "01JFIX0001SCOPECLAIMED001",
+  "idempotency_key": "idem-scope-claimed-1",
+  "space_id": "teamem-poc",
+  "timestamp": "2026-05-01T10:00:00.000Z",
+  "principal": "alice",
+  "actor": "claude-code/session-1",
+  "delegation": "alice->claude-code",
+  "event_type": "scope_claimed",
+  "scope": { "paths": ["src/server/routes.ts", "src/server/auth.ts"] },
+  "payload": {
+    "claim_id": "claim-abc123",
+    "intent": "implement auth middleware",
+    "expires_at": "2026-05-01T11:00:00.000Z"
+  },
+  "refs": { "branch": "feat/auth-middleware" }
+}

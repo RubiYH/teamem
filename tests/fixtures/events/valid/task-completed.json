@@ -1,0 +1,18 @@
+{
+  "schema_version": "1.0",
+  "event_id": "01JFIX0004TASKCOMPLETED01",
+  "idempotency_key": "idem-task-completed-1",
+  "space_id": "teamem-poc",
+  "timestamp": "2026-05-01T11:00:00.000Z",
+  "principal": "alice",
+  "actor": "claude-code/session-1",
+  "delegation": "alice->claude-code",
+  "event_type": "task_completed",
+  "scope": { "paths": ["src/server/routes.ts", "src/server/auth.ts"] },
+  "payload": {
+    "task_id": "TASK-2",
+    "what": "auth middleware complete, all tests passing"
+  },
+  "refs": { "branch": "feat/auth-middleware", "commit": "def5678", "pr": "42" },
+  "confidence": 1.0
+}

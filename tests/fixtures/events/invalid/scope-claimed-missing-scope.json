@@ -1,0 +1,12 @@
+{
+  "schema_version": "1.0",
+  "event_id": "01JFIXINV001SCOPECLAIMED",
+  "idempotency_key": "idem-inv-scope-claimed-1",
+  "space_id": "teamem-poc",
+  "timestamp": "2026-05-01T10:00:00.000Z",
+  "principal": "alice",
+  "actor": "claude-code/session-1",
+  "delegation": "alice->claude-code",
+  "event_type": "scope_claimed",
+  "payload": { "claim_id": "claim-abc123", "intent": "implement auth" }
+}

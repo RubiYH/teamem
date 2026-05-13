@@ -1,0 +1,10 @@
+node_modules
+dist
+coverage
+.omc/
+.omx/
+bun.lock
+plugin/lib/
+
+# Skip markdown
+*.md

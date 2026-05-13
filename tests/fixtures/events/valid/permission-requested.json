@@ -1,0 +1,18 @@
+{
+  "schema_version": "1.0",
+  "event_id": "01JFIX0001PERMREQ0000001",
+  "idempotency_key": "idem-permreq-1",
+  "space_id": "teamem-poc",
+  "timestamp": "2026-05-03T16:00:00.000Z",
+  "principal": "bob",
+  "actor": "claude-code/session-1",
+  "delegation": "bob->claude-code",
+  "event_type": "permission_requested",
+  "scope": { "paths": ["src/auth/login.ts"] },
+  "payload": {
+    "req_id": "01JFIX0001PERMREQ0000001",
+    "incumbent_principal": "alice",
+    "blocking_claim_id": "claim-alice-auth",
+    "intent": "fix login bug"
+  }
+}

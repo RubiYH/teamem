@@ -1,0 +1,152 @@
+#!/usr/bin/env bash
+# teamem post-checkout hook — fires after every git checkout.
+# When switching branches, pauses claims on the previous branch and
+# resumes claims on the new branch.
+# Never blocks the checkout — all failures are Tier-W silent.
+
+set -euo pipefail
+
+PREV_HEAD="$1"
+NEW_HEAD="$2"
+BRANCH_FLAG="$3"
+
+# Only act on branch checkouts (branch_flag=1), not file checkouts (branch_flag=0).
+[ "$BRANCH_FLAG" = "1" ] || exit 0
+
+PLUGIN_ROOT="${TEAMEM_PLUGIN_ROOT:-}"
+if [ -z "$PLUGIN_ROOT" ]; then
+  _TEMPLATE_PLUGIN_ROOT="__TEAMEM_PLUGIN_ROOT__"
+  if [ "$_TEMPLATE_PLUGIN_ROOT" != "__TEAMEM_PLUGIN""_ROOT__" ]; then
+    PLUGIN_ROOT="$_TEMPLATE_PLUGIN_ROOT"
+  fi
+fi
+if [ -z "$PLUGIN_ROOT" ]; then
+  _REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || echo "")"
+  if [ -n "$_REPO_ROOT" ] && [ -f "${_REPO_ROOT}/plugin/scripts/_common.sh" ]; then
+    PLUGIN_ROOT="${_REPO_ROOT}/plugin"
+  fi
+fi
+
+_teamem_warn_checkout() {
+  printf 'teamem: [warn] post-checkout: %s\n' "$1" >&2
+}
+
+if [ -z "$PLUGIN_ROOT" ] || [ ! -f "${PLUGIN_ROOT}/scripts/_common.sh" ]; then
+  exit 0
+fi
+
+if ! command -v bun >/dev/null 2>&1; then
+  exit 0
+fi
+
+BRIDGE_JS="${PLUGIN_ROOT}/lib/bridge.js"
+if [ ! -f "$BRIDGE_JS" ]; then
+  exit 0
+fi
+
+GIT_TOPLEVEL=$(git rev-parse --show-toplevel 2>/dev/null || echo "")
+[ -z "$GIT_TOPLEVEL" ] && exit 0
+
+# Resolve repo_id (same logic as gate-claim.sh and post-commit).
+GIT_REMOTE_URL=$(git config --get remote.origin.url 2>/dev/null || echo "")
+if [ -z "$GIT_REMOTE_URL" ]; then
+  REPO_ID="$GIT_TOPLEVEL"
+else
+  REPO_ID=$(GIT_REMOTE_URL="$GIT_REMOTE_URL" bun -e '
+const url = process.env.GIT_REMOTE_URL || "";
+let s = url.trim();
+// MUST stay in lockstep with src/domain/claim-identity-core.ts
+// canonicalizeRepoId — server and client must agree on repo_id.
+s = s.replace(/^(https?|ssh|git):\/\//, "");
+s = s.replace(/^[^@/]+@/, "");
+s = s.replace(/^([^/:]+):(?!\d+\/)/, "$1/");
+s = s.replace(/\.git$/, "");
+s = s.toLowerCase();
+s = s.replace(/\/+$/, "");
+process.stdout.write(s);
+' 2>/dev/null || echo "$GIT_TOPLEVEL")
+fi
+export REPO_ID
+
+# Compute SHA1 hash of repo_id (matching gate-claim.sh).
+REPO_HASH=$(printf '%s' "$REPO_ID" | bun -e '
+const {createHash} = require("crypto");
+process.stdin.resume();
+let d = "";
+process.stdin.on("data", c => d += c);
+process.stdin.on("end", () => process.stdout.write(createHash("sha1").update(d).digest("hex")));
+' 2>/dev/null || echo "default")
+
+PLUGIN_DATA_DIR="${TEAMEM_DATA:-${HOME}/.cache/teamem}"
+LAST_BRANCH_DIR="${PLUGIN_DATA_DIR}/last-branch"
+LAST_BRANCH_FILE="${LAST_BRANCH_DIR}/${REPO_HASH}"
+
+# Determine new branch (or detached state).
+NEW_BRANCH=$(git symbolic-ref --short HEAD 2>/dev/null || echo "")
+export NEW_BRANCH
+DETACHED_HEAD=0
+[ -z "$NEW_BRANCH" ] && DETACHED_HEAD=1
+
+# Determine previous branch from last-branch state file, falling back to
+# git name-rev when the file doesn't exist (user ran checkout before any
+# teamem-driven edit on this repo).
+PREV_BRANCH=""
+if [ -f "$LAST_BRANCH_FILE" ]; then
+  PREV_BRANCH=$(cat "$LAST_BRANCH_FILE" 2>/dev/null || echo "")
+fi
+if [ -z "$PREV_BRANCH" ] && [ -n "$PREV_HEAD" ]; then
+  PREV_BRANCH=$(git name-rev --name-only "$PREV_HEAD" 2>/dev/null | sed 's|remotes/[^/]*/||; s|~.*||' || echo "")
+fi
+export PREV_BRANCH
+
+# Resolve space from session.
+SPACE=""
+SESSION_ID="${GIT_TEAMEM_SESSION_ID:-}"
+if [ -n "$SESSION_ID" ]; then
+  _SESSION_DIR="${TEAMEM_DATA:-${HOME}/.cache/teamem}/sessions/${SESSION_ID}"
+  if [ -f "${_SESSION_DIR}/space" ]; then
+    SPACE=$(cat "${_SESSION_DIR}/space" 2>/dev/null || echo "")
+  fi
+fi
+
+_call_bridge() {
+  local tool="$1"
+  local payload="$2"
+  if [ -n "$SPACE" ]; then
+    bun run "$BRIDGE_JS" call "$tool" --space "$SPACE" --json "$payload" >/dev/null 2>&1 || \
+      _teamem_warn_checkout "bridge call failed for $tool (fail-open)"
+  else
+    bun run "$BRIDGE_JS" call "$tool" --json "$payload" >/dev/null 2>&1 || \
+      _teamem_warn_checkout "bridge call failed for $tool (fail-open)"
+  fi
+}
+
+# Pause claims on previous branch (if known).
+if [ -n "$PREV_BRANCH" ] && [ "$PREV_BRANCH" != "$NEW_BRANCH" ]; then
+  PAUSE_REASON="branch_switch"
+  [ "$DETACHED_HEAD" = "1" ] && PAUSE_REASON="detached_head"
+  export PAUSE_REASON
+  PAUSE_PAYLOAD=$(bun -e '
+const repoId = process.env.REPO_ID || "";
+const branch = process.env.PREV_BRANCH || "";
+const reason = process.env.PAUSE_REASON || "branch_switch";
+process.stdout.write(JSON.stringify({ repo_id: repoId, branch, reason }));
+' 2>/dev/null) || PAUSE_PAYLOAD=""
+  if [ -n "$PAUSE_PAYLOAD" ]; then
+    _call_bridge "teamem.pause_claims_for_branch" "$PAUSE_PAYLOAD"
+  fi
+fi
+
+# Resume claims on new branch (only when not detached HEAD).
+if [ "$DETACHED_HEAD" = "0" ] && [ -n "$NEW_BRANCH" ]; then
+  RESUME_PAYLOAD=$(bun -e '
+const repoId = process.env.REPO_ID || "";
+const branch = process.env.NEW_BRANCH || "";
+process.stdout.write(JSON.stringify({ repo_id: repoId, branch }));
+' 2>/dev/null) || RESUME_PAYLOAD=""
+  if [ -n "$RESUME_PAYLOAD" ]; then
+    _call_bridge "teamem.resume_claims_for_branch" "$RESUME_PAYLOAD"
+  fi
+fi
+
+exit 0

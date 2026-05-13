@@ -1,0 +1,12 @@
+{
+  "schema_version": "1.0",
+  "event_id": "evt-space-rule-added-invalid-1",
+  "idempotency_key": "idem-space-rule-added-invalid-1",
+  "space_id": "space-rules",
+  "timestamp": "2026-05-10T00:00:00.000Z",
+  "principal": "alice",
+  "actor": "claude/session-1",
+  "delegation": "alice->claude",
+  "event_type": "space_rule_added",
+  "scope": {}
+}

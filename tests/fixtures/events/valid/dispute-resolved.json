@@ -1,0 +1,19 @@
+{
+  "schema_version": "1.0",
+  "event_id": "01JFIX0017DISPUTERESOL001",
+  "idempotency_key": "idem-dispute-resolved-1",
+  "space_id": "teamem-poc",
+  "timestamp": "2026-05-03T15:02:00.000Z",
+  "principal": "alice",
+  "actor": "alice",
+  "delegation": "alice->alice",
+  "event_type": "dispute_resolved",
+  "scope": { "paths": ["src/auth/login.ts"] },
+  "payload": {
+    "thread_id": "01JTHR0017DISPUTE0001",
+    "outcome": "release_subset",
+    "released_paths": ["src/auth/login.ts"],
+    "kept_paths": ["src/auth/middleware.ts"],
+    "new_claim_id": "01JCLAIM00BOB00000000001"
+  }
+}

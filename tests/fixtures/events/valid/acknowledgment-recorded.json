@@ -1,0 +1,17 @@
+{
+  "schema_version": "1.0",
+  "event_id": "01JFIX0011ACKNOWLEDGEDREC",
+  "idempotency_key": "idem-acknowledgment-recorded-1",
+  "space_id": "teamem-poc",
+  "timestamp": "2026-05-01T09:05:00.000Z",
+  "principal": "bob",
+  "actor": "codex-cli/session-2",
+  "delegation": "bob->codex-cli",
+  "event_type": "acknowledgment_recorded",
+  "scope": {},
+  "payload": {
+    "acknowledged_event_id": "01JFIX0005DECISIONRECORD1",
+    "acknowledged_by": "bob",
+    "note": "Confirmed: using Bun as the server runtime"
+  }
+}
