@@ -87,9 +87,25 @@ conflicts or queued work through the plugin.
 
 ```mermaid
 flowchart LR
-  A["Claude Code<br/>teammate A"] <--> S["Teamem server<br/>bridge + channel"]
-  B["Claude Code<br/>teammate B"] <--> S
-  C["Claude Code<br/>teammate C"] <--> S
+  subgraph TA["Teammate A"]
+    A["Claude Code"] <--> PA["Plugin + bridge"]
+  end
+
+  subgraph TB["Teammate B"]
+    B["Claude Code"] <--> PB["Plugin + bridge"]
+  end
+
+  subgraph TC["Teammate C"]
+    C["Claude Code"] <--> PC["Plugin + bridge"]
+  end
+
+  PA -- tools --> S["Teamem server"]
+  PB -- tools --> S
+  PC -- tools --> S
+  S -- events --> PA
+  S -- events --> PB
+  S -- events --> PC
+  S <--> DB["SQLite event store"]
 ```
 
 ```text
