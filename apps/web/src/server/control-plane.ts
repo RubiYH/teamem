@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { randomUUID } from 'node:crypto';
-import { Pool } from 'pg';
+import type { Pool } from 'pg';
 import type {
   CloudControlPlaneAccount,
   CloudControlPlaneAccountInput,
@@ -15,6 +15,7 @@ import type {
 } from '../../../../src/cloud/control-plane';
 import { getCloudDashboardState } from '../../../../src/cloud/control-plane';
 import { loadTeamemCloudWebEnv } from './env';
+import { createTeamemCloudPostgresPool } from './postgres';
 
 let cachedPool: Pool | undefined;
 let cachedRepository: CloudControlPlaneRepository | undefined;
@@ -48,9 +49,9 @@ function getControlPlanePool(): Pool {
     );
   }
 
-  cachedPool = new Pool({
-    connectionString: envResult.value.supabase.postgresUrl
-  });
+  cachedPool = createTeamemCloudPostgresPool(
+    envResult.value.supabase.postgresUrl
+  );
   return cachedPool;
 }
 

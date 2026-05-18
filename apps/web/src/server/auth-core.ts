@@ -1,8 +1,8 @@
 import { betterAuth } from 'better-auth';
 import type { PostgresPool } from 'kysely';
-import { Pool } from 'pg';
 import { TEAMEM_CLOUD_AUTH_ACCOUNT_LINKING_POLICY } from '../../../../src/cloud/auth-policy';
 import { loadTeamemCloudWebEnv } from '../../../../src/cloud/env-contract';
+import { createTeamemCloudPostgresPool } from './postgres';
 
 type BetterAuthOptions = Parameters<typeof betterAuth>[0];
 type BetterAuthPlugin = NonNullable<BetterAuthOptions['plugins']>[number];
@@ -17,9 +17,9 @@ export function createTeamemCloudAuth(plugins: BetterAuthPlugin[] = []) {
   }
 
   const env = envResult.value;
-  const database = new Pool({
-    connectionString: env.supabase.postgresUrl
-  }) as unknown as PostgresPool;
+  const database = createTeamemCloudPostgresPool(
+    env.supabase.postgresUrl
+  ) as unknown as PostgresPool;
 
   return betterAuth({
     appName: 'Teamem Cloud',

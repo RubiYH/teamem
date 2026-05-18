@@ -34,6 +34,7 @@ Set these variables in Vercel and in local `.env.local` files used by `apps/web`
 | `GITHUB_CLIENT_ID` | yes | GitHub OAuth app client id. |
 | `GITHUB_CLIENT_SECRET` | yes | GitHub OAuth app client secret. |
 | `SUPABASE_POSTGRES_URL` | yes | Supabase direct Postgres connection string used by server-side control-plane code. |
+| `SUPABASE_POSTGRES_CA_CERT` | no | Supabase Postgres server root certificate contents for Vercel/Node TLS verification when the pooler presents a self-signed chain. Store the full PEM text; escaped `\n` newlines are supported. |
 | `SUPABASE_URL` | yes | Supabase project URL for the web app's Supabase client contract. |
 | `SUPABASE_SERVICE_ROLE_KEY` | yes | Supabase service-role key for trusted server-side operations. Keep it server-only. |
 | `TEAMEM_CLOUD_RUNTIME_URL` | yes | Hosted Teamem runtime base URL used by provisioning and displayed setup commands. |
@@ -59,6 +60,7 @@ The runtime also needs `TEAMEM_CLOUD_RUNTIME_PROVISIONING_TOKEN` so it can authe
 4. Copy the project URL into `SUPABASE_URL`.
 5. Copy the service-role key into `SUPABASE_SERVICE_ROLE_KEY`.
 6. Copy a server-side Postgres connection string into `SUPABASE_POSTGRES_URL`. Include any provider-required SSL mode in the URL.
+7. If Vercel login or smoke checks fail with `SELF_SIGNED_CERT_IN_CHAIN`, download Supabase's server root certificate and store its full PEM content in `SUPABASE_POSTGRES_CA_CERT`. The app uses that CA for Better Auth and control-plane Postgres pools.
 
 For local web development, either point `SUPABASE_POSTGRES_URL`, `SUPABASE_URL`, and `SUPABASE_SERVICE_ROLE_KEY` at a hosted Supabase dev project or run an equivalent local Postgres database and apply both the Better Auth schema and the control-plane migration. The current env contract still requires `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` even when only local Postgres is used by the server path, because the web app keeps one deployment env shape across hosted and local development. For a local Postgres-only smoke, set `SUPABASE_POSTGRES_URL` to the local database and set `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` to non-empty local placeholder values so env validation stays deterministic.
 

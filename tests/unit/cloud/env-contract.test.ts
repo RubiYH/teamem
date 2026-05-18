@@ -37,7 +37,8 @@ describe('loadTeamemCloudWebEnv', () => {
     ]);
     expect(TEAMEM_CLOUD_OPTIONAL_WEB_ENV_KEYS).toEqual([
       'GOOGLE_CLIENT_ID',
-      'GOOGLE_CLIENT_SECRET'
+      'GOOGLE_CLIENT_SECRET',
+      'SUPABASE_POSTGRES_CA_CERT'
     ]);
   });
 
@@ -52,6 +53,21 @@ describe('loadTeamemCloudWebEnv', () => {
     expect(result.value.oauth.google?.clientSecret).toBe('google-secret');
     expect(result.value.supabase.postgresUrl).toBe('postgres://example');
     expect(result.value.runtime.provisioningToken).toBe('runtime-token');
+  });
+
+  it('loads an optional Supabase Postgres CA certificate for hosted poolers', () => {
+    const result = loadTeamemCloudWebEnv({
+      ...completeEnv,
+      SUPABASE_POSTGRES_CA_CERT: '-----BEGIN CERTIFICATE-----\\n...'
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error('expected valid env');
+    }
+    expect(result.value.supabase.postgresCaCert).toBe(
+      '-----BEGIN CERTIFICATE-----\\n...'
+    );
   });
 
   it('allows Google OAuth credentials to be absent as a pair', () => {

@@ -1,6 +1,14 @@
 import { Pool } from 'pg';
 import { loadTeamemCloudWebEnv } from '../../../src/cloud/env-contract.js';
 
+type TeamemCloudSmokePoolConfig = {
+  connectionString: string;
+  ssl?: {
+    ca: string;
+    rejectUnauthorized: true;
+  };
+};
+
 const REQUIRED_TABLES = [
   'cloud_accounts',
   'cloud_spaces',
@@ -26,9 +34,20 @@ export async function runTeamemCloudDeploySmoke(
     );
   }
 
-  const pool = new Pool({
-    connectionString: envResult.value.supabase.postgresUrl
-  });
+  const caCertificate = normalizeCaCertificate(env.SUPABASE_POSTGRES_CA_CERT);
+  const poolConfig: TeamemCloudSmokePoolConfig = {
+    connectionString: caCertificate
+      ? stripPostgresSslQueryParams(envResult.value.supabase.postgresUrl)
+      : envResult.value.supabase.postgresUrl
+  };
+
+  if (caCertificate) {
+    poolConfig.ssl = {
+      ca: caCertificate,
+      rejectUnauthorized: true
+    };
+  }
+  const pool = new Pool(poolConfig);
 
   try {
     await pool.query('SELECT 1 AS ok');
@@ -80,4 +99,23 @@ function parseBetterAuthTables(value: string | undefined): readonly string[] {
     .filter(Boolean);
 
   return tables?.length ? tables : DEFAULT_BETTER_AUTH_TABLES;
+}
+
+function normalizeCaCertificate(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  if (!trimmed) return undefined;
+  return trimmed.includes('\\n') ? trimmed.replaceAll('\\n', '\n') : trimmed;
+}
+
+function stripPostgresSslQueryParams(connectionString: string): string {
+  try {
+    const url = new URL(connectionString);
+    url.searchParams.delete('sslmode');
+    url.searchParams.delete('sslcert');
+    url.searchParams.delete('sslkey');
+    url.searchParams.delete('sslrootcert');
+    return url.toString();
+  } catch {
+    return connectionString;
+  }
 }
