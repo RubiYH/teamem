@@ -1,7 +1,14 @@
 import { Hono } from 'hono';
 import type { Database } from 'bun:sqlite';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, timingSafeEqual } from 'node:crypto';
 import type { TeamemTools } from './tools/index.js';
+import {
+  CLOUD_ADMIN_API_PREFIX,
+  type CloudAdminCreateSpaceRequest,
+  type CloudAdminRotateRoomCodeRequest,
+  type CloudAdminSoftDeleteSpaceRequest
+} from '../cloud/runtime-admin-contract.js';
+import { TEAMEM_CLOUD_BOUNDARIES } from '../cloud/boundary-guardrails.js';
 import { createToolRegistry, TOOL_NAMES } from './tool-registry.js';
 import {
   createRequireMemberMiddleware,
@@ -20,8 +27,12 @@ import {
   rotateRoomCode,
   getSpaceById,
   wipeSpace,
-  unwipeSpace
+  unwipeSpace,
+  createCloudAdminSpace,
+  rotateCloudAdminRoomCode,
+  softDeleteCloudAdminSpace
 } from './spaces.js';
+import { resolveCloudAdminProvisioningToken } from './cloud-admin-token.js';
 
 type Variables = { member: AuthedMember };
 
@@ -32,11 +43,17 @@ const MCP_PROTOCOL_VERSION = '2025-11-25';
 // silently bypass auth — this is the security invariant.
 const UNAUTH_MCP_METHODS = new Set(['initialize', 'notifications/initialized']);
 
+type CloudAdminOptions = {
+  provisioningToken?: string;
+  runtimeServerUrl?: string;
+};
+
 export function createRouter(
   tools: TeamemTools,
   db?: Database,
   jwtSecret?: string,
-  trustedOrigins?: string[]
+  trustedOrigins?: string[],
+  cloudAdmin?: CloudAdminOptions
 ) {
   const app = new Hono<{ Variables: Variables }>();
   const registry = createToolRegistry(tools);
@@ -46,6 +63,11 @@ export function createRouter(
   const requireCreator =
     db && jwtSecret ? createRequireCreatorMiddleware(jwtSecret, db) : null;
   const rateLimit = createRateLimitMiddleware();
+
+  const cloudAdminToken = resolveCloudAdminProvisioningToken({
+    TEAMEM_CLOUD_RUNTIME_PROVISIONING_TOKEN: cloudAdmin?.provisioningToken
+  });
+  const runtimeServerUrl = cloudAdmin?.runtimeServerUrl ?? '';
 
   // --- /spaces routes ---
   if (db && jwtSecret) {
@@ -273,6 +295,188 @@ export function createRouter(
       if (result === 'not_member') return c.json({ error: 'not_member' }, 401);
       return c.json(result);
     });
+  }
+
+  // --- /cloud-admin/v1 routes ---
+  if (db) {
+    app.post(`${CLOUD_ADMIN_API_PREFIX}/spaces`, async (c) => {
+      if (!cloudAdminToken) {
+        return c.json({ error: 'cloud_admin_unconfigured' }, 503);
+      }
+
+      const authHeader =
+        c.req.header('Authorization') ?? c.req.header('authorization');
+      if (!isValidCloudAdminAuth(authHeader, cloudAdminToken)) {
+        return c.json({ error: 'invalid_service_authorization' }, 401);
+      }
+
+      let body: unknown;
+      try {
+        body = await c.req.json();
+      } catch {
+        return c.json({ error: 'invalid_json' }, 400);
+      }
+      if (!isNonArrayRecord(body)) {
+        return c.json({ error: 'invalid_payload' }, 400);
+      }
+
+      const forbiddenKey =
+        TEAMEM_CLOUD_BOUNDARIES.runtimeForbiddenCloudFields.find(
+          (key) => key in body
+        );
+      if (forbiddenKey) {
+        return c.json(
+          { error: 'forbidden_runtime_metadata', field: forbiddenKey },
+          400
+        );
+      }
+
+      if (!isValidCloudAdminCreateSpaceRequest(body)) {
+        return c.json({ error: 'invalid_payload' }, 400);
+      }
+
+      const result = createCloudAdminSpace(db, {
+        label: body.label,
+        idempotencyKey: body.idempotencyKey,
+        controlPlaneSpaceId: body.controlPlaneSpaceId,
+        provisioningRequestId: body.provisioningRequestId,
+        runtimeServerUrl
+      });
+
+      if (result === 'idempotency_conflict') {
+        return c.json({ error: 'idempotency_conflict' }, 409);
+      }
+      if (result === 'control_plane_space_conflict') {
+        return c.json({ error: 'control_plane_space_conflict' }, 409);
+      }
+
+      return c.json(result, 201);
+    });
+
+    app.post(
+      `${CLOUD_ADMIN_API_PREFIX}/spaces/:runtimeSpaceId/room-code`,
+      async (c) => {
+        if (!cloudAdminToken) {
+          return c.json({ error: 'cloud_admin_unconfigured' }, 503);
+        }
+
+        const authHeader =
+          c.req.header('Authorization') ?? c.req.header('authorization');
+        if (!isValidCloudAdminAuth(authHeader, cloudAdminToken)) {
+          return c.json({ error: 'invalid_service_authorization' }, 401);
+        }
+
+        let body: unknown;
+        try {
+          body = await c.req.json();
+        } catch {
+          return c.json({ error: 'invalid_json' }, 400);
+        }
+        if (!isNonArrayRecord(body)) {
+          return c.json({ error: 'invalid_payload' }, 400);
+        }
+
+        const forbiddenKey =
+          TEAMEM_CLOUD_BOUNDARIES.runtimeForbiddenCloudFields.find(
+            (key) => key in body
+          );
+        if (forbiddenKey) {
+          return c.json(
+            { error: 'forbidden_runtime_metadata', field: forbiddenKey },
+            400
+          );
+        }
+
+        const runtimeSpaceId = c.req.param('runtimeSpaceId');
+        if (
+          !isValidCloudAdminRotateRoomCodeRequest(body) ||
+          body.runtimeSpaceId !== runtimeSpaceId
+        ) {
+          return c.json({ error: 'invalid_payload' }, 400);
+        }
+
+        const result = rotateCloudAdminRoomCode(db, {
+          controlPlaneSpaceId: body.controlPlaneSpaceId,
+          runtimeSpaceId: body.runtimeSpaceId,
+          idempotencyKey: body.idempotencyKey
+        });
+
+        if (result === 'space_not_found') {
+          return c.json({ error: 'space_not_found' }, 404);
+        }
+        if (result === 'control_plane_space_mismatch') {
+          return c.json({ error: 'control_plane_space_mismatch' }, 409);
+        }
+        if (result === 'idempotency_conflict') {
+          return c.json({ error: 'idempotency_conflict' }, 409);
+        }
+
+        return c.json(result, 200);
+      }
+    );
+
+    app.post(
+      `${CLOUD_ADMIN_API_PREFIX}/spaces/:runtimeSpaceId/soft-delete`,
+      async (c) => {
+        if (!cloudAdminToken) {
+          return c.json({ error: 'cloud_admin_unconfigured' }, 503);
+        }
+
+        const authHeader =
+          c.req.header('Authorization') ?? c.req.header('authorization');
+        if (!isValidCloudAdminAuth(authHeader, cloudAdminToken)) {
+          return c.json({ error: 'invalid_service_authorization' }, 401);
+        }
+
+        let body: unknown;
+        try {
+          body = await c.req.json();
+        } catch {
+          return c.json({ error: 'invalid_json' }, 400);
+        }
+        if (!isNonArrayRecord(body)) {
+          return c.json({ error: 'invalid_payload' }, 400);
+        }
+
+        const forbiddenKey =
+          TEAMEM_CLOUD_BOUNDARIES.runtimeForbiddenCloudFields.find(
+            (key) => key in body
+          );
+        if (forbiddenKey) {
+          return c.json(
+            { error: 'forbidden_runtime_metadata', field: forbiddenKey },
+            400
+          );
+        }
+
+        const runtimeSpaceId = c.req.param('runtimeSpaceId');
+        if (
+          !isValidCloudAdminSoftDeleteSpaceRequest(body) ||
+          body.runtimeSpaceId !== runtimeSpaceId
+        ) {
+          return c.json({ error: 'invalid_payload' }, 400);
+        }
+
+        const result = softDeleteCloudAdminSpace(db, {
+          controlPlaneSpaceId: body.controlPlaneSpaceId,
+          runtimeSpaceId: body.runtimeSpaceId,
+          idempotencyKey: body.idempotencyKey,
+          reason: body.reason
+        });
+
+        if (result === 'space_not_found') {
+          return c.json({ error: 'space_not_found' }, 404);
+        }
+        if (result === 'control_plane_space_mismatch') {
+          return c.json({ error: 'control_plane_space_mismatch' }, 409);
+        }
+        if (result === 'idempotency_conflict') {
+          return c.json({ error: 'idempotency_conflict' }, 409);
+        }
+
+        return c.json(result, 200);
+      }
+    );
   }
 
   // --- /mcp routes (MCP Streamable HTTP transport, spec 2025-11-25) ---
@@ -747,4 +951,64 @@ export function createRouter(
   });
 
   return app;
+}
+
+function isValidCloudAdminAuth(
+  authHeader: string | undefined,
+  expectedToken: string
+): boolean {
+  if (!authHeader?.startsWith('Bearer ')) return false;
+  const actualToken = authHeader.slice('Bearer '.length).trim();
+  const actual = Buffer.from(actualToken);
+  const expected = Buffer.from(expectedToken);
+  if (actual.length !== expected.length) return false;
+  return timingSafeEqual(actual, expected);
+}
+
+function isValidCloudAdminCreateSpaceRequest(
+  body: Record<string, unknown>
+): body is CloudAdminCreateSpaceRequest {
+  return (
+    typeof body.label === 'string' &&
+    body.label.trim().length > 0 &&
+    typeof body.idempotencyKey === 'string' &&
+    body.idempotencyKey.trim().length > 0 &&
+    typeof body.controlPlaneSpaceId === 'string' &&
+    body.controlPlaneSpaceId.trim().length > 0 &&
+    typeof body.provisioningRequestId === 'string' &&
+    body.provisioningRequestId.trim().length > 0
+  );
+}
+
+function isValidCloudAdminRotateRoomCodeRequest(
+  body: Record<string, unknown>
+): body is CloudAdminRotateRoomCodeRequest {
+  return (
+    typeof body.controlPlaneSpaceId === 'string' &&
+    body.controlPlaneSpaceId.trim().length > 0 &&
+    typeof body.runtimeSpaceId === 'string' &&
+    body.runtimeSpaceId.trim().length > 0 &&
+    typeof body.idempotencyKey === 'string' &&
+    body.idempotencyKey.trim().length > 0
+  );
+}
+
+function isValidCloudAdminSoftDeleteSpaceRequest(
+  body: Record<string, unknown>
+): body is CloudAdminSoftDeleteSpaceRequest {
+  return (
+    typeof body.controlPlaneSpaceId === 'string' &&
+    body.controlPlaneSpaceId.trim().length > 0 &&
+    typeof body.runtimeSpaceId === 'string' &&
+    body.runtimeSpaceId.trim().length > 0 &&
+    typeof body.idempotencyKey === 'string' &&
+    body.idempotencyKey.trim().length > 0 &&
+    (body.reason === 'owner_requested' ||
+      body.reason === 'quota_reclaim' ||
+      body.reason === 'operator_action')
+  );
+}
+
+function isNonArrayRecord(body: unknown): body is Record<string, unknown> {
+  return typeof body === 'object' && body !== null && !Array.isArray(body);
 }

@@ -7,6 +7,7 @@ import { SqliteEventStore } from '../infra/db/sqlite-event-store.js';
 import { createTeamemTools } from './tools/index.js';
 import { createRouter } from './routes.js';
 import { requireJwtSecret } from './jwt.js';
+import { resolveCloudAdminProvisioningToken } from './cloud-admin-token.js';
 import { createRequireMemberMiddleware } from './auth.js';
 import { gcDisbandedSpaces } from './spaces.js';
 import { gcExpiredPendingEdits } from '../domain/conflicts/pending-edits.js';
@@ -108,7 +109,11 @@ export function createServer(
   const store = new SqliteEventStore(db);
   const tools = createTeamemTools({ db, store });
   const trustedOrigins = env.TEAMEM_TRUSTED_ORIGINS?.split(',').filter(Boolean);
-  const router = createRouter(tools, db, jwtSecret, trustedOrigins);
+  const cloudAdminProvisioningToken = resolveCloudAdminProvisioningToken(env);
+  const router = createRouter(tools, db, jwtSecret, trustedOrigins, {
+    provisioningToken: cloudAdminProvisioningToken,
+    runtimeServerUrl: env.TEAMEM_PUBLIC_URL ?? `http://localhost:${port}`
+  });
   const requireMember = createRequireMemberMiddleware(jwtSecret, db);
 
   const app = new Hono();

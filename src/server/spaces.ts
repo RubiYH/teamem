@@ -23,6 +23,10 @@ interface SpaceRow {
   created_at: string;
   disbanded_at: string | null;
   disbanded_grace_until: string | null;
+  cloud_provisioning_source?: string | null;
+  cloud_control_plane_space_id?: string | null;
+  cloud_provisioning_request_id?: string | null;
+  cloud_idempotency_key?: string | null;
 }
 
 function generateRoomCode(db: Database): string {
@@ -74,6 +78,374 @@ export async function createSpace(
 
   const jwt = await signJwt({ sub: opts.member_name, space_id }, secret);
   return { space_id, label, room_code, member_id, jwt };
+}
+
+export type CloudAdminCreateSpaceInput = {
+  label: string;
+  idempotencyKey: string;
+  controlPlaneSpaceId: string;
+  provisioningRequestId: string;
+  runtimeServerUrl: string;
+};
+
+export type CloudAdminCreateSpaceResult = {
+  controlPlaneSpaceId: string;
+  runtimeSpaceId: string;
+  label: string;
+  roomCode: string;
+  runtimeServerUrl: string;
+  status: 'active';
+  correlation: {
+    source: 'teamem-cloud';
+    controlPlaneSpaceId: string;
+    provisioningRequestId: string;
+  };
+};
+
+export type CloudAdminCreateSpaceError =
+  | 'idempotency_conflict'
+  | 'control_plane_space_conflict';
+
+export type CloudAdminRotateRoomCodeInput = {
+  controlPlaneSpaceId: string;
+  runtimeSpaceId: string;
+  idempotencyKey: string;
+};
+
+export type CloudAdminRotateRoomCodeResult = {
+  controlPlaneSpaceId: string;
+  runtimeSpaceId: string;
+  roomCode: string;
+};
+
+export type CloudAdminRotateRoomCodeError =
+  | 'space_not_found'
+  | 'control_plane_space_mismatch'
+  | 'idempotency_conflict';
+
+export type CloudAdminSoftDeleteSpaceInput = {
+  controlPlaneSpaceId: string;
+  runtimeSpaceId: string;
+  idempotencyKey: string;
+  reason: 'owner_requested' | 'quota_reclaim' | 'operator_action';
+};
+
+export type CloudAdminSoftDeleteSpaceResult = {
+  controlPlaneSpaceId: string;
+  runtimeSpaceId: string;
+  status: 'soft_deleted';
+  deletedAt: string;
+};
+
+export type CloudAdminSoftDeleteSpaceError =
+  | 'space_not_found'
+  | 'control_plane_space_mismatch'
+  | 'idempotency_conflict';
+
+export function createCloudAdminSpace(
+  db: Database,
+  opts: CloudAdminCreateSpaceInput
+): CloudAdminCreateSpaceResult | CloudAdminCreateSpaceError {
+  return db
+    .transaction(() => {
+      const existingByIdempotencyKey = db
+        .prepare(
+          `SELECT s.id, s.label, s.cloud_control_plane_space_id, s.cloud_provisioning_request_id,
+                  rc.code AS room_code
+             FROM spaces s
+             JOIN room_codes rc ON rc.space_id = s.id
+            WHERE s.cloud_idempotency_key = ?1`
+        )
+        .get(opts.idempotencyKey) as
+        | {
+            id: string;
+            label: string;
+            cloud_control_plane_space_id: string;
+            cloud_provisioning_request_id: string;
+            room_code: string;
+          }
+        | undefined;
+
+      if (existingByIdempotencyKey) {
+        if (
+          existingByIdempotencyKey.cloud_control_plane_space_id !==
+            opts.controlPlaneSpaceId ||
+          existingByIdempotencyKey.cloud_provisioning_request_id !==
+            opts.provisioningRequestId ||
+          existingByIdempotencyKey.label !== opts.label
+        ) {
+          return 'idempotency_conflict' as const;
+        }
+        return buildCloudAdminCreateSpaceResult({
+          runtimeSpaceId: existingByIdempotencyKey.id,
+          label: existingByIdempotencyKey.label,
+          roomCode: existingByIdempotencyKey.room_code,
+          runtimeServerUrl: opts.runtimeServerUrl,
+          controlPlaneSpaceId: opts.controlPlaneSpaceId,
+          provisioningRequestId: opts.provisioningRequestId
+        });
+      }
+
+      const existingByControlPlaneId = db
+        .prepare(
+          `SELECT 1
+             FROM spaces
+            WHERE cloud_control_plane_space_id = ?1`
+        )
+        .get(opts.controlPlaneSpaceId);
+      if (existingByControlPlaneId) {
+        return 'control_plane_space_conflict' as const;
+      }
+
+      const space_id = ulid();
+      const member_id = ulid();
+      const room_code = generateRoomCode(db);
+      const expires_at = new Date(
+        Date.now() + ROOM_CODE_TTL_SECONDS * 1000
+      ).toISOString();
+
+      db.prepare(
+        `INSERT INTO spaces (
+          id,
+          label,
+          creator_member_id,
+          cloud_provisioning_source,
+          cloud_control_plane_space_id,
+          cloud_provisioning_request_id,
+          cloud_idempotency_key
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)`
+      ).run(
+        space_id,
+        opts.label,
+        member_id,
+        'teamem-cloud',
+        opts.controlPlaneSpaceId,
+        opts.provisioningRequestId,
+        opts.idempotencyKey
+      );
+
+      db.prepare(
+        `INSERT INTO members (id, space_id, name, is_creator) VALUES (?, ?, ?, 1)`
+      ).run(member_id, space_id, 'teamem-cloud');
+
+      db.prepare(
+        `INSERT INTO room_codes (space_id, code, expires_at) VALUES (?, ?, ?)`
+      ).run(space_id, room_code, expires_at);
+
+      return buildCloudAdminCreateSpaceResult({
+        runtimeSpaceId: space_id,
+        label: opts.label,
+        roomCode: room_code,
+        runtimeServerUrl: opts.runtimeServerUrl,
+        controlPlaneSpaceId: opts.controlPlaneSpaceId,
+        provisioningRequestId: opts.provisioningRequestId
+      });
+    })
+    .immediate();
+}
+
+export function rotateCloudAdminRoomCode(
+  db: Database,
+  opts: CloudAdminRotateRoomCodeInput
+): CloudAdminRotateRoomCodeResult | CloudAdminRotateRoomCodeError {
+  return db
+    .transaction(() => {
+      const requestJson = JSON.stringify({
+        controlPlaneSpaceId: opts.controlPlaneSpaceId,
+        runtimeSpaceId: opts.runtimeSpaceId
+      });
+      const existingIdempotency = db
+        .prepare(
+          `SELECT request_json, response_json
+             FROM cloud_admin_room_code_rotations
+            WHERE idempotency_key = ?1`
+        )
+        .get(opts.idempotencyKey) as
+        | { request_json: string; response_json: string }
+        | undefined;
+
+      if (existingIdempotency) {
+        if (existingIdempotency.request_json !== requestJson) {
+          return 'idempotency_conflict' as const;
+        }
+        return JSON.parse(
+          existingIdempotency.response_json
+        ) as CloudAdminRotateRoomCodeResult;
+      }
+
+      const space = db
+        .prepare(
+          `SELECT id, cloud_control_plane_space_id
+             FROM spaces
+            WHERE id = ?1
+              AND cloud_provisioning_source = 'teamem-cloud'
+              AND disbanded_at IS NULL`
+        )
+        .get(opts.runtimeSpaceId) as
+        | { id: string; cloud_control_plane_space_id: string | null }
+        | undefined;
+
+      if (!space) {
+        return 'space_not_found' as const;
+      }
+      if (space.cloud_control_plane_space_id !== opts.controlPlaneSpaceId) {
+        return 'control_plane_space_mismatch' as const;
+      }
+
+      const roomCode = generateRoomCode(db);
+      const expiresAt = new Date(
+        Date.now() + ROOM_CODE_TTL_SECONDS * 1000
+      ).toISOString();
+
+      db.prepare(
+        `INSERT INTO room_codes (space_id, code, expires_at) VALUES (?1, ?2, ?3)
+         ON CONFLICT(space_id) DO UPDATE SET
+           code = excluded.code,
+           expires_at = excluded.expires_at,
+           created_at = datetime('now')`
+      ).run(space.id, roomCode, expiresAt);
+
+      const result = {
+        controlPlaneSpaceId: opts.controlPlaneSpaceId,
+        runtimeSpaceId: space.id,
+        roomCode
+      };
+      db.prepare(
+        `INSERT INTO cloud_admin_room_code_rotations (
+          idempotency_key,
+          space_id,
+          control_plane_space_id,
+          room_code,
+          request_json,
+          response_json
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)`
+      ).run(
+        opts.idempotencyKey,
+        space.id,
+        opts.controlPlaneSpaceId,
+        roomCode,
+        requestJson,
+        JSON.stringify(result)
+      );
+
+      return result;
+    })
+    .immediate();
+}
+
+export function softDeleteCloudAdminSpace(
+  db: Database,
+  opts: CloudAdminSoftDeleteSpaceInput
+): CloudAdminSoftDeleteSpaceResult | CloudAdminSoftDeleteSpaceError {
+  return db
+    .transaction(() => {
+      const requestJson = JSON.stringify({
+        controlPlaneSpaceId: opts.controlPlaneSpaceId,
+        runtimeSpaceId: opts.runtimeSpaceId,
+        reason: opts.reason
+      });
+      const existingIdempotency = db
+        .prepare(
+          `SELECT request_json, response_json
+             FROM cloud_admin_space_soft_deletions
+            WHERE idempotency_key = ?1`
+        )
+        .get(opts.idempotencyKey) as
+        | { request_json: string; response_json: string }
+        | undefined;
+
+      if (existingIdempotency) {
+        if (existingIdempotency.request_json !== requestJson) {
+          return 'idempotency_conflict' as const;
+        }
+        return JSON.parse(
+          existingIdempotency.response_json
+        ) as CloudAdminSoftDeleteSpaceResult;
+      }
+
+      const space = db
+        .prepare(
+          `SELECT id, cloud_control_plane_space_id, disbanded_at
+             FROM spaces
+            WHERE id = ?1
+              AND cloud_provisioning_source = 'teamem-cloud'`
+        )
+        .get(opts.runtimeSpaceId) as
+        | {
+            id: string;
+            cloud_control_plane_space_id: string | null;
+            disbanded_at: string | null;
+          }
+        | undefined;
+
+      if (!space) {
+        return 'space_not_found' as const;
+      }
+      if (space.cloud_control_plane_space_id !== opts.controlPlaneSpaceId) {
+        return 'control_plane_space_mismatch' as const;
+      }
+
+      const deletedAt = space.disbanded_at ?? new Date().toISOString();
+      const graceUntil = new Date(
+        Date.now() + DISBAND_GRACE_SECONDS * 1000
+      ).toISOString();
+      db.prepare(
+        `UPDATE spaces
+            SET disbanded_at = ?2,
+                disbanded_grace_until = ?3
+          WHERE id = ?1 AND disbanded_at IS NULL`
+      ).run(space.id, deletedAt, graceUntil);
+
+      const result: CloudAdminSoftDeleteSpaceResult = {
+        controlPlaneSpaceId: opts.controlPlaneSpaceId,
+        runtimeSpaceId: space.id,
+        status: 'soft_deleted',
+        deletedAt
+      };
+      db.prepare(
+        `INSERT INTO cloud_admin_space_soft_deletions (
+          idempotency_key,
+          space_id,
+          control_plane_space_id,
+          reason,
+          request_json,
+          response_json
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)`
+      ).run(
+        opts.idempotencyKey,
+        space.id,
+        opts.controlPlaneSpaceId,
+        opts.reason,
+        requestJson,
+        JSON.stringify(result)
+      );
+
+      return result;
+    })
+    .immediate();
+}
+
+function buildCloudAdminCreateSpaceResult(input: {
+  runtimeSpaceId: string;
+  label: string;
+  roomCode: string;
+  runtimeServerUrl: string;
+  controlPlaneSpaceId: string;
+  provisioningRequestId: string;
+}): CloudAdminCreateSpaceResult {
+  return {
+    controlPlaneSpaceId: input.controlPlaneSpaceId,
+    runtimeSpaceId: input.runtimeSpaceId,
+    label: input.label,
+    roomCode: input.roomCode,
+    runtimeServerUrl: input.runtimeServerUrl,
+    status: 'active',
+    correlation: {
+      source: 'teamem-cloud',
+      controlPlaneSpaceId: input.controlPlaneSpaceId,
+      provisioningRequestId: input.provisioningRequestId
+    }
+  };
 }
 
 export type JoinError =
@@ -427,7 +799,9 @@ const HARD_CASCADE_TABLES = [
   'finding_acknowledgements',
   'unread_notifications',
   'cursors',
-  'room_codes'
+  'room_codes',
+  'cloud_admin_room_code_rotations',
+  'cloud_admin_space_soft_deletions'
 ] as const;
 
 export type WipeError = 'not_creator' | 'space_disbanded';

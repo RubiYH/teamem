@@ -1,6 +1,7 @@
 node_modules
 dist
 coverage
+apps/web/.next/
 .omc/
 .omx/
 bun.lock
