@@ -28,6 +28,7 @@ TEAMEM.md
 .omc/
 .omx/
 .scratch/
+.claude/
 .cache/
 .playwright-mcp/
 logs/

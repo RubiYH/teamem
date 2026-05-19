@@ -1379,13 +1379,13 @@ async function saveCredentials(creds, credPath) {
   await rename(tmpPath, path);
   await chmod(path, 384);
 }
-async function appendEntry(entry, credPath) {
+async function appendEntry(entry, credPath, options = {}) {
   let creds = await loadCredentials(credPath);
   if (!creds) {
     creds = { version: 1, default_space_id: null, spaces: {} };
   }
   creds.spaces[entry.space_id] = entry;
-  if (!creds.default_space_id) {
+  if (options.makeDefault || !creds.default_space_id) {
     creds.default_space_id = entry.space_id;
   }
   await saveCredentials(creds, credPath);
@@ -1543,11 +1543,12 @@ function parseNonInteractive() {
   }
 }
 async function runNonInteractive(opts) {
-  const baseUrl = opts.serverUrl.replace(/\/$/, "");
+  const baseUrl = opts.serverUrl.trim().replace(/\/$/, "");
+  const memberName = opts.memberName.trim();
   if (opts.flow === "create") {
-    const body = { member_name: opts.memberName };
-    if (opts.spaceLabel)
-      body.label = opts.spaceLabel;
+    const body = { member_name: memberName };
+    if (opts.spaceLabel?.trim())
+      body.label = opts.spaceLabel.trim();
     let res;
     try {
       res = await fetch(`${baseUrl}/spaces`, {
@@ -1572,19 +1573,20 @@ async function runNonInteractive(opts) {
     const entry = {
       space_id: data.space_id,
       label: data.label ?? opts.spaceLabel ?? data.space_id,
-      member_name: opts.memberName,
+      member_name: memberName,
       jwt: data.jwt,
       jwt_exp: payload.exp,
       server_url: baseUrl
     };
-    await appendEntry(entry, opts.credPath);
+    await appendEntry(entry, opts.credPath, { makeDefault: true });
     process.stdout.write(`Your room code: ${data.room_code}
 ${AC24_WARNING}
 `);
     process.stdout.write(`Space created. Credentials saved.
 `);
   } else {
-    if (!opts.roomCode) {
+    const roomCode = opts.roomCode?.trim();
+    if (!roomCode) {
       process.stderr.write(`room_code required for join flow
 `);
       process.exit(1);
@@ -1595,8 +1597,8 @@ ${AC24_WARNING}
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          room_code: opts.roomCode,
-          member_name: opts.memberName
+          room_code: roomCode,
+          member_name: memberName
         })
       });
     } catch (err) {
@@ -1614,7 +1616,7 @@ ${AC24_WARNING}
         process.stderr.write(`Room code has expired. Ask your team to rotate it.
 `);
       } else if (errCode === "name_taken") {
-        process.stderr.write(`Name '${opts.memberName}' is already taken in this space.
+        process.stderr.write(`Name '${memberName}' is already taken in this space.
 `);
       } else {
         process.stderr.write(`Server error ${res.status}: ${errCode ?? "unknown"}
@@ -1628,12 +1630,12 @@ ${AC24_WARNING}
     const entry = {
       space_id: data.space_id,
       label: data.label ?? data.space_id,
-      member_name: opts.memberName,
+      member_name: memberName,
       jwt: data.jwt,
       jwt_exp: payload.exp,
       server_url: baseUrl
     };
-    await appendEntry(entry, opts.credPath);
+    await appendEntry(entry, opts.credPath, { makeDefault: true });
     process.stdout.write(`Joined space ${data.space_id}
 `);
     process.stdout.write(`Credentials saved.
@@ -1717,7 +1719,7 @@ async function runInteractive() {
       jwt_exp: payload.exp,
       server_url: baseUrl
     };
-    await appendEntry(entry);
+    await appendEntry(entry, undefined, { makeDefault: true });
     const coordPref = await promptCoordPref();
     await applyCoordPref(baseUrl, data.jwt, coordPref);
     printRoomCode(data.room_code);
@@ -1771,7 +1773,7 @@ async function runInteractive() {
       jwt_exp: payload.exp,
       server_url: baseUrl
     };
-    await appendEntry(entry);
+    await appendEntry(entry, undefined, { makeDefault: true });
     R2.success(`Joined space ${data.space_id}`);
     const coordPref = await promptCoordPref();
     await applyCoordPref(baseUrl, data.jwt, coordPref);

@@ -256,6 +256,13 @@ describe('appendEntry', () => {
     const loaded = await loadCredentials(credPath);
     expect(loaded!.default_space_id).toBe('sp-abc');
   });
+
+  it('can promote an appended entry to default for explicit setup flows', async () => {
+    await appendEntry(VALID_ENTRY, credPath);
+    await appendEntry(VALID_ENTRY_2, credPath, { makeDefault: true });
+    const loaded = await loadCredentials(credPath);
+    expect(loaded!.default_space_id).toBe('sp-xyz');
+  });
 });
 
 describe('bridge_dir field', () => {

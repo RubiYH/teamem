@@ -155,11 +155,12 @@ function parseNonInteractive(): NonInteractiveArgs | null {
 }
 
 async function runNonInteractive(opts: NonInteractiveArgs) {
-  const baseUrl = opts.serverUrl.replace(/\/$/, '');
+  const baseUrl = opts.serverUrl.trim().replace(/\/$/, '');
+  const memberName = opts.memberName.trim();
 
   if (opts.flow === 'create') {
-    const body: Record<string, string> = { member_name: opts.memberName };
-    if (opts.spaceLabel) body.label = opts.spaceLabel;
+    const body: Record<string, string> = { member_name: memberName };
+    if (opts.spaceLabel?.trim()) body.label = opts.spaceLabel.trim();
 
     let res: Response;
     try {
@@ -200,13 +201,13 @@ async function runNonInteractive(opts: NonInteractiveArgs) {
       // Trust the server's label so `space disband`'s label_confirmation
       // matches what's actually stored (security review P2#3).
       label: data.label ?? opts.spaceLabel ?? data.space_id,
-      member_name: opts.memberName,
+      member_name: memberName,
       jwt: data.jwt,
       jwt_exp: payload.exp,
       server_url: baseUrl
     };
 
-    await appendEntry(entry, opts.credPath);
+    await appendEntry(entry, opts.credPath, { makeDefault: true });
     // Print room code + AC24 warning to stdout for E2E assertion
     process.stdout.write(
       `Your room code: ${data.room_code}\n${AC24_WARNING}\n`
@@ -216,7 +217,8 @@ async function runNonInteractive(opts: NonInteractiveArgs) {
     // fresh marketplace install has no source-tree path to resolve and that
     // is the supported shape (ADR-0003, ADR-0006).
   } else {
-    if (!opts.roomCode) {
+    const roomCode = opts.roomCode?.trim();
+    if (!roomCode) {
       process.stderr.write('room_code required for join flow\n');
       process.exit(1);
     }
@@ -227,8 +229,8 @@ async function runNonInteractive(opts: NonInteractiveArgs) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          room_code: opts.roomCode,
-          member_name: opts.memberName
+          room_code: roomCode,
+          member_name: memberName
         })
       });
     } catch (err) {
@@ -252,7 +254,7 @@ async function runNonInteractive(opts: NonInteractiveArgs) {
         );
       } else if (errCode === 'name_taken') {
         process.stderr.write(
-          `Name '${opts.memberName}' is already taken in this space.\n`
+          `Name '${memberName}' is already taken in this space.\n`
         );
       } else {
         process.stderr.write(
@@ -275,13 +277,13 @@ async function runNonInteractive(opts: NonInteractiveArgs) {
     const entry: CredentialEntry = {
       space_id: data.space_id,
       label: data.label ?? data.space_id,
-      member_name: opts.memberName,
+      member_name: memberName,
       jwt: data.jwt,
       jwt_exp: payload.exp,
       server_url: baseUrl
     };
 
-    await appendEntry(entry, opts.credPath);
+    await appendEntry(entry, opts.credPath, { makeDefault: true });
     process.stdout.write(`Joined space ${data.space_id}\n`);
     process.stdout.write('Credentials saved.\n');
     // F5: no bridge_dir gate. The plugin owns the hook lifecycle in v1; a
@@ -391,7 +393,7 @@ async function runInteractive() {
       server_url: baseUrl
     };
 
-    await appendEntry(entry);
+    await appendEntry(entry, undefined, { makeDefault: true });
     const coordPref = await promptCoordPref();
     await applyCoordPref(baseUrl, data.jwt, coordPref);
     printRoomCode(data.room_code);
@@ -465,7 +467,7 @@ async function runInteractive() {
       server_url: baseUrl
     };
 
-    await appendEntry(entry);
+    await appendEntry(entry, undefined, { makeDefault: true });
     log.success(`Joined space ${data.space_id}`);
     const coordPref = await promptCoordPref();
     await applyCoordPref(baseUrl, data.jwt, coordPref);

@@ -215,7 +215,8 @@ export async function pruneEntry(
 
 export async function appendEntry(
   entry: CredentialEntry,
-  credPath?: string
+  credPath?: string,
+  options: { makeDefault?: boolean } = {}
 ): Promise<void> {
   let creds = await loadCredentials(credPath);
   if (!creds) {
@@ -224,7 +225,7 @@ export async function appendEntry(
 
   creds.spaces[entry.space_id] = entry;
 
-  if (!creds.default_space_id) {
+  if (options.makeDefault || !creds.default_space_id) {
     creds.default_space_id = entry.space_id;
   }
 

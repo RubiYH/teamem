@@ -5,7 +5,7 @@
  */
 import { describe, expect, it, beforeEach, afterEach } from 'bun:test';
 import { runAllMigrations } from '../helpers/migrations.js';
-import { mkdtemp, rm, stat, readFile } from 'node:fs/promises';
+import { mkdtemp, rm, stat, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
@@ -131,6 +131,51 @@ describe('AC11 — setup join flow', () => {
     const entries = Object.values(creds.spaces);
     expect(entries).toHaveLength(1);
     expect(entries[0].member_name).toBe('bob');
+  });
+
+  it('makes an explicitly joined space the default over stale credentials', async () => {
+    const credPath = join(tmpDir, 'credentials.json');
+    const serverUrl = `http://127.0.0.1:${serverPort}`;
+    await writeFile(
+      credPath,
+      JSON.stringify(
+        {
+          version: 1,
+          default_space_id: 'stale-space',
+          spaces: {
+            'stale-space': {
+              space_id: 'stale-space',
+              label: 'stale-local',
+              member_name: 'old-user',
+              jwt: 'stale.jwt.value',
+              jwt_exp: Math.floor(Date.now() / 1000) + 3600,
+              server_url: 'http://localhost:39999'
+            }
+          }
+        },
+        null,
+        2
+      ),
+      'utf-8'
+    );
+
+    const result = await runSetup({
+      serverUrl,
+      flow: 'join',
+      memberName: 'bob',
+      roomCode,
+      credPath
+    });
+
+    expect(result.exitCode).toBe(0);
+    const raw = await readFile(credPath, 'utf-8');
+    const creds = JSON.parse(raw) as {
+      default_space_id: string;
+      spaces: Record<string, { member_name: string; server_url: string }>;
+    };
+    expect(creds.default_space_id).not.toBe('stale-space');
+    expect(creds.spaces[creds.default_space_id]?.member_name).toBe('bob');
+    expect(creds.spaces[creds.default_space_id]?.server_url).toBe(serverUrl);
   });
 
   it('exits with code 1 and clear error message for invalid room code', async () => {
