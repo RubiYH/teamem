@@ -3,10 +3,14 @@
 import { useState } from 'react';
 
 export function CopyButton({
-  label,
+  ariaLabel,
+  copiedLabel,
+  copyLabel,
   value
 }: {
-  label: string;
+  ariaLabel: string;
+  copiedLabel: string;
+  copyLabel: string;
   value: string | null;
 }) {
   const [copied, setCopied] = useState(false);
@@ -23,13 +27,13 @@ export function CopyButton({
 
   return (
     <button
-      aria-label={`Copy ${label}`}
+      aria-label={ariaLabel}
       className="border border-border bg-muted px-2 py-1 text-xs font-medium text-foreground disabled:cursor-not-allowed disabled:opacity-50"
       disabled={isDisabled}
       onClick={copyValue}
       type="button"
     >
-      {copied ? 'Copied' : 'Copy'}
+      {copied ? copiedLabel : copyLabel}
     </button>
   );
 }

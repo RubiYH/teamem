@@ -1,0 +1,189 @@
+{
+  "Metadata": {
+    "default": {
+      "title": "Teamem Cloud",
+      "description": "Managed Teamem setup for humans and their coding agents."
+    },
+    "landing": {
+      "title": "Teamem Cloud | Managed team memory",
+      "description": "Create a hosted Teamem Space for Claude Code teams and keep claims, briefings, decisions, discussions, and Space Rules in sync without self-hosting."
+    },
+    "login": {
+      "title": "Sign in to Teamem Cloud",
+      "description": "Sign in to Teamem Cloud with OAuth while keeping runtime Teamem member identity separate from your web account."
+    },
+    "dashboard": {
+      "title": "Teamem Cloud Dashboard",
+      "description": "Create and manage your Teamem Cloud Space, setup command, hosted runtime URL, and room code."
+    }
+  },
+  "LandingPage": {
+    "brand": "Teamem Cloud",
+    "nav": {
+      "label": "Primary",
+      "selfHost": "Self-host",
+      "start": "Start"
+    },
+    "hero": {
+      "eyebrow": "Managed Teamem server for Claude Code teams",
+      "title": "Teamem Cloud",
+      "tagline": "Teamem is team memory for humans and their coding agents.",
+      "description": "Create a hosted Teamem Space, copy the setup command, and keep using the current Claude Code plugin, bridge, git hooks, room codes, claims, briefings, decisions, discussions, and Space Rules without running the shared server yourself.",
+      "primaryCta": "Start with Teamem Cloud",
+      "secondaryCta": "Self-host instead"
+    },
+    "setup": {
+      "label": "Teamem Cloud setup path",
+      "title": "Managed-server path",
+      "description": "Cloud provisions the hosted runtime. Your team still joins through the existing local Teamem setup flow.",
+      "steps": [
+        "Log in and explicitly create one free managed Space.",
+        "Copy the hosted server URL, room code, and setup command.",
+        "Run the normal CLI/plugin onboarding, then launch Claude Code."
+      ],
+      "note": "Self-hosting remains available for teams that want to operate their own Teamem server. Cloud is the fastest managed path."
+    },
+    "capabilities": {
+      "label": "Current Teamem capabilities",
+      "rows": [
+        {
+          "label": "Shared work context",
+          "text": "Briefings give every Claude Code session the current plan, active claims, recent decisions, risks, and progress before edits begin."
+        },
+        {
+          "label": "Scope coordination",
+          "text": "File and module claims make it clear who is changing what, then release through the existing git handoff flow."
+        },
+        {
+          "label": "Durable decisions",
+          "text": "Decisions, gotchas, discussions, and Space Rules keep team memory outside one local chat transcript."
+        },
+        {
+          "label": "Safer conflict avoidance",
+          "text": "Teamem surfaces competing work early so teammates can avoid duplicate Claude Code edits and late merge surprises."
+        }
+      ]
+    }
+  },
+  "LoginPage": {
+    "brand": "Teamem Cloud",
+    "title": "Sign in",
+    "description": "Use an OAuth account to access the Cloud dashboard. Runtime Teamem member identity is still chosen later in the local setup flow.",
+    "authError": "We could not complete sign-in. Try again with GitHub or Google.",
+    "actions": {
+      "github": {
+        "label": "Continue with GitHub",
+        "pending": "Opening GitHub..."
+      },
+      "google": {
+        "label": "Continue with Google",
+        "pending": "Opening Google..."
+      }
+    }
+  },
+  "LocaleSwitcher": {
+    "label": "Language",
+    "switchToEnglish": "Switch language to English",
+    "switchToKorean": "Switch language to Korean"
+  },
+  "DashboardPage": {
+    "brand": "Teamem Cloud",
+    "webAccountOnly": "Web account only",
+    "eyebrow": "Control plane",
+    "title": "Dashboard",
+    "description": "You are signed in. This view creates and displays your Teamem Cloud Space while keeping web account identity separate from runtime member identity.",
+    "defaultSpaceDisplayName": "{displayName}'s Space",
+    "account": {
+      "title": "Account",
+      "text": "OAuth session is active for dashboard access. Runtime Teamem member identity is configured later in the local CLI/plugin setup."
+    },
+    "space": {
+      "label": "Space"
+    },
+    "setup": {
+      "runtimeServerLabel": "Runtime server",
+      "roomCodeLabel": "Room code",
+      "title": "Set up a teammate",
+      "bootstrapperPrefix": "Install the bootstrapper first if needed:",
+      "setupCommandLabel": "Setup command",
+      "setupCommandUnavailable": "Setup command will appear when runtime provisioning finishes.",
+      "launchPrefix": "After setup, launch Claude Code with",
+      "launchSuffix": "and verify from Claude with",
+      "verifyPrefix": "",
+      "unavailable": "Active setup details are unavailable while this Space is not active."
+    },
+    "roomCode": {
+      "title": "Room code",
+      "description": "Rotate the invite code for this Space.",
+      "unavailable": "Room-code rotation will be available when runtime provisioning finishes.",
+      "rotateLabel": "Rotate room code",
+      "rotatePendingLabel": "Rotating..."
+    },
+    "delete": {
+      "title": "Delete Space",
+      "description": "Soft-delete this runtime Space and release the free quota only after the runtime confirms deletion.",
+      "confirmLabel": "I understand this will disable active setup for this Space.",
+      "buttonLabel": "Delete Space",
+      "pendingLabel": "Deleting...",
+      "unavailable": "Delete is available after runtime provisioning finishes."
+    },
+    "quota": {
+      "title": "Free quota",
+      "blocked": "This account already has an active free Space, so creating another free Space is blocked by the control plane.",
+      "reasons": {
+        "activeFreeSpaceExists": "Active free Space exists",
+        "unknown": "Quota unavailable"
+      }
+    },
+    "retry": {
+      "title": "Retry provisioning",
+      "description": "Teamem kept this Space request reserved after an uncertain runtime response. Retry uses the same Space request and idempotency key.",
+      "buttonLabel": "Retry provisioning",
+      "pendingLabel": "Retrying..."
+    },
+    "create": {
+      "title": "Create free Space",
+      "description": "Name the Space before provisioning starts.",
+      "displayNameLabel": "Space display name",
+      "buttonLabel": "Create free Space",
+      "pendingLabel": "Creating..."
+    },
+    "copy": {
+      "copy": "Copy",
+      "copied": "Copied",
+      "aria": "Copy {label}"
+    },
+    "statuses": {
+      "create": {
+        "created": "Your free Space is active.",
+        "quota": "This account already has an active free Space.",
+        "displayName": "Enter a Space display name before creating the Space.",
+        "reconcile": "Runtime provisioning did not return a confirmed result. Free quota remains reserved while Teamem retries with the same Space request.",
+        "runtimeFailed": "Runtime provisioning failed with a confirmed terminal result. Try creating the Space again."
+      },
+      "rotate": {
+        "success": "Room code rotated.",
+        "missing": "No active Space was found for this account.",
+        "unavailable": "Runtime details are not ready for this Space.",
+        "reconcile": "Runtime rotated the room code, but dashboard metadata could not be fully saved.",
+        "failed": "Room-code rotation failed. The current code was not changed."
+      },
+      "delete": {
+        "success": "Space deleted. Free quota is available again.",
+        "confirm": "Confirm deletion before submitting.",
+        "missing": "No active Space was found for this account.",
+        "unavailable": "Runtime details are not ready for this Space.",
+        "reconcile": "Runtime deletion may have completed, but the dashboard could not fully save the result.",
+        "failed": "Runtime deletion failed. Free quota remains reserved for this Space."
+      },
+      "spaceStatus": {
+        "active": "active",
+        "provisioningPending": "provisioning pending",
+        "deletePending": "delete pending"
+      },
+      "spacePlan": {
+        "free": "Free"
+      }
+    }
+  }
+}

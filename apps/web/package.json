@@ -8,13 +8,15 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "smoke:deploy": "bun run scripts/deploy-smoke.ts"
+    "smoke:deploy": "bun run scripts/deploy-smoke.ts",
+    "smoke:i18n": "bun run scripts/i18n-smoke.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.47.10",
     "@vercel/analytics": "^2.0.1",
     "better-auth": "^1.2.0",
     "next": "^15.1.0",
+    "next-intl": "^4.12.0",
     "pg": "^8.13.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

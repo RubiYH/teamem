@@ -29,6 +29,7 @@ TEAMEM.md
 .omx/
 .scratch/
 .cache/
+.playwright-mcp/
 logs/
 *.log
 .docs/

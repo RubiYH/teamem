@@ -3,18 +3,20 @@
 import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
-import { auth } from '../../src/server/auth';
-import { createFreeSpaceForUser } from '../../src/server/create-free-space';
-import { deleteSpaceForUser } from '../../src/server/delete-space';
-import { rotateRoomCodeForUser } from '../../src/server/rotate-room-code';
+import { getLocale } from 'next-intl/server';
+import { auth } from '../../../src/server/auth';
+import { createFreeSpaceForUser } from '../../../src/server/create-free-space';
+import { deleteSpaceForUser } from '../../../src/server/delete-space';
+import { rotateRoomCodeForUser } from '../../../src/server/rotate-room-code';
 
 export async function createFreeSpaceAction(formData: FormData) {
+  const dashboardPath = await getDashboardPath();
   const session = await auth.api.getSession({
     headers: await headers()
   });
 
   if (!session) {
-    redirect('/login?from=/dashboard');
+    redirect(`${dashboardPath.login}?from=${dashboardPath.dashboard}`);
   }
 
   const spaceDisplayName = String(formData.get('spaceDisplayName') ?? '');
@@ -27,32 +29,33 @@ export async function createFreeSpaceAction(formData: FormData) {
     spaceDisplayName
   });
 
-  revalidatePath('/dashboard');
+  revalidatePath(dashboardPath.dashboard);
 
   if (result.ok) {
-    redirect('/dashboard?created=1');
+    redirect(`${dashboardPath.dashboard}?created=1`);
   }
 
   if (result.reason === 'active_free_space_exists') {
-    redirect('/dashboard?create=quota');
+    redirect(`${dashboardPath.dashboard}?create=quota`);
   }
   if (result.reason === 'display_name_required') {
-    redirect('/dashboard?create=display-name');
+    redirect(`${dashboardPath.dashboard}?create=display-name`);
   }
   if (result.reason === 'control_plane_reconciliation_required') {
-    redirect('/dashboard?create=reconcile');
+    redirect(`${dashboardPath.dashboard}?create=reconcile`);
   }
 
-  redirect('/dashboard?create=runtime-failed');
+  redirect(`${dashboardPath.dashboard}?create=runtime-failed`);
 }
 
 export async function rotateRoomCodeAction() {
+  const dashboardPath = await getDashboardPath();
   const session = await auth.api.getSession({
     headers: await headers()
   });
 
   if (!session) {
-    redirect('/login?from=/dashboard');
+    redirect(`${dashboardPath.login}?from=${dashboardPath.dashboard}`);
   }
 
   const result = await rotateRoomCodeForUser({
@@ -63,31 +66,32 @@ export async function rotateRoomCodeAction() {
     }
   });
 
-  revalidatePath('/dashboard');
+  revalidatePath(dashboardPath.dashboard);
 
   if (result.ok) {
-    redirect('/dashboard?rotate=success');
+    redirect(`${dashboardPath.dashboard}?rotate=success`);
   }
   if (result.reason === 'space_not_found') {
-    redirect('/dashboard?rotate=missing');
+    redirect(`${dashboardPath.dashboard}?rotate=missing`);
   }
   if (result.reason === 'runtime_details_missing') {
-    redirect('/dashboard?rotate=unavailable');
+    redirect(`${dashboardPath.dashboard}?rotate=unavailable`);
   }
   if (result.reason === 'control_plane_reconciliation_required') {
-    redirect('/dashboard?rotate=reconcile');
+    redirect(`${dashboardPath.dashboard}?rotate=reconcile`);
   }
 
-  redirect('/dashboard?rotate=failed');
+  redirect(`${dashboardPath.dashboard}?rotate=failed`);
 }
 
 export async function deleteSpaceAction(formData: FormData) {
+  const dashboardPath = await getDashboardPath();
   const session = await auth.api.getSession({
     headers: await headers()
   });
 
   if (!session) {
-    redirect('/login?from=/dashboard');
+    redirect(`${dashboardPath.login}?from=${dashboardPath.dashboard}`);
   }
 
   const result = await deleteSpaceForUser({
@@ -99,23 +103,32 @@ export async function deleteSpaceAction(formData: FormData) {
     confirmationAccepted: formData.get('confirmDelete') === 'on'
   });
 
-  revalidatePath('/dashboard');
+  revalidatePath(dashboardPath.dashboard);
 
   if (result.ok) {
-    redirect('/dashboard?delete=success');
+    redirect(`${dashboardPath.dashboard}?delete=success`);
   }
   if (result.reason === 'confirmation_required') {
-    redirect('/dashboard?delete=confirm');
+    redirect(`${dashboardPath.dashboard}?delete=confirm`);
   }
   if (result.reason === 'space_not_found') {
-    redirect('/dashboard?delete=missing');
+    redirect(`${dashboardPath.dashboard}?delete=missing`);
   }
   if (result.reason === 'runtime_details_missing') {
-    redirect('/dashboard?delete=unavailable');
+    redirect(`${dashboardPath.dashboard}?delete=unavailable`);
   }
   if (result.reason === 'control_plane_reconciliation_required') {
-    redirect('/dashboard?delete=reconcile');
+    redirect(`${dashboardPath.dashboard}?delete=reconcile`);
   }
 
-  redirect('/dashboard?delete=failed');
+  redirect(`${dashboardPath.dashboard}?delete=failed`);
+}
+
+async function getDashboardPath() {
+  const locale = await getLocale();
+
+  return {
+    dashboard: `/${locale}/dashboard`,
+    login: `/${locale}/login`
+  };
 }

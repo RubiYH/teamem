@@ -2,7 +2,13 @@
 
 import { useFormStatus } from 'react-dom';
 
-export function RotateRoomCodeButton() {
+export function RotateRoomCodeButton({
+  label,
+  pendingLabel
+}: {
+  label: string;
+  pendingLabel: string;
+}) {
   const { pending } = useFormStatus();
 
   return (
@@ -11,7 +17,7 @@ export function RotateRoomCodeButton() {
       disabled={pending}
       type="submit"
     >
-      {pending ? 'Rotating...' : 'Rotate room code'}
+      {pending ? pendingLabel : label}
     </button>
   );
 }
