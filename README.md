@@ -119,10 +119,11 @@ Claude Code plugin + git hooks
   -> SQLite event store and projections
 ```
 
-The main tool is `teamem.get_briefing`, which agents should call at session
-start and before non-trivial edits. Write coordination flows through
-`teamem.claim_scope`, `teamem.release_scope`, decisions, findings, discussions,
-and space-management tools.
+The main read tool is `teamem.get_briefing`, used for session start/resume,
+explicit refreshes, and whole-team context checks. Edit-time coordination should
+stay lighter: hooks and agents use `teamem.claim_scope`, `teamem.release_scope`,
+decisions, findings, discussions, and space-management tools instead of calling a
+full briefing before every edit.
 
 ## What You Get
 

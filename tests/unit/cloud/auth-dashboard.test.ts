@@ -29,15 +29,19 @@ const routeSource = readFileSync(
   'utf8'
 );
 const dashboardSource = readFileSync(
-  join(process.cwd(), 'apps/web/app/dashboard/page.tsx'),
+  join(process.cwd(), 'apps/web/app/[locale]/dashboard/page.tsx'),
   'utf8'
 );
 const loginSource = readFileSync(
-  join(process.cwd(), 'apps/web/app/login/login-actions.tsx'),
+  join(process.cwd(), 'apps/web/app/[locale]/login/login-actions.tsx'),
   'utf8'
 );
 const loginPageSource = readFileSync(
-  join(process.cwd(), 'apps/web/app/login/page.tsx'),
+  join(process.cwd(), 'apps/web/app/[locale]/login/page.tsx'),
+  'utf8'
+);
+const messagesSource = readFileSync(
+  join(process.cwd(), 'apps/web/messages/en.json'),
   'utf8'
 );
 
@@ -95,7 +99,9 @@ describe('Teamem Cloud OAuth dashboard shell', () => {
     expect(dashboardSource).toContain("dynamic = 'force-dynamic'");
     expect(dashboardSource).toContain('auth.api.getSession');
     expect(dashboardSource).toContain('headers: await headers()');
-    expect(dashboardSource).toContain("redirect('/login?from=/dashboard')");
+    expect(dashboardSource).toContain(
+      'redirect(`/${locale}/login?from=/${locale}/dashboard`)'
+    );
     expect(dashboardSource).toContain('getDashboardStateForUser');
     expect(dashboardSource).toContain('Dashboard');
   });
@@ -153,7 +159,7 @@ describe('Teamem Cloud OAuth dashboard shell', () => {
       'teamem_cli_setup_member_name',
       'teamem_plugin_runtime_principal'
     ]);
-    expect(dashboardSource).toContain('runtime member identity');
+    expect(messagesSource).toContain('runtime member identity');
     expect(authSource).not.toContain('runtimeMemberName');
     expect(authSource).not.toContain('runtimePrincipal');
   });

@@ -97,10 +97,11 @@ Claude Code plugin
   -> SQLite event store and projections
 ```
 
-핵심 도구는 `teamem.get_briefing`입니다. 에이전트는 세션 시작 시와 중요한
-편집 전에 이 도구를 호출해야 합니다. 쓰기 조율은 `teamem.claim_scope`,
+핵심 읽기 도구는 `teamem.get_briefing`입니다. 세션 시작/재개, 명시적인
+새로고침, 전체 팀 맥락 확인이 필요할 때 사용합니다. 편집 시점의 조율은
+매번 전체 브리핑을 호출하지 않고 `teamem.claim_scope`,
 `teamem.release_scope`, 결정, 발견 사항, 토론, 스페이스 관리 도구를 통해
-이루어집니다.
+더 가볍게 처리합니다.
 
 ## 제공 기능
 

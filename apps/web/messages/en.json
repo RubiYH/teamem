@@ -48,7 +48,7 @@
       "rows": [
         {
           "label": "Shared work context",
-          "text": "Briefings give every Claude Code session the current plan, active claims, recent decisions, risks, and progress before edits begin."
+          "text": "Briefings load at session start or resume so Claude Code gets the current plan, active claims, recent decisions, risks, and progress without repeating a full context fetch before every edit."
         },
         {
           "label": "Scope coordination",

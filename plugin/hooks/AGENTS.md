@@ -23,7 +23,7 @@ Claude Code lifecycle hook configuration and dispatch. Defines which hooks fire 
 
 ### Common Patterns
 
-- **SessionStart**: Runs `session-start.sh` on every session. This script fetches the briefing if Teamem is active. Timeout 5s.
+- **SessionStart**: Runs `session-start.sh` on every session. This script emits one stdout context line on startup/resume telling the main agent to fetch `teamem.get_briefing`, then runs the lightweight `teamem.session_sync` catch-up path. Timeout 5s.
 - **PreToolUse**: Runs `gate-claim.sh` before every tool use (Edit, Write, MultiEdit, NotebookEdit, apply_patch). This script calls `claim_scope` to reserve scope and refreshes existing claims. Timeout 30s because conflicts now queue immediately; stale `auto-discuss` prefs are degraded to the same queue path instead of opening disputes with no active negotiator runtime.
 - **Stop**: Runs `release-claims.sh` for telemetry only. Claims survive session end and release through git evidence, explicit release, TTL expiry, or force-release.
 - **Notification**: Intentionally empty. Discussion and alert delivery now come from Channels, SessionStart sync, stored threads, and unread notifications rather than watcher/negotiator subagents.
@@ -39,7 +39,7 @@ Claude Code lifecycle hook configuration and dispatch. Defines which hooks fire 
 
 ### Internal
 
-- `../scripts/session-start.sh` (SessionStart hook: fetches briefing)
+- `../scripts/session-start.sh` (SessionStart hook: injects briefing prompt and runs session sync)
 - `../scripts/gate-claim.sh` (PreToolUse hook: gate edits on claimed scope)
 - `../scripts/release-claims.sh` (Stop hook: telemetry-only release lifecycle note)
 

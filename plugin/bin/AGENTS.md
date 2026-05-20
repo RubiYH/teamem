@@ -38,7 +38,7 @@ Executable entry points for Teamem runtime operations. Thin wrappers that invoke
 
 - `lib/bridge.js` (MCP stdio server; bundled artifact built from `src/bridge/index.ts`)
 - `scripts/_common.sh` (shared bash utilities: `teamem_resolve_session_dir`, `teamem_is_active`, `teamem_log`, `teamem_bridge_js`)
-- `scripts/session-start.sh` (invoked by SessionStart hook; fetches briefing if active)
+- `scripts/session-start.sh` (invoked by SessionStart hook; injects a startup/resume briefing prompt and runs session sync if active)
 
 ### External
 

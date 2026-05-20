@@ -12,7 +12,7 @@ Bash runtime utilities and lifecycle hooks. Contains shared helper functions (`_
 | File | Description |
 |------|-------------|
 | `_common.sh` | Shared bash utilities: plugin root resolution, session directory logic, repo ID canonicalization, bridge bundle path, logging |
-| `session-start.sh` | SessionStart hook: runs session_sync if Teamem is active; refreshes TEAMEM.md Space Rules, replays decisions, surfaces gotcha notices, then fetches durable unread notifications |
+| `session-start.sh` | SessionStart hook: emits a startup/resume stdout instruction for the main agent to fetch the briefing, then runs session_sync if Teamem is active; refreshes TEAMEM.md Space Rules, replays decisions, surfaces gotcha notices, and fetches durable unread notifications |
 | `gate-claim.sh` | PreToolUse hook: gates Edit/Write/MultiEdit on claimed scope; claims/refreshes paths before file edits |
 | `release-claims.sh` | Stop hook: telemetry only; claims survive turn/session end and release via explicit command, force-release, TTL, or git evidence |
 
@@ -46,6 +46,7 @@ Bash runtime utilities and lifecycle hooks. Contains shared helper functions (`_
 - **Logging**: All three hooks log to `${HOME}/.cache/teamem/hook-YYYYMMDD.log` with timestamp and status. Errors also log to `hook-errors.log`.
 - **Activation/debugging gotcha**: If `/teamem-status` says active but `session_dir` points at another plugin such as `~/.claude/plugins/data/codex-openai-codex`, auto-claim may appear enabled while hooks skip or read the wrong state. The expected local marketplace path is `~/.claude/plugins/data/teamem-teamem-local/...`; `teamem-inline` is only the fallback for source plugins with no parent marketplace manifest.
 - **Legacy permission-request debugging gotcha**: Permission requests no longer run from `gate-claim.sh`, but the primitive can still be exercised by tests or future internal flows. If a grant succeeds in SQLite while the requester sees an empty action, suspect the bridge/server response path rather than Channels or notification routing. A real bug here was the server `/tools/:name` route not awaiting async tool handlers, so the HTTP response was `{}` while SQLite side effects were correct.
+- **SessionStart stdout contract**: `session-start.sh` does not perform the full briefing read itself. On startup/resume it emits exactly one stdout instruction telling the main agent to call `mcp__teamem__get_briefing`; when `_teamem_resolve_space` finds a session-pinned or configured space, that prompt payload must preserve it. Decision, gotcha, and unread-notification payloads stay on stderr.
 - **SessionStart de-dupe**: Gotcha notices are delivered through `teamem.session_sync`, not `fetch_unread_notifications`. Do not re-add gotchas to `fetch_unread_notifications`; doing so duplicates notices on every resume and breaks the intended split where decisions replay with full text and gotchas replay as lightweight notices.
 - **TEAMEM.md managed block**: `space-rules-file.js` owns the managed block and metadata comment. Escape metadata for HTML comments (`--`, `<`, `>`) and preserve user text outside the block. SessionStart should refresh from the server snapshot, never trust arbitrary local `TEAMEM.md` edits as applied until `/teamem-rule update` publishes them.
 

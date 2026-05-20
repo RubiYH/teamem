@@ -4,19 +4,26 @@ import { join } from 'node:path';
 import { buildCloudDashboardSetupView } from '../../../src/cloud/dashboard-setup.js';
 
 const dashboardSource = readFileSync(
-  join(process.cwd(), 'apps/web/app/dashboard/page.tsx'),
+  join(process.cwd(), 'apps/web/app/[locale]/dashboard/page.tsx'),
   'utf8'
 );
 const copyButtonSource = readFileSync(
-  join(process.cwd(), 'apps/web/app/dashboard/copy-button.tsx'),
+  join(process.cwd(), 'apps/web/app/[locale]/dashboard/copy-button.tsx'),
   'utf8'
 );
 const rotateButtonSource = readFileSync(
-  join(process.cwd(), 'apps/web/app/dashboard/rotate-room-code-button.tsx'),
+  join(
+    process.cwd(),
+    'apps/web/app/[locale]/dashboard/rotate-room-code-button.tsx'
+  ),
   'utf8'
 );
 const dashboardActionsSource = readFileSync(
-  join(process.cwd(), 'apps/web/app/dashboard/actions.ts'),
+  join(process.cwd(), 'apps/web/app/[locale]/dashboard/actions.ts'),
+  'utf8'
+);
+const messagesSource = readFileSync(
+  join(process.cwd(), 'apps/web/messages/en.json'),
   'utf8'
 );
 
@@ -88,17 +95,19 @@ describe('Teamem Cloud dashboard setup view', () => {
     expect(copyButtonSource).toContain("'use client'");
     expect(copyButtonSource).toContain('navigator.clipboard.writeText(value)');
     expect(copyButtonSource).toContain('disabled={isDisabled}');
-    expect(copyButtonSource).toContain('Copy ${label}');
+    expect(copyButtonSource).toContain('aria-label={ariaLabel}');
+    expect(messagesSource).toContain('Copy {label}');
   });
 
   it('exposes owner-only room-code rotation through a server action with visible form states', () => {
     expect(dashboardSource).toContain('RoomCodeRotationPanel');
     expect(dashboardSource).toContain('state.space.status ===');
     expect(dashboardSource).toContain('state.space.runtimeSpaceId');
-    expect(dashboardSource).toContain('rotateStatusMessage');
+    expect(dashboardSource).toContain('copy.statuses.rotate[rotateStatus]');
     expect(dashboardSource).toContain('rotateRoomCodeAction');
     expect(rotateButtonSource).toContain('useFormStatus');
-    expect(rotateButtonSource).toContain('Rotating...');
+    expect(rotateButtonSource).toContain('pendingLabel');
+    expect(messagesSource).toContain('Rotating...');
     expect(dashboardActionsSource).toContain('auth.api.getSession');
     expect(dashboardActionsSource).toContain('rotateRoomCodeForUser');
     expect(dashboardActionsSource).toContain(
@@ -121,7 +130,7 @@ describe('Teamem Cloud dashboard setup view', () => {
     expect(dashboardSource).toContain('!space.runtimeServerUrl');
     expect(dashboardSource).toContain('action={createFreeSpaceAction}');
     expect(dashboardSource).toContain('value={state.space.displayName}');
-    expect(dashboardSource).toContain('Retry provisioning');
-    expect(dashboardSource).toContain('same Space request and idempotency key');
+    expect(messagesSource).toContain('Retry provisioning');
+    expect(messagesSource).toContain('same Space request and idempotency key');
   });
 });

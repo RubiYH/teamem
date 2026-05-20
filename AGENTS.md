@@ -8,7 +8,7 @@ Teamem is an MCP-based team memory and coordination server for human developers 
 
 **Architecture (v5, 2026-05-01):** Shared HTTPS server (Bun + Hono + SQLite) + per-teammate local stdio MCP bridge (`src/bridge/`). The bridge translates registered `teamem.*` tool calls into authenticated HTTPS POSTs to the server. Public docs live under `docs/`; internal plans and ADRs live under `.docs/`.
 
-**Primary tool:** `teamem.get_briefing` — returns a five-dimension briefing (`current_plan`, `active_claims`, `recent_decisions`, `active_risks`, `recent_progress`). Call it at session start and before any non-trivial code change.
+**Primary read tool:** `teamem.get_briefing` — returns a five-dimension briefing (`current_plan`, `active_claims`, `recent_decisions`, `active_risks`, `recent_progress`). Use it at session start/resume, after explicit human requests, or when the agent needs a fresh whole-team context refresh. Do not call the full briefing before every edit; edit-time coordination is handled by claim and conflict tools.
 
 See `.docs/integrations/agent-prompt-snippet.md` for the internal system-prompt snippet to paste into your `AGENTS.md` or `CLAUDE.md`.
 

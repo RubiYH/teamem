@@ -19,7 +19,7 @@ const migrationSource = readFileSync(
   'utf8'
 );
 const dashboardSource = readFileSync(
-  join(process.cwd(), 'apps/web/app/dashboard/page.tsx'),
+  join(process.cwd(), 'apps/web/app/[locale]/dashboard/page.tsx'),
   'utf8'
 );
 const controlPlaneServerSource = readFileSync(

@@ -3,33 +3,40 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const pageSource = readFileSync(
-  join(process.cwd(), 'apps/web/app/page.tsx'),
+  join(process.cwd(), 'apps/web/app/[locale]/page.tsx'),
   'utf8'
 );
 const globalsSource = readFileSync(
   join(process.cwd(), 'apps/web/app/globals.css'),
   'utf8'
 );
+const messagesSource = readFileSync(
+  join(process.cwd(), 'apps/web/messages/en.json'),
+  'utf8'
+);
 
 describe('Teamem Cloud landing page', () => {
   it('renders README-derived positioning and current Claude Code capabilities', () => {
-    expect(pageSource).toContain(
+    expect(messagesSource).toContain(
       'Teamem is team memory for humans and their coding agents.'
     );
-    expect(pageSource).toContain('Claude Code plugin');
-    expect(pageSource).toContain('Shared work context');
-    expect(pageSource).toContain('Scope coordination');
-    expect(pageSource).toContain('Durable decisions');
-    expect(pageSource).toContain('Safer conflict avoidance');
+    expect(messagesSource).toContain('Claude Code plugin');
+    expect(messagesSource).toContain('Shared work context');
+    expect(messagesSource).toContain('Scope coordination');
+    expect(messagesSource).toContain('Durable decisions');
+    expect(messagesSource).toContain('Safer conflict avoidance');
   });
 
   it('keeps Teamem Cloud primary while preserving self-hosting as secondary', () => {
-    expect(pageSource).toContain('Managed-server path');
-    expect(pageSource).toContain('Self-hosting remains available');
-    expect(pageSource).toContain('href="/dashboard"');
-    expect(pageSource).toContain('Start with Teamem Cloud');
+    expect(messagesSource).toContain('Managed-server path');
+    expect(messagesSource).toContain('Self-hosting remains available');
+    expect(pageSource).toContain(
+      'const dashboardHref = `/${locale}/dashboard`;'
+    );
+    expect(pageSource).toContain('href={dashboardHref}');
+    expect(messagesSource).toContain('Start with Teamem Cloud');
     expect(pageSource).toContain('href="https://github.com/RubiYH/teamem"');
-    expect(pageSource).toContain('Self-host instead');
+    expect(messagesSource).toContain('Self-host instead');
   });
 
   it('has a responsive first viewport and avoids flashy marketing imagery', () => {
