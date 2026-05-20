@@ -2,7 +2,7 @@ import { betterAuth } from 'better-auth';
 import type { PostgresPool } from 'kysely';
 import { TEAMEM_CLOUD_AUTH_ACCOUNT_LINKING_POLICY } from '../../../../src/cloud/auth-policy';
 import { loadTeamemCloudWebEnv } from '../../../../src/cloud/env-contract';
-import { createTeamemCloudPostgresPool } from './postgres';
+import { createTeamemCloudPostgresPool } from './postgres-core';
 
 type BetterAuthOptions = Parameters<typeof betterAuth>[0];
 type BetterAuthPlugin = NonNullable<BetterAuthOptions['plugins']>[number];

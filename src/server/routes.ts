@@ -5,8 +5,10 @@ import type { TeamemTools } from './tools/index.js';
 import {
   CLOUD_ADMIN_API_PREFIX,
   type CloudAdminCreateSpaceRequest,
+  type CloudAdminGetSpaceStatusRequest,
   type CloudAdminRotateRoomCodeRequest,
-  type CloudAdminSoftDeleteSpaceRequest
+  type CloudAdminSoftDeleteSpaceRequest,
+  type CloudAdminUpdateSpacePolicyRequest
 } from '../cloud/runtime-admin-contract.js';
 import { TEAMEM_CLOUD_BOUNDARIES } from '../cloud/boundary-guardrails.js';
 import { createToolRegistry, TOOL_NAMES } from './tool-registry.js';
@@ -29,8 +31,10 @@ import {
   wipeSpace,
   unwipeSpace,
   createCloudAdminSpace,
+  getCloudAdminSpaceRuntimeStatus,
   rotateCloudAdminRoomCode,
-  softDeleteCloudAdminSpace
+  softDeleteCloudAdminSpace,
+  updateCloudAdminSpaceRuntimePolicy
 } from './spaces.js';
 import { resolveCloudAdminProvisioningToken } from './cloud-admin-token.js';
 
@@ -42,6 +46,8 @@ const MCP_PROTOCOL_VERSION = '2025-11-25';
 // requires JWT. Adding a new method without explicit consideration CANNOT
 // silently bypass auth — this is the security invariant.
 const UNAUTH_MCP_METHODS = new Set(['initialize', 'notifications/initialized']);
+
+const SUSPENDED_CLEANUP_MEMBER_TOOLS = new Set<string>(['teamem.space_leave']);
 
 type CloudAdminOptions = {
   provisioningToken?: string;
@@ -63,6 +69,11 @@ export function createRouter(
   const requireCreator =
     db && jwtSecret ? createRequireCreatorMiddleware(jwtSecret, db) : null;
   const rateLimit = createRateLimitMiddleware();
+
+  const createRequireMemberForTool = (toolName: string) =>
+    createRequireMemberMiddleware(jwtSecret!, db!, {
+      allowSuspended: SUSPENDED_CLEANUP_MEMBER_TOOLS.has(toolName)
+    });
 
   const cloudAdminToken = resolveCloudAdminProvisioningToken({
     TEAMEM_CLOUD_RUNTIME_PROVISIONING_TOKEN: cloudAdmin?.provisioningToken
@@ -124,17 +135,27 @@ export function createRouter(
       if (result === 'space_disbanded')
         return c.json({ error: 'space_disbanded' }, 410);
       if (result === 'name_taken') return c.json({ error: 'name_taken' }, 409);
+      if ('error' in result && result.error === 'space_suspended') {
+        return c.json(result, 410);
+      }
+      if ('error' in result && result.error === 'space_member_limit_reached') {
+        return c.json(result, 409);
+      }
       return c.json(result, 200);
     });
 
     // POST /spaces/leave — requireMember
-    app.post('/spaces/leave', requireMember!, async (c) => {
-      const member = c.get('member');
-      const result = leaveSpace(db, { member_id: member.member_id });
-      if (result === 'creator_must_disband')
-        return c.json({ error: 'creator_must_disband' }, 409);
-      return c.json({ ok: true });
-    });
+    app.post(
+      '/spaces/leave',
+      createRequireMemberMiddleware(jwtSecret, db, { allowSuspended: true }),
+      async (c) => {
+        const member = c.get('member');
+        const result = leaveSpace(db, { member_id: member.member_id });
+        if (result === 'creator_must_disband')
+          return c.json({ error: 'creator_must_disband' }, 409);
+        return c.json({ ok: true });
+      }
+    );
 
     // POST /spaces/kick — requireCreator
     app.post('/spaces/kick', requireCreator!, async (c) => {
@@ -219,6 +240,27 @@ export function createRouter(
       if (!memberRow) return c.json({ error: 'member_left' }, 401);
       if (memberRow.is_creator !== 1)
         return c.json({ error: 'not_creator' }, 403);
+
+      const suspended = db
+        .prepare(
+          `SELECT cloud_suspension_reason
+             FROM spaces
+            WHERE id = ?1
+              AND cloud_suspended_at IS NOT NULL
+            LIMIT 1`
+        )
+        .get(space_id) as
+        | { cloud_suspension_reason: string | null }
+        | undefined;
+      if (suspended) {
+        return c.json(
+          {
+            error: 'space_suspended',
+            reason: suspended.cloud_suspension_reason ?? 'free_trial_expired'
+          },
+          410
+        );
+      }
 
       const result = restoreSpace(db, { requester_member_id: memberRow.id });
       if (result === 'not_creator')
@@ -340,9 +382,15 @@ export function createRouter(
         idempotencyKey: body.idempotencyKey,
         controlPlaneSpaceId: body.controlPlaneSpaceId,
         provisioningRequestId: body.provisioningRequestId,
+        plan: body.plan,
+        trialExpiresAt: body.trialExpiresAt,
+        memberLimit: body.memberLimit,
         runtimeServerUrl
       });
 
+      if (result === 'invalid_policy_metadata') {
+        return c.json({ error: 'invalid_policy_metadata' }, 400);
+      }
       if (result === 'idempotency_conflict') {
         return c.json({ error: 'idempotency_conflict' }, 409);
       }
@@ -352,6 +400,102 @@ export function createRouter(
 
       return c.json(result, 201);
     });
+
+    app.get(
+      `${CLOUD_ADMIN_API_PREFIX}/spaces/:runtimeSpaceId/status`,
+      async (c) => {
+        if (!cloudAdminToken) {
+          return c.json({ error: 'cloud_admin_unconfigured' }, 503);
+        }
+
+        const authHeader =
+          c.req.header('Authorization') ?? c.req.header('authorization');
+        if (!isValidCloudAdminAuth(authHeader, cloudAdminToken)) {
+          return c.json({ error: 'invalid_service_authorization' }, 401);
+        }
+
+        const request = {
+          runtimeSpaceId: c.req.param('runtimeSpaceId'),
+          controlPlaneSpaceId: c.req.query('controlPlaneSpaceId') ?? ''
+        };
+        if (!isValidCloudAdminGetSpaceStatusRequest(request)) {
+          return c.json({ error: 'invalid_payload' }, 400);
+        }
+
+        const result = getCloudAdminSpaceRuntimeStatus(db, request);
+        if (result === 'space_not_found') {
+          return c.json({ error: 'space_not_found' }, 404);
+        }
+        if (result === 'control_plane_space_mismatch') {
+          return c.json({ error: 'control_plane_space_mismatch' }, 409);
+        }
+
+        return c.json(result, 200);
+      }
+    );
+
+    app.post(
+      `${CLOUD_ADMIN_API_PREFIX}/spaces/:runtimeSpaceId/policy`,
+      async (c) => {
+        if (!cloudAdminToken) {
+          return c.json({ error: 'cloud_admin_unconfigured' }, 503);
+        }
+
+        const authHeader =
+          c.req.header('Authorization') ?? c.req.header('authorization');
+        if (!isValidCloudAdminAuth(authHeader, cloudAdminToken)) {
+          return c.json({ error: 'invalid_service_authorization' }, 401);
+        }
+
+        let body: unknown;
+        try {
+          body = await c.req.json();
+        } catch {
+          return c.json({ error: 'invalid_json' }, 400);
+        }
+        if (!isNonArrayRecord(body)) {
+          return c.json({ error: 'invalid_payload' }, 400);
+        }
+
+        const forbiddenKey =
+          TEAMEM_CLOUD_BOUNDARIES.runtimeForbiddenCloudFields.find(
+            (key) => key in body
+          );
+        if (forbiddenKey) {
+          return c.json(
+            { error: 'forbidden_runtime_metadata', field: forbiddenKey },
+            400
+          );
+        }
+
+        const runtimeSpaceId = c.req.param('runtimeSpaceId');
+        if (
+          !isValidCloudAdminUpdateSpacePolicyRequest(body) ||
+          body.runtimeSpaceId !== runtimeSpaceId
+        ) {
+          return c.json({ error: 'invalid_payload' }, 400);
+        }
+
+        const result = updateCloudAdminSpaceRuntimePolicy(db, {
+          controlPlaneSpaceId: body.controlPlaneSpaceId,
+          runtimeSpaceId: body.runtimeSpaceId,
+          trialExpiresAt: body.trialExpiresAt,
+          memberLimit: body.memberLimit
+        });
+
+        if (result === 'invalid_policy_metadata') {
+          return c.json({ error: 'invalid_policy_metadata' }, 400);
+        }
+        if (result === 'space_not_found') {
+          return c.json({ error: 'space_not_found' }, 404);
+        }
+        if (result === 'control_plane_space_mismatch') {
+          return c.json({ error: 'control_plane_space_mismatch' }, 409);
+        }
+
+        return c.json(result, 200);
+      }
+    );
 
     app.post(
       `${CLOUD_ADMIN_API_PREFIX}/spaces/:runtimeSpaceId/room-code`,
@@ -409,6 +553,12 @@ export function createRouter(
         }
         if (result === 'idempotency_conflict') {
           return c.json({ error: 'idempotency_conflict' }, 409);
+        }
+        if (result === 'space_suspended') {
+          return c.json(
+            { error: 'space_suspended', reason: 'free_trial_expired' },
+            410
+          );
         }
 
         return c.json(result, 200);
@@ -617,7 +767,11 @@ export function createRouter(
         }
         // Dev mode: skip JWT auth, body scrub still applies below.
       } else {
-        const inner = createRequireMemberMiddleware(jwtSecret!, db!);
+        const toolName =
+          method === 'tools/call'
+            ? ((params?.name as string | undefined) ?? '')
+            : '';
+        const inner = createRequireMemberForTool(toolName);
         let memberPassed = false;
         const innerResp = await inner(c, async () => {
           memberPassed = true;
@@ -841,6 +995,17 @@ export function createRouter(
 
   // --- /tools routes ---
   app.post('/tools/:name', async (c) => {
+    if (db && jwtSecret && !c.get('member')) {
+      const inner = createRequireMemberForTool(c.req.param('name'));
+      let memberPassed = false;
+      const innerResp = await inner(c, async () => {
+        memberPassed = true;
+      });
+      if (!memberPassed) {
+        return innerResp as Response;
+      }
+    }
+
     const name = c.req.param('name') as keyof typeof registry;
     const handler = registry[name];
 
@@ -968,6 +1133,7 @@ function isValidCloudAdminAuth(
 function isValidCloudAdminCreateSpaceRequest(
   body: Record<string, unknown>
 ): body is CloudAdminCreateSpaceRequest {
+  const memberLimit = body.memberLimit;
   return (
     typeof body.label === 'string' &&
     body.label.trim().length > 0 &&
@@ -976,7 +1142,43 @@ function isValidCloudAdminCreateSpaceRequest(
     typeof body.controlPlaneSpaceId === 'string' &&
     body.controlPlaneSpaceId.trim().length > 0 &&
     typeof body.provisioningRequestId === 'string' &&
-    body.provisioningRequestId.trim().length > 0
+    body.provisioningRequestId.trim().length > 0 &&
+    ['free', 'team', 'enterprise'].includes(String(body.plan)) &&
+    (body.plan === 'free'
+      ? typeof body.trialExpiresAt === 'string' &&
+        Number.isFinite(Date.parse(body.trialExpiresAt)) &&
+        typeof memberLimit === 'number' &&
+        Number.isInteger(memberLimit) &&
+        memberLimit > 0
+      : body.trialExpiresAt === null && body.memberLimit === null)
+  );
+}
+
+function isValidCloudAdminGetSpaceStatusRequest(
+  body: Record<string, unknown>
+): body is CloudAdminGetSpaceStatusRequest {
+  return (
+    typeof body.controlPlaneSpaceId === 'string' &&
+    body.controlPlaneSpaceId.trim().length > 0 &&
+    typeof body.runtimeSpaceId === 'string' &&
+    body.runtimeSpaceId.trim().length > 0
+  );
+}
+
+function isValidCloudAdminUpdateSpacePolicyRequest(
+  body: Record<string, unknown>
+): body is CloudAdminUpdateSpacePolicyRequest {
+  const memberLimit = body.memberLimit;
+  return (
+    typeof body.controlPlaneSpaceId === 'string' &&
+    body.controlPlaneSpaceId.trim().length > 0 &&
+    typeof body.runtimeSpaceId === 'string' &&
+    body.runtimeSpaceId.trim().length > 0 &&
+    typeof body.trialExpiresAt === 'string' &&
+    Number.isFinite(Date.parse(body.trialExpiresAt)) &&
+    typeof memberLimit === 'number' &&
+    Number.isInteger(memberLimit) &&
+    memberLimit > 0
   );
 }
 

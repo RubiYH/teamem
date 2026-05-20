@@ -1,11 +1,14 @@
 import type { Database } from 'bun:sqlite';
 import { nanoid } from 'nanoid';
 import { ulid } from 'ulidx';
+import type { CloudRuntimeSpacePlan } from '../cloud/provisioning-contract.js';
 import { signJwt } from './jwt.js';
 
 const ROOM_CODE_TTL_SECONDS = 30 * 24 * 60 * 60; // 30 days
 const MAX_CODE_RETRIES = 3;
+export const FREE_TRIAL_EXPIRED_SUSPENSION_REASON = 'free_trial_expired';
 export const DISBAND_GRACE_SECONDS = 7 * 24 * 60 * 60; // 7 days
+const cloudPolicyColumnCache = new WeakMap<Database, boolean>();
 
 interface MemberRow {
   id: string;
@@ -27,6 +30,11 @@ interface SpaceRow {
   cloud_control_plane_space_id?: string | null;
   cloud_provisioning_request_id?: string | null;
   cloud_idempotency_key?: string | null;
+  cloud_plan?: CloudRuntimeSpacePlan | null;
+  cloud_trial_expires_at?: string | null;
+  cloud_member_limit?: number | null;
+  cloud_suspended_at?: string | null;
+  cloud_suspension_reason?: string | null;
 }
 
 function generateRoomCode(db: Database): string {
@@ -86,6 +94,9 @@ export type CloudAdminCreateSpaceInput = {
   controlPlaneSpaceId: string;
   provisioningRequestId: string;
   runtimeServerUrl: string;
+  plan: CloudRuntimeSpacePlan;
+  trialExpiresAt: string | null;
+  memberLimit: number | null;
 };
 
 export type CloudAdminCreateSpaceResult = {
@@ -104,7 +115,8 @@ export type CloudAdminCreateSpaceResult = {
 
 export type CloudAdminCreateSpaceError =
   | 'idempotency_conflict'
-  | 'control_plane_space_conflict';
+  | 'control_plane_space_conflict'
+  | 'invalid_policy_metadata';
 
 export type CloudAdminRotateRoomCodeInput = {
   controlPlaneSpaceId: string;
@@ -121,7 +133,8 @@ export type CloudAdminRotateRoomCodeResult = {
 export type CloudAdminRotateRoomCodeError =
   | 'space_not_found'
   | 'control_plane_space_mismatch'
-  | 'idempotency_conflict';
+  | 'idempotency_conflict'
+  | 'space_suspended';
 
 export type CloudAdminSoftDeleteSpaceInput = {
   controlPlaneSpaceId: string;
@@ -142,15 +155,57 @@ export type CloudAdminSoftDeleteSpaceError =
   | 'control_plane_space_mismatch'
   | 'idempotency_conflict';
 
+export type CloudAdminSpaceRuntimeStatusInput = {
+  controlPlaneSpaceId: string;
+  runtimeSpaceId: string;
+};
+
+export type CloudAdminUpdateSpacePolicyInput =
+  CloudAdminSpaceRuntimeStatusInput & {
+    trialExpiresAt: string;
+    memberLimit: number;
+  };
+
+export type CloudAdminSpaceRuntimeStatus = {
+  controlPlaneSpaceId: string;
+  runtimeSpaceId: string;
+  plan: CloudRuntimeSpacePlan | null;
+  trialExpiresAt: string | null;
+  memberLimit: number | null;
+  activeUserFacingMemberCount: number;
+  suspendedAt: string | null;
+  suspensionReason: string | null;
+  setupAvailable: boolean;
+  controlsAvailable: boolean;
+};
+
+export type CloudAdminSpaceRuntimeStatusError =
+  | 'space_not_found'
+  | 'control_plane_space_mismatch';
+
+export type CloudAdminUpdateSpacePolicyError =
+  | CloudAdminSpaceRuntimeStatusError
+  | 'invalid_policy_metadata';
+
+export type SpaceSuspended = {
+  error: 'space_suspended';
+  reason: string;
+};
+
 export function createCloudAdminSpace(
   db: Database,
   opts: CloudAdminCreateSpaceInput
 ): CloudAdminCreateSpaceResult | CloudAdminCreateSpaceError {
+  if (!isValidCloudAdminSpacePolicyMetadata(opts)) {
+    return 'invalid_policy_metadata';
+  }
+
   return db
     .transaction(() => {
       const existingByIdempotencyKey = db
         .prepare(
           `SELECT s.id, s.label, s.cloud_control_plane_space_id, s.cloud_provisioning_request_id,
+                  s.cloud_plan, s.cloud_trial_expires_at, s.cloud_member_limit,
                   rc.code AS room_code
              FROM spaces s
              JOIN room_codes rc ON rc.space_id = s.id
@@ -162,6 +217,9 @@ export function createCloudAdminSpace(
             label: string;
             cloud_control_plane_space_id: string;
             cloud_provisioning_request_id: string;
+            cloud_plan: CloudRuntimeSpacePlan | null;
+            cloud_trial_expires_at: string | null;
+            cloud_member_limit: number | null;
             room_code: string;
           }
         | undefined;
@@ -172,7 +230,11 @@ export function createCloudAdminSpace(
             opts.controlPlaneSpaceId ||
           existingByIdempotencyKey.cloud_provisioning_request_id !==
             opts.provisioningRequestId ||
-          existingByIdempotencyKey.label !== opts.label
+          existingByIdempotencyKey.label !== opts.label ||
+          existingByIdempotencyKey.cloud_plan !== opts.plan ||
+          existingByIdempotencyKey.cloud_trial_expires_at !==
+            opts.trialExpiresAt ||
+          existingByIdempotencyKey.cloud_member_limit !== opts.memberLimit
         ) {
           return 'idempotency_conflict' as const;
         }
@@ -212,8 +274,13 @@ export function createCloudAdminSpace(
           cloud_provisioning_source,
           cloud_control_plane_space_id,
           cloud_provisioning_request_id,
-          cloud_idempotency_key
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)`
+          cloud_idempotency_key,
+          cloud_plan,
+          cloud_trial_expires_at,
+          cloud_member_limit,
+          cloud_suspended_at,
+          cloud_suspension_reason
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)`
       ).run(
         space_id,
         opts.label,
@@ -221,12 +288,22 @@ export function createCloudAdminSpace(
         'teamem-cloud',
         opts.controlPlaneSpaceId,
         opts.provisioningRequestId,
-        opts.idempotencyKey
+        opts.idempotencyKey,
+        opts.plan,
+        opts.trialExpiresAt,
+        opts.memberLimit,
+        null,
+        null
       );
 
       db.prepare(
         `INSERT INTO members (id, space_id, name, is_creator) VALUES (?, ?, ?, 1)`
       ).run(member_id, space_id, 'teamem-cloud');
+
+      db.prepare(
+        `INSERT INTO member_system_markers (member_id, space_id, marker)
+         VALUES (?1, ?2, ?3)`
+      ).run(member_id, space_id, 'cloud_bootstrap');
 
       db.prepare(
         `INSERT INTO room_codes (space_id, code, expires_at) VALUES (?, ?, ?)`
@@ -242,6 +319,27 @@ export function createCloudAdminSpace(
       });
     })
     .immediate();
+}
+
+function isValidCloudAdminSpacePolicyMetadata(
+  opts: CloudAdminCreateSpaceInput
+): boolean {
+  if (!['free', 'team', 'enterprise'].includes(opts.plan)) {
+    return false;
+  }
+
+  if (opts.plan === 'free') {
+    const memberLimit = opts.memberLimit;
+    return (
+      typeof opts.trialExpiresAt === 'string' &&
+      Number.isFinite(Date.parse(opts.trialExpiresAt)) &&
+      typeof memberLimit === 'number' &&
+      Number.isInteger(memberLimit) &&
+      memberLimit > 0
+    );
+  }
+
+  return opts.trialExpiresAt === null && opts.memberLimit === null;
 }
 
 export function rotateCloudAdminRoomCode(
@@ -290,6 +388,10 @@ export function rotateCloudAdminRoomCode(
       }
       if (space.cloud_control_plane_space_id !== opts.controlPlaneSpaceId) {
         return 'control_plane_space_mismatch' as const;
+      }
+      const suspension = applyCloudFreeTrialSuspensionIfExpired(db, space.id);
+      if (suspension) {
+        return 'space_suspended' as const;
       }
 
       const roomCode = generateRoomCode(db);
@@ -454,76 +556,411 @@ export type JoinError =
   | 'name_taken'
   | 'space_disbanded';
 
+export type SpaceMemberLimitReached = {
+  error: 'space_member_limit_reached';
+  member_limit: number;
+  active_member_count: number;
+};
+
+type JoinSuccess = {
+  space_id: string;
+  label: string;
+  member_id: string;
+  jwt: string;
+};
+
+type PendingJoinSuccess = Omit<JoinSuccess, 'jwt'> & {
+  member_name: string;
+};
+
+export function countActiveUserFacingMembers(
+  db: Database,
+  space_id: string
+): number {
+  const row = db
+    .prepare(
+      `SELECT COUNT(*) AS count
+         FROM members
+        WHERE space_id = ?1
+          AND left_at IS NULL
+          AND NOT EXISTS (
+            SELECT 1
+              FROM member_system_markers msm
+             WHERE msm.member_id = members.id
+          )`
+    )
+    .get(space_id) as { count: number };
+  return row.count;
+}
+
+export function getCloudAdminSpaceRuntimeStatus(
+  db: Database,
+  input: CloudAdminSpaceRuntimeStatusInput
+): CloudAdminSpaceRuntimeStatus | CloudAdminSpaceRuntimeStatusError {
+  const row = db
+    .prepare(
+      `SELECT id, cloud_control_plane_space_id, cloud_plan,
+              cloud_trial_expires_at, cloud_member_limit,
+              cloud_suspended_at, cloud_suspension_reason,
+              disbanded_at
+         FROM spaces
+        WHERE id = ?1
+          AND cloud_provisioning_source = 'teamem-cloud'`
+    )
+    .get(input.runtimeSpaceId) as
+    | {
+        id: string;
+        cloud_control_plane_space_id: string | null;
+        cloud_plan: CloudRuntimeSpacePlan | null;
+        cloud_trial_expires_at: string | null;
+        cloud_member_limit: number | null;
+        cloud_suspended_at: string | null;
+        cloud_suspension_reason: string | null;
+        disbanded_at: string | null;
+      }
+    | undefined;
+
+  if (!row) {
+    return 'space_not_found';
+  }
+  if (row.cloud_control_plane_space_id !== input.controlPlaneSpaceId) {
+    return 'control_plane_space_mismatch';
+  }
+  const suspension = applyCloudFreeTrialSuspensionIfExpired(db, row.id);
+  if (suspension) {
+    row.cloud_suspended_at = suspension.suspendedAt;
+    row.cloud_suspension_reason = suspension.suspensionReason;
+  }
+
+  const available =
+    row.disbanded_at === null && row.cloud_suspended_at === null;
+
+  return {
+    controlPlaneSpaceId: input.controlPlaneSpaceId,
+    runtimeSpaceId: row.id,
+    plan: row.cloud_plan,
+    trialExpiresAt: row.cloud_trial_expires_at,
+    memberLimit: row.cloud_member_limit,
+    activeUserFacingMemberCount: countActiveUserFacingMembers(db, row.id),
+    suspendedAt: row.cloud_suspended_at,
+    suspensionReason: row.cloud_suspension_reason,
+    setupAvailable: available,
+    controlsAvailable: available
+  };
+}
+
+export function updateCloudAdminSpaceRuntimePolicy(
+  db: Database,
+  input: CloudAdminUpdateSpacePolicyInput
+): CloudAdminSpaceRuntimeStatus | CloudAdminUpdateSpacePolicyError {
+  if (!isValidResolvedFreePolicy(input)) {
+    return 'invalid_policy_metadata';
+  }
+
+  return db
+    .transaction(() => {
+      const row = db
+        .prepare(
+          `SELECT id, cloud_control_plane_space_id, cloud_plan,
+                  cloud_suspended_at, cloud_suspension_reason,
+                  disbanded_at
+             FROM spaces
+            WHERE id = ?1
+              AND cloud_provisioning_source = 'teamem-cloud'`
+        )
+        .get(input.runtimeSpaceId) as
+        | {
+            id: string;
+            cloud_control_plane_space_id: string | null;
+            cloud_plan: CloudRuntimeSpacePlan | null;
+            cloud_suspended_at: string | null;
+            cloud_suspension_reason: string | null;
+            disbanded_at: string | null;
+          }
+        | undefined;
+
+      if (!row) {
+        return 'space_not_found' as const;
+      }
+      if (row.cloud_control_plane_space_id !== input.controlPlaneSpaceId) {
+        return 'control_plane_space_mismatch' as const;
+      }
+
+      const clearsExpiredTrialSuspension =
+        row.cloud_suspended_at !== null &&
+        row.cloud_suspension_reason === FREE_TRIAL_EXPIRED_SUSPENSION_REASON &&
+        new Date(input.trialExpiresAt) > new Date();
+
+      db.prepare(
+        `UPDATE spaces
+            SET cloud_plan = 'free',
+                cloud_trial_expires_at = ?2,
+                cloud_member_limit = ?3,
+                cloud_suspended_at = CASE
+                  WHEN ?4 = 1 THEN NULL
+                  ELSE cloud_suspended_at
+                END,
+                cloud_suspension_reason = CASE
+                  WHEN ?4 = 1 THEN NULL
+                  ELSE cloud_suspension_reason
+                END
+          WHERE id = ?1`
+      ).run(
+        input.runtimeSpaceId,
+        input.trialExpiresAt,
+        input.memberLimit,
+        clearsExpiredTrialSuspension ? 1 : 0
+      );
+
+      const status = getCloudAdminSpaceRuntimeStatus(db, input);
+      if (typeof status === 'string') {
+        return status;
+      }
+      return status;
+    })
+    .immediate();
+}
+
+function isValidResolvedFreePolicy(input: {
+  trialExpiresAt: string;
+  memberLimit: number;
+}): boolean {
+  return (
+    typeof input.trialExpiresAt === 'string' &&
+    Number.isFinite(Date.parse(input.trialExpiresAt)) &&
+    typeof input.memberLimit === 'number' &&
+    Number.isInteger(input.memberLimit) &&
+    input.memberLimit > 0
+  );
+}
+
 export async function joinSpace(
   db: Database,
   opts: { room_code: string; member_name: string },
   secret: string
-): Promise<
-  | { space_id: string; label: string; member_id: string; jwt: string }
-  | JoinError
-> {
-  // Codex F27 — JOIN against `spaces` so we can refuse joins for tombstoned
-  // spaces. `/spaces/join` is unauthenticated (the room code IS the auth),
-  // so it never hits the JWT middleware that 410s disbanded spaces. Without
-  // this filter, a leaked room code admits a member during the 7-day
-  // grace; a subsequent `/teamem-restore` reactivates that membership.
-  const codeRow = db
-    .prepare(
-      `SELECT rc.space_id, rc.expires_at, s.disbanded_at
-         FROM room_codes rc
-         JOIN spaces s ON s.id = rc.space_id
-        WHERE rc.code = ?`
+): Promise<JoinSuccess | JoinError | SpaceMemberLimitReached | SpaceSuspended> {
+  const pending = db
+    .transaction(
+      ():
+        | PendingJoinSuccess
+        | JoinError
+        | SpaceMemberLimitReached
+        | SpaceSuspended => {
+        // Codex F27 — JOIN against `spaces` so we can refuse joins for tombstoned
+        // spaces. `/spaces/join` is unauthenticated (the room code IS the auth),
+        // so it never hits the JWT middleware that 410s disbanded spaces. Without
+        // this filter, a leaked room code admits a member during the 7-day
+        // grace; a subsequent `/teamem-restore` reactivates that membership.
+        const codeRow = db
+          .prepare(
+            `SELECT rc.space_id, rc.expires_at,
+                  s.label, s.disbanded_at, s.cloud_provisioning_source,
+                  s.cloud_plan, s.cloud_trial_expires_at,
+                  s.cloud_member_limit, s.cloud_suspended_at,
+                  s.cloud_suspension_reason
+             FROM room_codes rc
+             JOIN spaces s ON s.id = rc.space_id
+            WHERE rc.code = ?`
+          )
+          .get(opts.room_code) as {
+          space_id: string;
+          expires_at: string;
+          label: string;
+          disbanded_at: string | null;
+          cloud_provisioning_source: string | null;
+          cloud_plan: CloudRuntimeSpacePlan | null;
+          cloud_trial_expires_at: string | null;
+          cloud_member_limit: number | null;
+          cloud_suspended_at: string | null;
+          cloud_suspension_reason: string | null;
+        } | null;
+
+        if (!codeRow) return 'invalid_code';
+        // F27 fix: refuse joins to tombstoned spaces during the grace window.
+        // The route layer maps this to 410, mirroring the JWT auth middleware.
+        if (codeRow.disbanded_at) return 'space_disbanded';
+        const suspension = applyCloudFreeTrialSuspensionIfExpired(
+          db,
+          codeRow.space_id
+        );
+        if (suspension) {
+          return {
+            error: 'space_suspended',
+            reason: suspension.suspensionReason
+          };
+        }
+        if (new Date(codeRow.expires_at) <= new Date()) return 'code_expired';
+
+        const space_id = codeRow.space_id;
+
+        // Check name uniqueness among active members.
+        const taken = db
+          .prepare(
+            `SELECT 1 FROM members
+            WHERE space_id = ?1 AND name = ?2 AND left_at IS NULL`
+          )
+          .get(space_id, opts.member_name);
+        if (taken) return 'name_taken';
+
+        const activeMemberCount = countActiveUserFacingMembers(db, space_id);
+        if (
+          codeRow.cloud_provisioning_source === 'teamem-cloud' &&
+          codeRow.cloud_plan === 'free' &&
+          typeof codeRow.cloud_member_limit === 'number' &&
+          activeMemberCount >= codeRow.cloud_member_limit
+        ) {
+          return {
+            error: 'space_member_limit_reached',
+            member_limit: codeRow.cloud_member_limit,
+            active_member_count: activeMemberCount
+          };
+        }
+
+        const member_id = ulid();
+        try {
+          db.prepare(
+            `INSERT INTO members (id, space_id, name, is_creator)
+           VALUES (?, ?, ?, 0)`
+          ).run(member_id, space_id, opts.member_name);
+        } catch (err) {
+          // Concurrent join with same (space_id, member_name) racing past the
+          // SELECT. idx_members_space_name_active (partial unique index) catches
+          // it here.
+          if (
+            err instanceof Error &&
+            /UNIQUE constraint failed: idx_members_space_name_active|UNIQUE constraint failed: members\.space_id, members\.name/.test(
+              err.message
+            )
+          ) {
+            return 'name_taken';
+          }
+          throw err;
+        }
+
+        // Surface the space label so the joiner's local credential entry matches
+        // the server-side authoritative value (security review P2#3).
+        return {
+          space_id,
+          label: codeRow.label,
+          member_id,
+          member_name: opts.member_name
+        };
+      }
     )
-    .get(opts.room_code) as {
-    space_id: string;
-    expires_at: string;
-    disbanded_at: string | null;
-  } | null;
+    .immediate();
 
-  if (!codeRow) return 'invalid_code';
-  // F27 fix: refuse joins to tombstoned spaces during the grace window.
-  // The route layer maps this to 410, mirroring the JWT auth middleware.
-  if (codeRow.disbanded_at) return 'space_disbanded';
-  if (new Date(codeRow.expires_at) <= new Date()) return 'code_expired';
-
-  const space_id = codeRow.space_id;
-
-  // Check name uniqueness among active members
-  const taken = db
-    .prepare(
-      `SELECT 1 FROM members WHERE space_id = ? AND name = ? AND left_at IS NULL`
-    )
-    .get(space_id, opts.member_name);
-  if (taken) return 'name_taken';
-
-  // Surface the space label so the joiner's local credential entry matches
-  // the server-side authoritative value (security review P2#3).
-  const labelRow = db
-    .prepare(`SELECT label FROM spaces WHERE id = ?`)
-    .get(space_id) as { label: string } | null;
-  const label = labelRow?.label ?? space_id;
-
-  const member_id = ulid();
-  try {
-    db.prepare(
-      `INSERT INTO members (id, space_id, name, is_creator) VALUES (?, ?, ?, 0)`
-    ).run(member_id, space_id, opts.member_name);
-  } catch (err) {
-    // Concurrent join with same (space_id, member_name) racing past the SELECT.
-    // idx_members_space_name_active (partial unique index) catches it here.
-    if (
-      err instanceof Error &&
-      /UNIQUE constraint failed: idx_members_space_name_active|UNIQUE constraint failed: members\.space_id, members\.name/.test(
-        err.message
-      )
-    ) {
-      return 'name_taken';
-    }
-    throw err;
+  if (typeof pending === 'string' || 'error' in pending) {
+    return pending;
   }
 
-  const jwt = await signJwt({ sub: opts.member_name, space_id }, secret);
-  return { space_id, label, member_id, jwt };
+  const jwt = await signJwt(
+    { sub: pending.member_name, space_id: pending.space_id },
+    secret
+  );
+  return {
+    space_id: pending.space_id,
+    label: pending.label,
+    member_id: pending.member_id,
+    jwt
+  };
+}
+
+export function applyCloudFreeTrialSuspensionIfExpired(
+  db: Database,
+  spaceId: string,
+  nowIso = new Date().toISOString()
+): { suspendedAt: string; suspensionReason: string } | null {
+  if (!hasCloudPolicyColumns(db)) {
+    return null;
+  }
+
+  const row = db
+    .prepare(
+      `SELECT id, cloud_provisioning_source, cloud_plan,
+              cloud_trial_expires_at, cloud_suspended_at,
+              cloud_suspension_reason, disbanded_at
+         FROM spaces
+        WHERE id = ?1`
+    )
+    .get(spaceId) as
+    | {
+        id: string;
+        cloud_provisioning_source: string | null;
+        cloud_plan: CloudRuntimeSpacePlan | null;
+        cloud_trial_expires_at: string | null;
+        cloud_suspended_at: string | null;
+        cloud_suspension_reason: string | null;
+        disbanded_at: string | null;
+      }
+    | undefined;
+
+  if (!row || row.cloud_provisioning_source !== 'teamem-cloud') {
+    return null;
+  }
+
+  if (row.cloud_suspended_at) {
+    return {
+      suspendedAt: row.cloud_suspended_at,
+      suspensionReason:
+        row.cloud_suspension_reason ?? FREE_TRIAL_EXPIRED_SUSPENSION_REASON
+    };
+  }
+
+  if (
+    row.disbanded_at !== null ||
+    row.cloud_plan !== 'free' ||
+    typeof row.cloud_trial_expires_at !== 'string' ||
+    !Number.isFinite(Date.parse(row.cloud_trial_expires_at)) ||
+    new Date(row.cloud_trial_expires_at) > new Date(nowIso)
+  ) {
+    return null;
+  }
+
+  db.prepare(
+    `UPDATE spaces
+        SET cloud_suspended_at = ?2,
+            cloud_suspension_reason = ?3
+      WHERE id = ?1
+        AND cloud_suspended_at IS NULL`
+  ).run(spaceId, nowIso, FREE_TRIAL_EXPIRED_SUSPENSION_REASON);
+
+  const updated = db
+    .prepare(
+      `SELECT cloud_suspended_at, cloud_suspension_reason
+         FROM spaces
+        WHERE id = ?1`
+    )
+    .get(spaceId) as {
+    cloud_suspended_at: string;
+    cloud_suspension_reason: string | null;
+  };
+
+  return {
+    suspendedAt: updated.cloud_suspended_at,
+    suspensionReason:
+      updated.cloud_suspension_reason ?? FREE_TRIAL_EXPIRED_SUSPENSION_REASON
+  };
+}
+
+function hasCloudPolicyColumns(db: Database): boolean {
+  const cached = cloudPolicyColumnCache.get(db);
+  if (cached !== undefined) {
+    return cached;
+  }
+
+  const columns = new Set(
+    (
+      db.prepare('PRAGMA table_info(spaces)').all() as Array<{ name: string }>
+    ).map((column) => column.name)
+  );
+  const hasColumns =
+    columns.has('cloud_provisioning_source') &&
+    columns.has('cloud_plan') &&
+    columns.has('cloud_trial_expires_at') &&
+    columns.has('cloud_suspended_at') &&
+    columns.has('cloud_suspension_reason');
+  cloudPolicyColumnCache.set(db, hasColumns);
+  return hasColumns;
 }
 
 export type LeaveError = 'creator_must_disband';
@@ -736,6 +1173,9 @@ export function gcDisbandedSpaces(db: Database): string[] {
         for (const table of HARD_CASCADE_TABLES) {
           db.prepare(`DELETE FROM ${table} WHERE space_id = ?`).run(space_id);
         }
+        db.prepare(`DELETE FROM member_system_markers WHERE space_id = ?`).run(
+          space_id
+        );
         db.prepare(`DELETE FROM members WHERE space_id = ?`).run(space_id);
         db.prepare(`DELETE FROM spaces WHERE id = ?`).run(space_id);
         return true;

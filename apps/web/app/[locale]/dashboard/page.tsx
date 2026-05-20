@@ -2,9 +2,13 @@ import type { Metadata } from 'next';
 import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
-import { buildCloudDashboardSetupView } from '@teamem/cloud';
+import { buildCloudDashboardExistingSpaceRuntimeView } from '@teamem/cloud';
 import { auth } from '../../../src/server/auth';
 import { getDashboardStateForUser } from '../../../src/server/control-plane';
+import {
+  getDashboardRuntimeStatus,
+  type DashboardRuntimeStatus
+} from '../../../src/server/dashboard-runtime-status';
 import {
   createFreeSpaceAction,
   deleteSpaceAction,
@@ -16,6 +20,7 @@ import { buildLocalizedMetadata } from '../../../src/i18n/metadata';
 import { normalizeLocale } from '../../../src/i18n/return-target';
 import { RotateRoomCodeButton } from './rotate-room-code-button';
 import { SubmitButton } from './submit-button';
+import { TrialTime } from './trial-time';
 
 export const dynamic = 'force-dynamic';
 
@@ -47,6 +52,12 @@ type DashboardCopy = {
     verifyPrefix: string;
     unavailable: string;
   };
+  trial: {
+    label: string;
+    expired: string;
+    members: string;
+    runtimeUnavailable: string;
+  };
   roomCode: {
     title: string;
     description: string;
@@ -65,8 +76,11 @@ type DashboardCopy = {
   quota: {
     title: string;
     blocked: string;
+    consumedTitle: string;
+    consumedText: string;
     reasons: {
       activeFreeSpaceExists: string;
+      freeTrialAlreadyUsed: string;
       unknown: string;
     };
   };
@@ -134,6 +148,7 @@ export default async function DashboardPage({
     email: session.user.email,
     displayName
   });
+  const runtimeStatus = await getDashboardRuntimeStatus(dashboardState);
   const resolvedSearchParams = await searchParams;
   const createStatus = getCreateStatus(resolvedSearchParams);
   const rotateStatus = getRotateStatus(resolvedSearchParams);
@@ -168,7 +183,9 @@ export default async function DashboardPage({
 
           <DashboardStateView
             state={dashboardState}
+            runtimeStatus={runtimeStatus}
             copy={copy}
+            locale={locale}
             defaultSpaceDisplayName={t('defaultSpaceDisplayName', {
               displayName
             })}
@@ -184,14 +201,18 @@ export default async function DashboardPage({
 
 function DashboardStateView({
   state,
+  runtimeStatus,
   copy,
+  locale,
   defaultSpaceDisplayName,
   createStatus,
   rotateStatus,
   deleteStatus
 }: {
   state: DashboardState;
+  runtimeStatus: DashboardRuntimeStatus;
   copy: DashboardCopy;
+  locale: string;
   defaultSpaceDisplayName: string;
   createStatus: CreateStatus;
   rotateStatus: RotateStatus;
@@ -207,15 +228,33 @@ function DashboardStateView({
     );
   }
 
+  if (state.kind === 'free-trial-consumed') {
+    return <FreeTrialConsumedState copy={copy} state={state} />;
+  }
+
+  const runtimeView = buildCloudDashboardExistingSpaceRuntimeView({
+    state,
+    runtimeStatus
+  });
+
   return (
     <section className="grid gap-4 border-t border-border pt-5 lg:grid-cols-[1.2fr_0.8fr]">
-      <ExistingSpaceState copy={copy} state={state} />
+      <ExistingSpaceState copy={copy} runtimeView={runtimeView} state={state} />
+      <ExistingFreeTrialStatus
+        copy={copy}
+        locale={locale}
+        runtimeView={runtimeView}
+      />
       <RoomCodeRotationPanel
         copy={copy}
-        state={state}
+        runtimeView={runtimeView}
         rotateStatus={rotateStatus}
       />
-      <DeleteSpacePanel copy={copy} state={state} deleteStatus={deleteStatus} />
+      <DeleteSpacePanel
+        copy={copy}
+        runtimeView={runtimeView}
+        deleteStatus={deleteStatus}
+      />
       {isRetryablePendingProvisioningSpace(state.space) ? (
         <RetryProvisioningPanel
           copy={copy}
@@ -271,22 +310,13 @@ function NoSpaceState({
 
 function ExistingSpaceState({
   copy,
-  state
+  state,
+  runtimeView
 }: {
   copy: DashboardCopy;
   state: Extract<DashboardState, { kind: 'existing-space' }>;
+  runtimeView: ReturnType<typeof buildCloudDashboardExistingSpaceRuntimeView>;
 }) {
-  const canShowSetup =
-    state.space.status === 'active' &&
-    Boolean(state.space.runtimeServerUrl) &&
-    Boolean(state.space.roomCodeDisplayMetadata.code);
-  const setup = canShowSetup
-    ? buildCloudDashboardSetupView({
-        runtimeServerUrl: state.space.runtimeServerUrl,
-        roomCodeDisplayMetadata: state.space.roomCodeDisplayMetadata
-      })
-    : null;
-
   return (
     <article className="space-y-5 border-l border-border pl-4">
       <div>
@@ -296,19 +326,22 @@ function ExistingSpaceState({
           {formatSpaceStatus(state.space.status, copy)}
         </p>
       </div>
-      {setup ? (
+      {runtimeView.setup ? (
         <>
           <dl className="grid gap-3 text-sm sm:grid-cols-2">
             <CopyableField
               copy={copy.copy}
               field={{
-                ...setup.runtimeServer,
+                ...runtimeView.setup.runtimeServer,
                 label: copy.setup.runtimeServerLabel
               }}
             />
             <CopyableField
               copy={copy.copy}
-              field={{ ...setup.roomCode, label: copy.setup.roomCodeLabel }}
+              field={{
+                ...runtimeView.setup.roomCode,
+                label: copy.setup.roomCodeLabel
+              }}
             />
           </dl>
           <div className="space-y-3 border-t border-border pt-4">
@@ -321,7 +354,7 @@ function ExistingSpaceState({
                 </code>
               </p>
             </div>
-            {setup.setupCommand ? (
+            {runtimeView.setup.setupCommand ? (
               <div className="space-y-2">
                 <div className="flex items-start justify-between gap-3">
                   <p className="text-xs font-medium uppercase text-muted-foreground">
@@ -334,11 +367,11 @@ function ExistingSpaceState({
                     )}
                     copiedLabel={copy.copy.copied}
                     copyLabel={copy.copy.copy}
-                    value={setup.setupCommand.command}
+                    value={runtimeView.setup.setupCommand.command}
                   />
                 </div>
                 <pre className="overflow-x-auto border border-border bg-muted p-3 text-sm text-foreground">
-                  <code>{setup.setupCommand.command}</code>
+                  <code>{runtimeView.setup.setupCommand.command}</code>
                 </pre>
               </div>
             ) : (
@@ -364,20 +397,65 @@ function ExistingSpaceState({
   );
 }
 
+function ExistingFreeTrialStatus({
+  copy,
+  locale,
+  runtimeView
+}: {
+  copy: DashboardCopy;
+  locale: string;
+  runtimeView: ReturnType<typeof buildCloudDashboardExistingSpaceRuntimeView>;
+}) {
+  if (!runtimeView.freeTrial) {
+    return null;
+  }
+
+  if (runtimeView.freeTrial.status === 'runtime_unavailable') {
+    return (
+      <article className="space-y-2 border-l border-border pl-4">
+        <h2 className="text-sm font-semibold">
+          {copy.statuses.spacePlan.free}
+        </h2>
+        <p className="text-sm leading-6 text-muted-foreground">
+          {copy.trial.runtimeUnavailable}
+        </p>
+      </article>
+    );
+  }
+
+  return (
+    <article className="space-y-2 border-l border-border pl-4">
+      <h2 className="text-sm font-semibold">{copy.statuses.spacePlan.free}</h2>
+      {runtimeView.freeTrial.trialExpiresAt ? (
+        <TrialTime
+          expiredLabel={copy.trial.expired}
+          expiresAt={runtimeView.freeTrial.trialExpiresAt}
+          label={copy.trial.label}
+          locale={locale}
+        />
+      ) : null}
+      {runtimeView.freeTrial.memberLimit === null ? null : (
+        <p className="text-sm leading-6 text-muted-foreground">
+          {copy.trial.members}:{' '}
+          <span className="text-foreground">
+            {runtimeView.freeTrial.activeUserFacingMemberCount} /{' '}
+            {runtimeView.freeTrial.memberLimit}
+          </span>
+        </p>
+      )}
+    </article>
+  );
+}
+
 function RoomCodeRotationPanel({
   copy,
-  state,
+  runtimeView,
   rotateStatus
 }: {
   copy: DashboardCopy;
-  state: Extract<DashboardState, { kind: 'existing-space' }>;
+  runtimeView: ReturnType<typeof buildCloudDashboardExistingSpaceRuntimeView>;
   rotateStatus: RotateStatus;
 }) {
-  const canRotate =
-    state.space.status === 'active' &&
-    Boolean(state.space.runtimeSpaceId) &&
-    Boolean(state.space.runtimeServerUrl);
-
   return (
     <article className="space-y-3 border-l border-border pl-4">
       <div>
@@ -391,7 +469,7 @@ function RoomCodeRotationPanel({
           {copy.statuses.rotate[rotateStatus]}
         </p>
       ) : null}
-      {canRotate ? (
+      {runtimeView.canRotateRoomCode ? (
         <form action={rotateRoomCodeAction}>
           <RotateRoomCodeButton
             label={copy.roomCode.rotateLabel}
@@ -409,16 +487,13 @@ function RoomCodeRotationPanel({
 
 function DeleteSpacePanel({
   copy,
-  state,
+  runtimeView,
   deleteStatus
 }: {
   copy: DashboardCopy;
-  state: Extract<DashboardState, { kind: 'existing-space' }>;
+  runtimeView: ReturnType<typeof buildCloudDashboardExistingSpaceRuntimeView>;
   deleteStatus: DeleteStatus;
 }) {
-  const canDelete =
-    state.space.status === 'active' || state.space.status === 'delete_pending';
-
   return (
     <article className="space-y-3 border-l border-border pl-4">
       <div>
@@ -432,7 +507,7 @@ function DeleteSpacePanel({
           {copy.statuses.delete[deleteStatus]}
         </p>
       ) : null}
-      {canDelete ? (
+      {runtimeView.canDeleteSpace ? (
         <form action={deleteSpaceAction} className="max-w-sm space-y-3">
           <label className="flex items-start gap-2 text-sm leading-6 text-muted-foreground">
             <input
@@ -502,6 +577,29 @@ function QuotaBlockedState({
         {formatQuotaReason(blockedReason, copy)}
       </p>
     </article>
+  );
+}
+
+function FreeTrialConsumedState({
+  copy,
+  state
+}: {
+  copy: DashboardCopy;
+  state: Extract<DashboardState, { kind: 'free-trial-consumed' }>;
+}) {
+  return (
+    <section className="grid gap-4 border-t border-border pt-5 lg:grid-cols-[0.8fr_1.2fr]">
+      <DashboardPanel label={copy.accountTitle} text={copy.accountText} />
+      <article className="space-y-2 border-l border-border pl-4">
+        <h2 className="text-sm font-semibold">{copy.quota.consumedTitle}</h2>
+        <p className="text-sm leading-6 text-muted-foreground">
+          {copy.quota.consumedText}
+        </p>
+        <p className="text-xs uppercase text-muted-foreground">
+          {formatQuotaReason(state.quota.blockedReason, copy)}
+        </p>
+      </article>
+    </section>
   );
 }
 
@@ -604,6 +702,7 @@ function DashboardPanel({ label, text }: { label: string; text: string }) {
 type CreateStatus =
   | 'created'
   | 'quota'
+  | 'trial-used'
   | 'display-name'
   | 'reconcile'
   | 'runtime-failed'
@@ -635,6 +734,7 @@ function getCreateStatus(
   const status = searchParams?.create;
   if (
     status === 'quota' ||
+    status === 'trial-used' ||
     status === 'display-name' ||
     status === 'reconcile' ||
     status === 'runtime-failed'
@@ -701,6 +801,12 @@ function buildDashboardCopy(
       verifyPrefix: t('setup.verifyPrefix'),
       unavailable: t('setup.unavailable')
     },
+    trial: {
+      label: t('trial.label'),
+      expired: t('trial.expired'),
+      members: t('trial.members'),
+      runtimeUnavailable: t('trial.runtimeUnavailable')
+    },
     roomCode: {
       title: t('roomCode.title'),
       description: t('roomCode.description'),
@@ -719,8 +825,11 @@ function buildDashboardCopy(
     quota: {
       title: t('quota.title'),
       blocked: t('quota.blocked'),
+      consumedTitle: t('quota.consumedTitle'),
+      consumedText: t('quota.consumedText'),
       reasons: {
         activeFreeSpaceExists: t('quota.reasons.activeFreeSpaceExists'),
+        freeTrialAlreadyUsed: t('quota.reasons.freeTrialAlreadyUsed'),
         unknown: t('quota.reasons.unknown')
       }
     },
@@ -746,6 +855,7 @@ function buildDashboardCopy(
       create: {
         created: t('statuses.create.created'),
         quota: t('statuses.create.quota'),
+        'trial-used': t('statuses.create.trialUsed'),
         'display-name': t('statuses.create.displayName'),
         reconcile: t('statuses.create.reconcile'),
         'runtime-failed': t('statuses.create.runtimeFailed')
@@ -768,7 +878,9 @@ function buildDashboardCopy(
       spaceStatus: {
         active: t('statuses.spaceStatus.active'),
         provisioning_pending: t('statuses.spaceStatus.provisioningPending'),
-        delete_pending: t('statuses.spaceStatus.deletePending')
+        delete_pending: t('statuses.spaceStatus.deletePending'),
+        suspended: t('statuses.spaceStatus.suspended'),
+        provisioning_failed: t('statuses.spaceStatus.provisioningFailed')
       },
       spacePlan: {
         free: t('statuses.spacePlan.free')
@@ -788,6 +900,9 @@ function formatSpaceStatus(status: string, copy: DashboardCopy): string {
 function formatQuotaReason(reason: string, copy: DashboardCopy): string {
   if (reason === 'active_free_space_exists') {
     return copy.quota.reasons.activeFreeSpaceExists;
+  }
+  if (reason === 'free_trial_already_used') {
+    return copy.quota.reasons.freeTrialAlreadyUsed;
   }
 
   return copy.quota.reasons.unknown;

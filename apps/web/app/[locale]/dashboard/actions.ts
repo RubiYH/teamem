@@ -38,6 +38,9 @@ export async function createFreeSpaceAction(formData: FormData) {
   if (result.reason === 'active_free_space_exists') {
     redirect(`${dashboardPath.dashboard}?create=quota`);
   }
+  if (result.reason === 'free_trial_already_used') {
+    redirect(`${dashboardPath.dashboard}?create=trial-used`);
+  }
   if (result.reason === 'display_name_required') {
     redirect(`${dashboardPath.dashboard}?create=display-name`);
   }

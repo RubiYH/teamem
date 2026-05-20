@@ -30,6 +30,7 @@ export async function createFreeSpaceForUser(input: {
 const ids = {
   accountId: () => `acct_${randomUUID()}`,
   spaceId: () => `csp_${randomUUID()}`,
+  freePlanGrantId: () => `fpg_${randomUUID()}`,
   auditEventId: () => `aud_${randomUUID()}`
 };
 

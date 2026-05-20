@@ -33,6 +33,11 @@ export type RuntimeCloudMetadata = {
   source: 'teamem-cloud';
   controlPlaneSpaceId: string;
   provisioningRequestId: string;
+  plan?: 'free' | 'team' | 'enterprise';
+  trialExpiresAt?: string | null;
+  memberLimit?: number | null;
+  suspendedAt?: string | null;
+  suspensionReason?: string | null;
 };
 
 export function assertRuntimeCloudMetadataAllowed(

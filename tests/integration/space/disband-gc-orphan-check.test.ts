@@ -46,6 +46,7 @@ const ALL_SPACE_TABLES = [
   'focus',
   'space_rules_snapshots',
   'unread_notifications',
+  'member_system_markers',
   'members',
   'room_codes'
 ];
@@ -53,6 +54,7 @@ const ALL_SPACE_TABLES = [
 function seed(
   db: ReturnType<typeof createSqliteClient>,
   space_id: string,
+  member_id: string,
   prefix: string
 ) {
   const now = new Date().toISOString();
@@ -160,6 +162,10 @@ function seed(
       space_id, principal, event_id, event_type, payload_json, created_at, delivered_at
     ) VALUES (?, 'alice', ?, 'decision_recorded', '{}', ?, NULL)`
   ).run(space_id, e1, now);
+  db.prepare(
+    `INSERT INTO member_system_markers (member_id, space_id, marker, created_at)
+     VALUES (?, ?, 'cloud_bootstrap', ?)`
+  ).run(member_id, space_id, now);
 }
 
 describe('disband GC orphan check (Codex F3)', () => {
@@ -177,8 +183,8 @@ describe('disband GC orphan check (Codex F3)', () => {
       { label: 'cascade-other', member_name: 'bob' },
       TEST_JWT_SECRET
     );
-    seed(db, target.space_id, 'tgt');
-    seed(db, other.space_id, 'oth');
+    seed(db, target.space_id, target.member_id, 'tgt');
+    seed(db, other.space_id, other.member_id, 'oth');
 
     // Mark target disbanded with grace already elapsed.
     db.prepare(
@@ -235,6 +241,7 @@ describe('disband GC orphan check (Codex F3)', () => {
       focus: 1,
       space_rules_snapshots: 1,
       unread_notifications: 1,
+      member_system_markers: 1,
       members: 1,
       room_codes: 1
     };

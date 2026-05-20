@@ -119,19 +119,28 @@
       "rotateLabel": "Rotate room code",
       "rotatePendingLabel": "Rotating..."
     },
+    "trial": {
+      "label": "Trial ends",
+      "expired": "Trial ended",
+      "members": "Members",
+      "runtimeUnavailable": "Runtime status is unavailable. Setup, room-code, and usage controls are hidden until Teamem can verify this Space live."
+    },
     "delete": {
       "title": "Delete Space",
-      "description": "Soft-delete this runtime Space and release the free quota only after the runtime confirms deletion.",
+      "description": "Soft-delete this runtime Space and mark it deleted only after the runtime confirms deletion.",
       "confirmLabel": "I understand this will disable active setup for this Space.",
       "buttonLabel": "Delete Space",
       "pendingLabel": "Deleting...",
       "unavailable": "Delete is available after runtime provisioning finishes."
     },
     "quota": {
-      "title": "Free quota",
-      "blocked": "This account already has an active free Space, so creating another free Space is blocked by the control plane.",
+      "title": "Free trial",
+      "blocked": "This account already has an active Free trial Space, so creating another Free trial Space is blocked by the control plane.",
+      "consumedTitle": "Free trial used",
+      "consumedText": "This account already used its one-time free trial grant. No active Space remains on the dashboard.",
       "reasons": {
-        "activeFreeSpaceExists": "Active free Space exists",
+        "activeFreeSpaceExists": "Active Free trial Space exists",
+        "freeTrialAlreadyUsed": "Free trial already used",
         "unknown": "Quota unavailable"
       }
     },
@@ -142,10 +151,10 @@
       "pendingLabel": "Retrying..."
     },
     "create": {
-      "title": "Create free Space",
+      "title": "Create Free trial Space",
       "description": "Name the Space before provisioning starts.",
       "displayNameLabel": "Space display name",
-      "buttonLabel": "Create free Space",
+      "buttonLabel": "Create Free trial Space",
       "pendingLabel": "Creating..."
     },
     "copy": {
@@ -155,8 +164,9 @@
     },
     "statuses": {
       "create": {
-        "created": "Your free Space is active.",
-        "quota": "This account already has an active free Space.",
+        "created": "Your Free trial Space is active.",
+        "quota": "This account already has an active Free trial Space.",
+        "trialUsed": "This account already used its one-time free trial grant.",
         "displayName": "Enter a Space display name before creating the Space.",
         "reconcile": "Runtime provisioning did not return a confirmed result. Free quota remains reserved while Teamem retries with the same Space request.",
         "runtimeFailed": "Runtime provisioning failed with a confirmed terminal result. Try creating the Space again."
@@ -169,7 +179,7 @@
         "failed": "Room-code rotation failed. The current code was not changed."
       },
       "delete": {
-        "success": "Space deleted. Free quota is available again.",
+        "success": "Space deleted. This account's one-time free trial remains consumed.",
         "confirm": "Confirm deletion before submitting.",
         "missing": "No active Space was found for this account.",
         "unavailable": "Runtime details are not ready for this Space.",
@@ -179,10 +189,12 @@
       "spaceStatus": {
         "active": "active",
         "provisioningPending": "provisioning pending",
-        "deletePending": "delete pending"
+        "deletePending": "delete pending",
+        "suspended": "suspended",
+        "provisioningFailed": "provisioning failed"
       },
       "spacePlan": {
-        "free": "Free"
+        "free": "Free trial"
       }
     }
   }

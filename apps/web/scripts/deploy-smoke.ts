@@ -70,7 +70,7 @@ export async function runTeamemCloudDeploySmoke(
 
     if (missingTables.length > 0) {
       throw new Error(
-        `Teamem Cloud deploy smoke failed: missing database tables ${missingTables.join(', ')}. Run the Better Auth migration and apps/web/db/migrations/001_control_plane.sql.`
+        `Teamem Cloud deploy smoke failed: missing database tables ${missingTables.join(', ')}. Run the Better Auth migration and all pending apps/web/db/migrations/*.sql files in filename order.`
       );
     }
   } finally {

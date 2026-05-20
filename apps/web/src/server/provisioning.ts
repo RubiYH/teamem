@@ -1,16 +1,23 @@
 import type {
   RuntimeProvisioningClient,
+  RuntimeStatusClient,
   CreateCloudSpaceInput,
   CreateCloudSpaceResult,
+  GetCloudSpaceRuntimeStatusInput,
+  CloudSpaceRuntimeStatus,
   RotateCloudRoomCodeInput,
   RotateCloudRoomCodeResult,
+  RuntimePolicyClient,
   SoftDeleteCloudSpaceInput,
-  SoftDeleteCloudSpaceResult
+  SoftDeleteCloudSpaceResult,
+  UpdateCloudSpaceRuntimePolicyInput
 } from '../../../../src/cloud/provisioning-contract';
 import { createHttpRuntimeAdminProvisioningClient } from '../../../../src/cloud/runtime-admin-client';
 import { loadTeamemCloudWebEnv } from './env';
 
-export type CloudProvisioningService = RuntimeProvisioningClient;
+export type CloudProvisioningService = RuntimeProvisioningClient &
+  RuntimeStatusClient &
+  RuntimePolicyClient;
 
 export function createContractOnlyProvisioningService(): CloudProvisioningService {
   return {
@@ -25,6 +32,16 @@ export function createContractOnlyProvisioningService(): CloudProvisioningServic
     softDeleteSpace(
       input: SoftDeleteCloudSpaceInput
     ): Promise<SoftDeleteCloudSpaceResult> {
+      return Promise.resolve(contractOnly(input));
+    },
+    getSpaceRuntimeStatus(
+      input: GetCloudSpaceRuntimeStatusInput
+    ): Promise<CloudSpaceRuntimeStatus> {
+      return Promise.resolve(contractOnly(input));
+    },
+    updateSpaceRuntimePolicy(
+      input: UpdateCloudSpaceRuntimePolicyInput
+    ): Promise<CloudSpaceRuntimeStatus> {
       return Promise.resolve(contractOnly(input));
     }
   };

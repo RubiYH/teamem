@@ -1,6 +1,7 @@
 import type { MiddlewareHandler } from 'hono';
 import type { Database } from 'bun:sqlite';
 import { verifyJwt } from './jwt.js';
+import { applyCloudFreeTrialSuspensionIfExpired } from './spaces.js';
 
 // ── JWT-based auth (Phase 0+) ────────────────────────────────────────────────
 
@@ -52,6 +53,10 @@ export type AuthedMember = {
 
 type MemberLookupRow = { id: string; is_creator: number };
 
+type RequireMemberOptions = {
+  allowSuspended?: boolean;
+};
+
 /**
  * Single-JOIN auth middleware (plan §2 req 2). Verifies the bearer JWT
  * (HS256, exp), then performs one B-tree probe to confirm the space is
@@ -60,7 +65,8 @@ type MemberLookupRow = { id: string; is_creator: number };
  */
 export function createRequireMemberMiddleware(
   jwtSecret: string,
-  db: Database
+  db: Database,
+  options: RequireMemberOptions = {}
 ): MiddlewareHandler {
   const stmt = db.prepare(
     `SELECT m.id, m.is_creator
@@ -208,6 +214,21 @@ export function createRequireMemberMiddleware(
             "Re-join via `/teamem-setup` with the space's room code, or ask the creator to re-add you."
         },
         401
+      );
+    }
+
+    const suspension = applyCloudFreeTrialSuspensionIfExpired(db, space_id);
+    if (suspension && options.allowSuspended !== true) {
+      log('space_suspended', {
+        space_id,
+        reason: suspension.suspensionReason
+      });
+      return c.json(
+        {
+          error: 'space_suspended',
+          reason: suspension.suspensionReason
+        },
+        410
       );
     }
 

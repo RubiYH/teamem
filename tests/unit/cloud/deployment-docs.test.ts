@@ -55,6 +55,19 @@ describe('Teamem Cloud deployment documentation', () => {
     expect(deployDoc).toContain('hosted Supabase dev project');
     expect(deployDoc).toContain('local Postgres');
     expect(deployDoc).toContain('local placeholder values');
+    expect(deployDoc).toContain('all control-plane migrations');
+    expect(deployDoc).toContain('`001_control_plane.sql`');
+    expect(deployDoc).toContain(
+      '`002_issue01_free_trial_policy_and_grants.sql`'
+    );
+    expect(deployDoc).toContain(
+      '`003_issue03_cloud_space_policy_metadata.sql`'
+    );
+    expect(deployDoc).toContain(
+      '`004_issue07_policy_override_audit_events.sql`'
+    );
+    expect(deployDoc).toContain('must not rerun it');
+    expect(deployDoc).toContain('additive/backfill migration');
     expect(deployDoc).toContain('local Teamem runtime');
     expect(deployDoc).toContain('`TEAMEM_PUBLIC_URL`');
     expect(deployDoc).toContain('must point at the same origin as the runtime');
@@ -64,5 +77,22 @@ describe('Teamem Cloud deployment documentation', () => {
     expect(smokeDoc).toContain('without asking the user to self-host Docker');
     expect(smokeDoc).toContain('teamem init --join --server-url');
     expect(smokeDoc).toContain('teamem cc');
+  });
+
+  it('documents free-trial policy, grant, runtime copy, and override semantics', () => {
+    const deployDoc = readText('docs/deploy/teamem-cloud.md');
+
+    expect(deployDoc).toContain('one Free trial Space per web account');
+    expect(deployDoc).toContain('14-day trial');
+    expect(deployDoc).toContain('three user-facing runtime members');
+    expect(deployDoc).toContain('deleting a successfully provisioned Space');
+    expect(deployDoc).toContain('does not restore the grant');
+    expect(deployDoc).toContain('provisioning_failed');
+    expect(deployDoc).toContain('voids the reserved grant');
+    expect(deployDoc).toContain('control-plane creation/request timestamp');
+    expect(deployDoc).toContain('runtime `spaces.created_at` timestamp');
+    expect(deployDoc).toContain('suspend lazily');
+    expect(deployDoc).toContain('cloud-admin API first');
+    expect(deployDoc).toContain('clears `free_trial_expired` suspension');
   });
 });

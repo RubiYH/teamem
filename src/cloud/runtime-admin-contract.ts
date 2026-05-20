@@ -1,4 +1,8 @@
-import type { CreateCloudSpaceResult } from './provisioning-contract.js';
+import type {
+  CloudSpaceRuntimeStatus,
+  CloudRuntimeSpacePlan,
+  CreateCloudSpaceProvisioningResult
+} from './provisioning-contract.js';
 import type { RotateCloudRoomCodeResult } from './provisioning-contract.js';
 import type { SoftDeleteCloudSpaceResult } from './provisioning-contract.js';
 
@@ -8,12 +12,16 @@ export const CLOUD_ADMIN_API_PREFIX = '/cloud-admin/v1';
 
 export const CLOUD_ADMIN_ENDPOINTS = {
   createSpace: `${CLOUD_ADMIN_API_PREFIX}/spaces`,
+  spaceStatus: `${CLOUD_ADMIN_API_PREFIX}/spaces/:runtimeSpaceId/status`,
+  updateSpacePolicy: `${CLOUD_ADMIN_API_PREFIX}/spaces/:runtimeSpaceId/policy`,
   rotateRoomCode: `${CLOUD_ADMIN_API_PREFIX}/spaces/:runtimeSpaceId/room-code`,
   softDeleteSpace: `${CLOUD_ADMIN_API_PREFIX}/spaces/:runtimeSpaceId/soft-delete`
 } as const;
 
 export const CLOUD_ADMIN_HTTP_METHODS = {
   createSpace: 'POST',
+  spaceStatus: 'GET',
+  updateSpacePolicy: 'POST',
   rotateRoomCode: 'POST',
   softDeleteSpace: 'POST'
 } as const;
@@ -23,8 +31,25 @@ export type CloudAdminCreateSpaceRequest = {
   idempotencyKey: string;
   controlPlaneSpaceId: string;
   provisioningRequestId: string;
+  plan: CloudRuntimeSpacePlan;
+  trialExpiresAt: string | null;
+  memberLimit: number | null;
 };
-export type CloudAdminCreateSpaceResponse = CreateCloudSpaceResult;
+export type CloudAdminCreateSpaceResponse = CreateCloudSpaceProvisioningResult;
+
+export type CloudAdminGetSpaceStatusRequest = {
+  controlPlaneSpaceId: string;
+  runtimeSpaceId: string;
+};
+export type CloudAdminGetSpaceStatusResponse = CloudSpaceRuntimeStatus;
+
+export type CloudAdminUpdateSpacePolicyRequest = {
+  controlPlaneSpaceId: string;
+  runtimeSpaceId: string;
+  trialExpiresAt: string;
+  memberLimit: number;
+};
+export type CloudAdminUpdateSpacePolicyResponse = CloudSpaceRuntimeStatus;
 
 export type CloudAdminRotateRoomCodeRequest = {
   controlPlaneSpaceId: string;

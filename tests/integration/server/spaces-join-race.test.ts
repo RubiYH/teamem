@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'bun:test';
 import { runAllMigrations } from '../../helpers/migrations.js';
 import { Database } from 'bun:sqlite';
-import { joinSpace, createSpace } from '../../../src/server/spaces.js';
+import {
+  countActiveUserFacingMembers,
+  createCloudAdminSpace,
+  joinSpace,
+  createSpace
+} from '../../../src/server/spaces.js';
 
 const TEST_SECRET = 'test-secret-32bytes-padded-xxxxx';
 
@@ -91,5 +96,58 @@ describe('joinSpace concurrent race — HTTP layer: one 200, one 409', () => {
         ? ((await res1.json()) as { error: string })
         : ((await res2.json()) as { error: string });
     expect(body409.error).toBe('name_taken');
+  });
+});
+
+describe('joinSpace concurrent race — Cloud free member cap', () => {
+  it('concurrent joins into the final slots cannot exceed the runtime policy cap', async () => {
+    const db = buildDb();
+
+    const created = createCloudAdminSpace(db, {
+      label: 'Cloud Space',
+      idempotencyKey: 'idem-race',
+      controlPlaneSpaceId: 'csp-race',
+      provisioningRequestId: 'req-race',
+      runtimeServerUrl: 'https://runtime.teamem.test',
+      plan: 'free',
+      trialExpiresAt: '2026-06-01T00:00:00.000Z',
+      memberLimit: 3
+    });
+    expect(typeof created).toBe('object');
+    if (typeof created !== 'object') {
+      throw new Error(`unexpected create failure: ${created}`);
+    }
+
+    const results = await Promise.all(
+      ['owner-local', 'bob', 'carol', 'dave'].map((memberName) =>
+        joinSpace(
+          db,
+          { room_code: created.roomCode, member_name: memberName },
+          TEST_SECRET
+        )
+      )
+    );
+
+    const successes = results.filter(
+      (result) =>
+        typeof result === 'object' && result !== null && !('error' in result)
+    );
+    const limitFailures = results.filter(
+      (result) =>
+        typeof result === 'object' &&
+        result !== null &&
+        'error' in result &&
+        result.error === 'space_member_limit_reached'
+    );
+
+    expect(successes).toHaveLength(3);
+    expect(limitFailures).toEqual([
+      {
+        error: 'space_member_limit_reached',
+        member_limit: 3,
+        active_member_count: 3
+      }
+    ]);
+    expect(countActiveUserFacingMembers(db, created.runtimeSpaceId)).toBe(3);
   });
 });

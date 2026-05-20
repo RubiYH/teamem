@@ -20,21 +20,34 @@ export {
   type SetupCommandInput
 } from './setup-command.js';
 export {
+  buildCloudDashboardExistingSpaceRuntimeView,
   buildCloudDashboardSetupView,
+  type CloudDashboardExistingSpaceRuntimeView,
   type CloudDashboardSetupInput,
   type CloudDashboardSetupViewModel,
   type CopyableCloudSetupField
 } from './dashboard-setup.js';
 export {
+  getCloudDashboardRuntimeStatus,
+  type CloudDashboardRuntimeStatus
+} from './dashboard-runtime-status.js';
+export {
   type CloudSpaceStatus,
+  type CloudSpaceRuntimeStatus,
   type CreateCloudSpaceInput,
+  type CreateCloudSpaceProvisioningResult,
   type CreateCloudSpaceResult,
+  type CreateCloudSpaceTerminalFailureResult,
+  type GetCloudSpaceRuntimeStatusInput,
   type RotateCloudRoomCodeInput,
   type RotateCloudRoomCodeResult,
   type RuntimeCloudCorrelation,
+  type RuntimePolicyClient,
   type RuntimeProvisioningClient,
+  type RuntimeStatusClient,
   type SoftDeleteCloudSpaceInput,
-  type SoftDeleteCloudSpaceResult
+  type SoftDeleteCloudSpaceResult,
+  type UpdateCloudSpaceRuntimePolicyInput
 } from './provisioning-contract.js';
 export {
   CLOUD_ADMIN_API_CONTRACT,
@@ -46,8 +59,14 @@ export {
   type CloudAdminApiContract,
   type CloudAdminCreateSpaceRequest,
   type CloudAdminCreateSpaceResponse,
+  type CloudAdminGetSpaceStatusRequest,
+  type CloudAdminGetSpaceStatusResponse,
   type CloudAdminRotateRoomCodeRequest,
-  type CloudAdminRotateRoomCodeResponse
+  type CloudAdminRotateRoomCodeResponse,
+  type CloudAdminSoftDeleteSpaceRequest,
+  type CloudAdminSoftDeleteSpaceResponse,
+  type CloudAdminUpdateSpacePolicyRequest,
+  type CloudAdminUpdateSpacePolicyResponse
 } from './runtime-admin-contract.js';
 export { createHttpRuntimeAdminProvisioningClient } from './runtime-admin-client.js';
 export {
@@ -60,6 +79,7 @@ export {
   getCloudDashboardState,
   isActiveFreeControlPlaneSpace,
   provisionFreeCloudSpace,
+  overrideFreeCloudSpacePolicyForOperator,
   requestFreeCloudSpace,
   rotateCloudRoomCodeForOwner,
   type CloudControlPlaneAccount,
@@ -67,6 +87,8 @@ export {
   type CloudControlPlaneAuditEvent,
   type CloudControlPlaneAuditEventType,
   type CloudControlPlaneClock,
+  type CloudControlPlaneFreePlanGrant,
+  type CloudControlPlaneFreePlanPolicy,
   type CloudControlPlaneIds,
   type CloudControlPlaneRepository,
   type CloudControlPlaneSpace,
@@ -74,11 +96,15 @@ export {
   type CloudControlPlaneSpaceStatus,
   type CloudDashboardState,
   type CloudRoomCodeDisplayMetadata,
+  type CreateFreeCloudSpaceGrantInput,
   type CreateCloudSpaceInsertResult,
   type CreateFreeCloudSpaceInput,
   type CreateFreeCloudSpaceResult,
   type ProvisionFreeCloudSpaceInput,
   type ProvisionFreeCloudSpaceResult,
+  type OverrideFreeCloudSpacePolicyInput,
+  type OverrideFreeCloudSpacePolicyResult,
   type RotateCloudRoomCodeForOwnerInput,
-  type RotateCloudRoomCodeForOwnerResult
+  type RotateCloudRoomCodeForOwnerResult,
+  type RuntimeCloudSpaceTerminalFailureResult
 } from './control-plane.js';
