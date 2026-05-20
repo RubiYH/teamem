@@ -11,7 +11,7 @@ Plugin manifest and metadata for the Claude Code marketplace. Contains the singl
 
 | File | Description |
 |------|-------------|
-| `plugin.json` | Marketplace manifest: name `teamem`, version `0.3.4`, skills directory path, MCP servers declaration |
+| `plugin.json` | Marketplace manifest: name `teamem`, version `0.3.18`, skills directory path, MCP servers declaration |
 
 ## For AI Agents
 

@@ -19,6 +19,15 @@ import {
 const SECONDS_PER_DAY = 86_400;
 const EXPIRY_WARN_DAYS = 7;
 
+class MissingCredentialsError extends Error {
+  constructor() {
+    super(
+      "No credentials found. Run 'bun run setup' to create or join a space."
+    );
+    this.name = 'MissingCredentialsError';
+  }
+}
+
 function getEnv(): Record<string, string | undefined> {
   return process.env as Record<string, string | undefined>;
 }
@@ -45,65 +54,81 @@ export function emitStartupLogs(entry: CredentialEntry): void {
   }
 }
 
-function stampIdentity(
+export function stampIdentity(
   input: Record<string, unknown>,
   _spaceId: string,
   _memberName: string
 ): Record<string, unknown> {
   // Server now extracts space_id and principal from the verified JWT (plan §2
   // req 6). Top-level space_id/principal in the request body returns 400
-  // scope_in_body_unsupported. Strip both keys defensively in case any caller
-  // (older MCP host, fixture) supplies them.
+  // scope_in_body_unsupported. `space` is bridge-only routing metadata for
+  // direct MCP calls. Strip all three defensively before forwarding to the
+  // server.
   const stamped = { ...input };
+  delete stamped.space;
   delete stamped.space_id;
   delete stamped.principal;
   return stamped;
+}
+
+async function loadResolvedCredential(
+  env: Record<string, string | undefined>,
+  spaceFlag?: string
+) {
+  const creds = await loadCredentials();
+  if (!creds) {
+    throw new MissingCredentialsError();
+  }
+
+  const entry = pickEntry({ flag: spaceFlag, env: env.TEAMEM_SPACE, creds });
+
+  checkJwtExp(entry);
+  return entry;
+}
+
+function formatCredentialError(err: unknown): string {
+  if (err instanceof UnknownSpaceError) {
+    return (
+      `[teamem] ${err.message}\n` +
+      "[teamem] Run 'bun run setup' to add it, or pass --space <id> / set TEAMEM_SPACE. Both space_id (ULID) and label are accepted."
+    );
+  }
+  if (err instanceof AmbiguousSpaceLabelError) {
+    // Codex F11: the user passed a label that matches multiple entries.
+    // The error message already lists the matching IDs.
+    return `[teamem] ${err.message}`;
+  }
+  if (err instanceof SessionExpiredError) {
+    return `[teamem] ${err.message}`;
+  }
+  if (err instanceof MissingCredentialsError) {
+    return `[teamem] ${err.message}`;
+  }
+  return `[teamem] ${(err as Error).message}`;
+}
+
+function formatToolError(err: unknown): string {
+  if (
+    err instanceof UnknownSpaceError ||
+    err instanceof AmbiguousSpaceLabelError ||
+    err instanceof SessionExpiredError ||
+    err instanceof MissingCredentialsError
+  ) {
+    return formatCredentialError(err);
+  }
+  return (err as Error).message;
 }
 
 async function resolveCredential(
   env: Record<string, string | undefined>,
   spaceFlag?: string
 ) {
-  const creds = await loadCredentials();
-  if (!creds) {
-    process.stderr.write(
-      "[teamem] No credentials found. Run 'bun run setup' to create or join a space.\n"
-    );
+  try {
+    return await loadResolvedCredential(env, spaceFlag);
+  } catch (err) {
+    process.stderr.write(`${formatCredentialError(err)}\n`);
     process.exit(1);
   }
-
-  let entry;
-  try {
-    entry = pickEntry({ flag: spaceFlag, env: env.TEAMEM_SPACE, creds });
-  } catch (err) {
-    if (err instanceof UnknownSpaceError) {
-      process.stderr.write(`[teamem] ${err.message}\n`);
-      process.stderr.write(
-        "[teamem] Run 'bun run setup' to add it, or pass --space <id> / set TEAMEM_SPACE. Both space_id (ULID) and label are accepted.\n"
-      );
-      process.exit(1);
-    }
-    if (err instanceof AmbiguousSpaceLabelError) {
-      // Codex F11: the user passed a label that matches multiple entries.
-      // The error message already lists the matching IDs.
-      process.stderr.write(`[teamem] ${err.message}\n`);
-      process.exit(1);
-    }
-    process.stderr.write(`[teamem] ${(err as Error).message}\n`);
-    process.exit(1);
-  }
-
-  try {
-    checkJwtExp(entry);
-  } catch (err) {
-    if (err instanceof SessionExpiredError) {
-      process.stderr.write(`[teamem] ${err.message}\n`);
-      process.exit(1);
-    }
-    throw err;
-  }
-
-  return entry;
 }
 
 function parseSpaceFlag(args: string[]): string | undefined {
@@ -115,6 +140,31 @@ function parseSpaceFlag(args: string[]): string | undefined {
   return undefined;
 }
 
+function createBridgeClient(entry: CredentialEntry) {
+  return createHttpClient({
+    baseUrl: entry.server_url.replace(/\/$/, ''),
+    jwt: entry.jwt,
+    spaceId: entry.space_id,
+    spaceLabel: entry.label
+  });
+}
+
+function perCallSpace(input: Record<string, unknown>): string | undefined {
+  return typeof input.space === 'string' && input.space.trim().length > 0
+    ? input.space
+    : undefined;
+}
+
+export async function resolveCallCredential(
+  env: Record<string, string | undefined>,
+  defaultEntry: CredentialEntry,
+  input: Record<string, unknown>
+): Promise<CredentialEntry> {
+  const requestedSpace = perCallSpace(input);
+  if (!requestedSpace) return defaultEntry;
+  return loadResolvedCredential(env, requestedSpace);
+}
+
 export async function startBridge(argv: string[] = process.argv.slice(2)) {
   const env = getEnv();
   const spaceFlag = parseSpaceFlag(argv);
@@ -122,12 +172,7 @@ export async function startBridge(argv: string[] = process.argv.slice(2)) {
 
   emitStartupLogs(entry);
 
-  const client = createHttpClient({
-    baseUrl: entry.server_url.replace(/\/$/, ''),
-    jwt: entry.jwt,
-    spaceId: entry.space_id,
-    spaceLabel: entry.label
-  });
+  const client = createBridgeClient(entry);
 
   const server = new Server(
     { name: 'teamem-bridge', version: '0.2.0' },
@@ -166,16 +211,22 @@ export async function startBridge(argv: string[] = process.argv.slice(2)) {
         ? req.params.arguments
         : {};
 
-    const stamped = stampIdentity(
-      rawInput as Record<string, unknown>,
-      entry.space_id,
-      entry.member_name
-    );
-
     let result: unknown;
     try {
+      const callEntry = await resolveCallCredential(
+        env,
+        entry,
+        rawInput as Record<string, unknown>
+      );
+      const callClient =
+        callEntry === entry ? client : createBridgeClient(callEntry);
+      const stamped = stampIdentity(
+        rawInput as Record<string, unknown>,
+        callEntry.space_id,
+        callEntry.member_name
+      );
       const parsed = binding.inputSchema.parse(stamped);
-      result = await binding.handler(parsed, client);
+      result = await binding.handler(parsed, callClient);
     } catch (err) {
       if (err instanceof SpaceDisbandedError) {
         process.stderr.write(
@@ -183,7 +234,7 @@ export async function startBridge(argv: string[] = process.argv.slice(2)) {
         );
         process.exit(1);
       }
-      result = { ok: false, error: (err as Error).message };
+      result = { ok: false, error: formatToolError(err) };
     }
 
     return {
@@ -265,12 +316,7 @@ async function runArgvMode() {
     process.exit(1);
   }
 
-  const client = createHttpClient({
-    baseUrl: entry.server_url.replace(/\/$/, ''),
-    jwt: entry.jwt,
-    spaceId: entry.space_id,
-    spaceLabel: entry.label
-  });
+  const client = createBridgeClient(entry);
 
   try {
     const result = await binding.handler(parsed.data, client);

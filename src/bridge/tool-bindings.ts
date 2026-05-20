@@ -233,10 +233,11 @@ export const TOOL_BINDINGS: Record<string, ToolBinding> = {
 
   'teamem.get_briefing': {
     description:
-      "Call this at session start and before any non-trivial code change so you understand what your teammates are working on, what's been decided, and what's blocking. Pass `token_budget` to constrain output size.",
+      'Call this once at session start/resume, when the human explicitly asks for a refresh, or when context is stale. Do not repeat a full briefing before every edit; edit-time coordination uses claim/conflict tools. Pass `token_budget` to constrain output size. Pass bridge-only `space` when a session-pinned space should override the bridge default.',
     inputSchema: z
       .object({
         principal: z.string().optional(),
+        space: z.string().optional(),
         token_budget: PositiveIntSchema.optional()
       })
       .passthrough(),

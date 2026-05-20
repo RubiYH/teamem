@@ -2,9 +2,11 @@
 # Plugin SessionStart hook — syncs Space Rules and surfaces queued notifications.
 #
 # On every SessionStart:
-# 1. Calls the dedicated teamem.session_sync path for Space Rules correctness.
-# 2. Surfaces decision replays and gotcha notices from session_sync.
-# 3. Fetches unread_notifications for the current principal and surfaces each
+# 1. Injects one short instruction on startup/resume so Claude fetches the full
+#    briefing once, then relies on lighter edit-time claim tools.
+# 2. Calls the dedicated teamem.session_sync path for Space Rules correctness.
+# 3. Surfaces decision replays and gotcha notices from session_sync.
+# 4. Fetches unread_notifications for the current principal and surfaces each
 #    as a Tier-W warn line so the user sees pending force-release alerts from
 #    sessions that were offline or had no live channel delivery.
 
@@ -17,6 +19,15 @@ PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
 INPUT=$(cat 2>/dev/null || true)
 SID=$(teamem_session_id_from_stdin_json "$INPUT")
 teamem_resolve_session_dir "$SID"
+SESSION_SOURCE=$(printf '%s' "$INPUT" | bun -e '
+try {
+  const raw = await Bun.stdin.text();
+  const i = raw.trim() ? JSON.parse(raw) : {};
+  process.stdout.write(String(i.source || ""));
+} catch {
+  process.stdout.write("");
+}
+' 2>/dev/null || printf '')
 
 teamem_is_active || exit 0
 
@@ -25,6 +36,23 @@ BRIDGE_JS=$(teamem_bridge_js)
 STARTER_TEMPLATE="${PLUGIN_ROOT}/templates/TEAMEM.starter.md"
 SPACE_RULES_HELPER="${PLUGIN_ROOT}/scripts/space-rules-file.js"
 SESSION_SYNC_RESULT=""
+
+_inject_briefing_prompt() {
+  case "${SESSION_SOURCE:-startup}" in
+    startup|resume|"")
+      local briefing_payload space
+      if space=$(_teamem_resolve_space 2>/dev/null) && [ -n "$space" ]; then
+        briefing_payload=$(printf '%s' "$space" | bun -e '
+const space = await Bun.stdin.text();
+process.stdout.write(JSON.stringify({ token_budget: 2000, space }));
+' 2>/dev/null || printf '{"token_budget":2000}')
+      else
+        briefing_payload='{"token_budget":2000}'
+      fi
+      printf 'teamem: Teamem is active at session startup/resume. The first Teamem step for this session is one mcp__teamem__get_briefing call with %s; later edit coordination uses Teamem claim/conflict tools, so full briefing is not repeated before every edit.\n' "$briefing_payload"
+      ;;
+  esac
+}
 
 _fetch_session_sync() {
   [ -n "$SESSION_SYNC_RESULT" ] && return 0
@@ -137,6 +165,7 @@ try {
 ' || true
 }
 
+_inject_briefing_prompt
 _sync_space_rules
 _surface_decision_replays
 _surface_gotcha_notices

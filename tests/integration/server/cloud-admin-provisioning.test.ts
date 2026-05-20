@@ -3,6 +3,7 @@ import { createSqliteClient } from '../../../src/infra/db/sqlite-client.js';
 import { SqliteEventStore } from '../../../src/infra/db/sqlite-event-store.js';
 import { createTeamemTools } from '../../../src/server/tools/index.js';
 import { createRouter } from '../../../src/server/routes.js';
+import { resetRateLimitBuckets } from '../../../src/server/rate-limit.js';
 import { runAllMigrations } from '../../helpers/migrations.js';
 import { CLOUD_ADMIN_ENDPOINTS } from '../../../src/cloud/runtime-admin-contract.js';
 
@@ -11,6 +12,7 @@ const SERVICE_TOKEN = 'runtime-service-token-32bytes-ok';
 const RUNTIME_URL = 'https://runtime.teamem.test';
 
 function setup() {
+  resetRateLimitBuckets();
   const db = createSqliteClient(':memory:');
   runAllMigrations(db);
   const store = new SqliteEventStore(db);

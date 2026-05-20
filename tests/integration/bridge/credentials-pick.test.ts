@@ -11,6 +11,10 @@ import {
   type CredentialEntry,
   type CredentialsFile
 } from '../../../src/bridge/credentials.js';
+import {
+  resolveCallCredential,
+  stampIdentity
+} from '../../../src/bridge/index.js';
 
 const BASE_ENTRY: CredentialEntry = {
   space_id: 'sp-aaa',
@@ -32,13 +36,20 @@ const ENTRY_B: CredentialEntry = {
 
 let tmpDir: string;
 let credPath: string;
+let originalTeamemCredentials: string | undefined;
 
 beforeEach(async () => {
+  originalTeamemCredentials = process.env.TEAMEM_CREDENTIALS;
   tmpDir = await mkdtemp(join(tmpdir(), 'teamem-integ-'));
   credPath = join(tmpDir, 'credentials.json');
 });
 
 afterEach(async () => {
+  if (originalTeamemCredentials === undefined) {
+    delete process.env.TEAMEM_CREDENTIALS;
+  } else {
+    process.env.TEAMEM_CREDENTIALS = originalTeamemCredentials;
+  }
   await rm(tmpDir, { recursive: true, force: true });
 });
 
@@ -114,5 +125,39 @@ describe('AC12 — credential pick priority', () => {
     expect(loaded!.default_space_id).toBe('sp-bbb');
     const entry = pickEntry({ creds: loaded! });
     expect(entry.space_id).toBe('sp-bbb');
+  });
+
+  it('per-call MCP space overrides bridge startup/env/default resolution', async () => {
+    const creds: CredentialsFile = {
+      version: 1,
+      default_space_id: 'sp-aaa',
+      spaces: { 'sp-aaa': BASE_ENTRY, 'sp-bbb': ENTRY_B }
+    };
+    await writeFile(credPath, JSON.stringify(creds), 'utf-8');
+    process.env.TEAMEM_CREDENTIALS = credPath;
+
+    const entry = await resolveCallCredential(
+      { TEAMEM_SPACE: 'sp-aaa' },
+      BASE_ENTRY,
+      { space: 'sp-bbb', token_budget: 2000 }
+    );
+
+    expect(entry.space_id).toBe('sp-bbb');
+    expect(entry.label).toBe('team-beta');
+  });
+
+  it('strips bridge-only space routing before forwarding tool input', () => {
+    expect(
+      stampIdentity(
+        {
+          space: 'sp-bbb',
+          space_id: 'forged-space',
+          principal: 'mallory',
+          token_budget: 2000
+        },
+        'sp-bbb',
+        'alice'
+      )
+    ).toEqual({ token_budget: 2000 });
   });
 });

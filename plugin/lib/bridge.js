@@ -22426,9 +22426,10 @@ var TOOL_BINDINGS = {
     handler: async (input, client) => callServer(client, "/tools/teamem.get_contract_state", input)
   },
   "teamem.get_briefing": {
-    description: "Call this at session start and before any non-trivial code change so you understand what your teammates are working on, what's been decided, and what's blocking. Pass `token_budget` to constrain output size.",
+    description: "Call this once at session start/resume, when the human explicitly asks for a refresh, or when context is stale. Do not repeat a full briefing before every edit; edit-time coordination uses claim/conflict tools. Pass `token_budget` to constrain output size. Pass bridge-only `space` when a session-pinned space should override the bridge default.",
     inputSchema: exports_external.object({
       principal: exports_external.string().optional(),
+      space: exports_external.string().optional(),
       token_budget: PositiveIntSchema.optional()
     }).passthrough(),
     handler: async (input, client) => callServer(client, "/tools/teamem.get_briefing", input)
@@ -23118,6 +23119,13 @@ var TOOL_BINDINGS = {
 // src/bridge/index.ts
 var SECONDS_PER_DAY = 86400;
 var EXPIRY_WARN_DAYS = 7;
+
+class MissingCredentialsError extends Error {
+  constructor() {
+    super("No credentials found. Run 'bun run setup' to create or join a space.");
+    this.name = "MissingCredentialsError";
+  }
+}
 function getEnv() {
   return process.env;
 }
@@ -23136,48 +23144,50 @@ function emitStartupLogs(entry) {
 }
 function stampIdentity(input, _spaceId, _memberName) {
   const stamped = { ...input };
+  delete stamped.space;
   delete stamped.space_id;
   delete stamped.principal;
   return stamped;
 }
-async function resolveCredential(env, spaceFlag) {
+async function loadResolvedCredential(env, spaceFlag) {
   const creds = await loadCredentials();
   if (!creds) {
-    process.stderr.write(`[teamem] No credentials found. Run 'bun run setup' to create or join a space.
-`);
-    process.exit(1);
+    throw new MissingCredentialsError;
   }
-  let entry;
-  try {
-    entry = pickEntry({ flag: spaceFlag, env: env.TEAMEM_SPACE, creds });
-  } catch (err) {
-    if (err instanceof UnknownSpaceError) {
-      process.stderr.write(`[teamem] ${err.message}
-`);
-      process.stderr.write(`[teamem] Run 'bun run setup' to add it, or pass --space <id> / set TEAMEM_SPACE. Both space_id (ULID) and label are accepted.
-`);
-      process.exit(1);
-    }
-    if (err instanceof AmbiguousSpaceLabelError) {
-      process.stderr.write(`[teamem] ${err.message}
-`);
-      process.exit(1);
-    }
-    process.stderr.write(`[teamem] ${err.message}
-`);
-    process.exit(1);
-  }
-  try {
-    checkJwtExp(entry);
-  } catch (err) {
-    if (err instanceof SessionExpiredError) {
-      process.stderr.write(`[teamem] ${err.message}
-`);
-      process.exit(1);
-    }
-    throw err;
-  }
+  const entry = pickEntry({ flag: spaceFlag, env: env.TEAMEM_SPACE, creds });
+  checkJwtExp(entry);
   return entry;
+}
+function formatCredentialError(err) {
+  if (err instanceof UnknownSpaceError) {
+    return `[teamem] ${err.message}
+` + "[teamem] Run 'bun run setup' to add it, or pass --space <id> / set TEAMEM_SPACE. Both space_id (ULID) and label are accepted.";
+  }
+  if (err instanceof AmbiguousSpaceLabelError) {
+    return `[teamem] ${err.message}`;
+  }
+  if (err instanceof SessionExpiredError) {
+    return `[teamem] ${err.message}`;
+  }
+  if (err instanceof MissingCredentialsError) {
+    return `[teamem] ${err.message}`;
+  }
+  return `[teamem] ${err.message}`;
+}
+function formatToolError(err) {
+  if (err instanceof UnknownSpaceError || err instanceof AmbiguousSpaceLabelError || err instanceof SessionExpiredError || err instanceof MissingCredentialsError) {
+    return formatCredentialError(err);
+  }
+  return err.message;
+}
+async function resolveCredential(env, spaceFlag) {
+  try {
+    return await loadResolvedCredential(env, spaceFlag);
+  } catch (err) {
+    process.stderr.write(`${formatCredentialError(err)}
+`);
+    process.exit(1);
+  }
 }
 function parseSpaceFlag(args) {
   for (let i = 0;i < args.length; i++) {
@@ -23187,17 +23197,29 @@ function parseSpaceFlag(args) {
   }
   return;
 }
-async function startBridge(argv = process.argv.slice(2)) {
-  const env = getEnv();
-  const spaceFlag = parseSpaceFlag(argv);
-  const entry = await resolveCredential(env, spaceFlag);
-  emitStartupLogs(entry);
-  const client = createHttpClient({
+function createBridgeClient(entry) {
+  return createHttpClient({
     baseUrl: entry.server_url.replace(/\/$/, ""),
     jwt: entry.jwt,
     spaceId: entry.space_id,
     spaceLabel: entry.label
   });
+}
+function perCallSpace(input) {
+  return typeof input.space === "string" && input.space.trim().length > 0 ? input.space : undefined;
+}
+async function resolveCallCredential(env, defaultEntry, input) {
+  const requestedSpace = perCallSpace(input);
+  if (!requestedSpace)
+    return defaultEntry;
+  return loadResolvedCredential(env, requestedSpace);
+}
+async function startBridge(argv = process.argv.slice(2)) {
+  const env = getEnv();
+  const spaceFlag = parseSpaceFlag(argv);
+  const entry = await resolveCredential(env, spaceFlag);
+  emitStartupLogs(entry);
+  const client = createBridgeClient(entry);
   const server = new Server({ name: "teamem-bridge", version: "0.2.0" }, { capabilities: { tools: {} } });
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: Object.entries(TOOL_BINDINGS).map(([name, binding]) => ({
@@ -23224,18 +23246,20 @@ async function startBridge(argv = process.argv.slice(2)) {
       };
     }
     const rawInput = typeof req.params.arguments === "object" && req.params.arguments !== null ? req.params.arguments : {};
-    const stamped = stampIdentity(rawInput, entry.space_id, entry.member_name);
     let result;
     try {
+      const callEntry = await resolveCallCredential(env, entry, rawInput);
+      const callClient = callEntry === entry ? client : createBridgeClient(callEntry);
+      const stamped = stampIdentity(rawInput, callEntry.space_id, callEntry.member_name);
       const parsed = binding.inputSchema.parse(stamped);
-      result = await binding.handler(parsed, client);
+      result = await binding.handler(parsed, callClient);
     } catch (err) {
       if (err instanceof SpaceDisbandedError) {
         process.stderr.write(`Space ${err.space_id} (label: ${err.space_label}) was disbanded \u2014 removed from credentials.json
 `);
         process.exit(1);
       }
-      result = { ok: false, error: err.message };
+      result = { ok: false, error: formatToolError(err) };
     }
     return {
       content: [
@@ -23304,12 +23328,7 @@ Available: ${Object.keys(TOOL_BINDINGS).join(", ")}
 `);
     process.exit(1);
   }
-  const client = createHttpClient({
-    baseUrl: entry.server_url.replace(/\/$/, ""),
-    jwt: entry.jwt,
-    spaceId: entry.space_id,
-    spaceLabel: entry.label
-  });
+  const client = createBridgeClient(entry);
   try {
     const result = await binding.handler(parsed.data, client);
     process.stdout.write(JSON.stringify(result, null, 2) + `
@@ -23344,5 +23363,7 @@ if (import.meta.main) {
 }
 export {
   startBridge,
+  stampIdentity,
+  resolveCallCredential,
   emitStartupLogs
 };

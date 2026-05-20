@@ -25,6 +25,18 @@ import { marketplaceEnv } from '../helpers/marketplace-env.js';
 
 const REPO_ROOT = resolve(import.meta.dir, '../..');
 
+function expectedBriefingPrompt(space?: string): string {
+  const payload = space
+    ? JSON.stringify({ token_budget: 2000, space })
+    : '{"token_budget":2000}';
+  return (
+    'teamem: Teamem is active at session startup/resume. The first Teamem step ' +
+    'for this session is one mcp__teamem__get_briefing call with ' +
+    `${payload}; later edit coordination uses Teamem claim/conflict tools, ` +
+    'so full briefing is not repeated before every edit.\n'
+  );
+}
+
 function stageFakePlugin(
   workdir: string,
   sessionSyncResponse: Record<string, unknown>,
@@ -97,12 +109,15 @@ function activateSession(workdir: string, sessionId: string, space?: string) {
 function runSessionStart(
   workdir: string,
   sessionId: string,
-  cwd = workdir
-): { status: number | null; stderr: string } {
+  cwd = workdir,
+  source?: 'startup' | 'resume' | 'clear' | 'compact',
+  defaultSpace?: string
+): { status: number | null; stderr: string; stdout: string } {
   const env = marketplaceEnv({
     CLAUDE_PLUGIN_ROOT: join(workdir, 'plugin'),
     CLAUDE_PLUGIN_DATA: join(workdir, 'plugin-data'),
-    CLAUDE_SESSION_ID: sessionId
+    CLAUDE_SESSION_ID: sessionId,
+    CLAUDE_PLUGIN_OPTION_DEFAULT_SPACE: defaultSpace
   });
   const r = spawnSync(
     'bash',
@@ -110,15 +125,128 @@ function runSessionStart(
     {
       cwd,
       env,
-      input: JSON.stringify({ session_id: sessionId }),
+      input: JSON.stringify({
+        session_id: sessionId,
+        ...(source ? { source } : {})
+      }),
       encoding: 'utf-8',
       timeout: 15_000
     }
   );
-  return { status: r.status, stderr: r.stderr || '' };
+  return { status: r.status, stderr: r.stderr || '', stdout: r.stdout || '' };
 }
 
 describe('session-start.sh offline notification delivery (slice #35)', () => {
+  it('injects the exact one-line briefing prompt on startup and resume only', () => {
+    const work = mkdtempSync(join(tmpdir(), 'teamem-sessstart-prompt-'));
+    try {
+      stageFakePlugin(
+        work,
+        {
+          ok: true,
+          data: {
+            space_rules_snapshot: {
+              has_server_rules: false,
+              rendered_rules_body: '',
+              metadata: {
+                format_version: 1,
+                source: 'none',
+                managed_begin: '<!-- BEGIN TEAMEM SPACE RULES -->',
+                managed_end: '<!-- END TEAMEM SPACE RULES -->',
+                rules_version: 0,
+                rules_hash:
+                  'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+                generated_at: '2026-05-10T00:00:00.000Z',
+                space_id: 'space-A',
+                space_label: 'Space A',
+                source_event_id: null,
+                snapshot_updated_at: null,
+                snapshot_updated_by: null
+              }
+            },
+            decision_replays: [],
+            gotcha_notices: []
+          }
+        },
+        []
+      );
+      const sessionId = 'sess-start-prompt';
+      activateSession(work, sessionId, 'space-A');
+
+      const startup = runSessionStart(
+        work,
+        sessionId,
+        work,
+        'startup',
+        'space-default'
+      );
+      const resume = runSessionStart(
+        work,
+        sessionId,
+        work,
+        'resume',
+        'space-default'
+      );
+      const clear = runSessionStart(work, sessionId, work, 'clear');
+      const compact = runSessionStart(work, sessionId, work, 'compact');
+
+      for (const result of [startup, resume, clear, compact]) {
+        expect(result.status).toBe(0);
+      }
+      expect(startup.stdout).toBe(expectedBriefingPrompt('space-A'));
+      expect(resume.stdout).toBe(expectedBriefingPrompt('space-A'));
+      expect(clear.stdout).toBe('');
+      expect(compact.stdout).toBe('');
+    } finally {
+      rmSync(work, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  it('keeps the fallback briefing payload when no session or default space resolves', () => {
+    const work = mkdtempSync(join(tmpdir(), 'teamem-sessstart-fallback-'));
+    try {
+      stageFakePlugin(
+        work,
+        {
+          ok: true,
+          data: {
+            space_rules_snapshot: {
+              has_server_rules: false,
+              rendered_rules_body: '',
+              metadata: {
+                format_version: 1,
+                source: 'none',
+                managed_begin: '<!-- BEGIN TEAMEM SPACE RULES -->',
+                managed_end: '<!-- END TEAMEM SPACE RULES -->',
+                rules_version: 0,
+                rules_hash:
+                  'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+                generated_at: '2026-05-10T00:00:00.000Z',
+                space_id: 'space-default',
+                space_label: 'Default',
+                source_event_id: null,
+                snapshot_updated_at: null,
+                snapshot_updated_by: null
+              }
+            },
+            decision_replays: [],
+            gotcha_notices: []
+          }
+        },
+        []
+      );
+      const sessionId = 'sess-start-fallback';
+      activateSession(work, sessionId);
+
+      const startup = runSessionStart(work, sessionId, work, 'startup');
+
+      expect(startup.status).toBe(0);
+      expect(startup.stdout).toBe(expectedBriefingPrompt());
+    } finally {
+      rmSync(work, { recursive: true, force: true });
+    }
+  }, 30_000);
+
   it('calls fetch_unread_notifications on SessionStart', () => {
     const work = mkdtempSync(join(tmpdir(), 'teamem-sessstart-'));
     try {
@@ -225,13 +353,17 @@ describe('session-start.sh offline notification delivery (slice #35)', () => {
       const sessionId = 'sess-start-02';
       activateSession(work, sessionId, 'space-A');
 
-      const { status, stderr } = runSessionStart(work, sessionId);
+      const { status, stderr, stdout } = runSessionStart(work, sessionId);
       expect(status).toBe(0);
+      expect(stdout).toBe(expectedBriefingPrompt('space-A'));
 
       // Should contain the path and released_by in the warn output.
       expect(stderr).toContain('src/Form.jsx');
       expect(stderr).toContain('bob');
       expect(stderr).toContain('force-release');
+      expect(stdout).not.toContain('src/Form.jsx');
+      expect(stdout).not.toContain('bob');
+      expect(stdout).not.toContain('force-release');
     } finally {
       rmSync(work, { recursive: true, force: true });
     }
@@ -321,8 +453,9 @@ describe('session-start.sh offline notification delivery (slice #35)', () => {
       const sessionId = 'sess-start-space-memory';
       activateSession(work, sessionId, 'space-A');
 
-      const { status, stderr } = runSessionStart(work, sessionId);
+      const { status, stderr, stdout } = runSessionStart(work, sessionId);
       expect(status).toBe(0);
+      expect(stdout).toBe(expectedBriefingPrompt('space-A'));
       expect(stderr).toContain(
         '[decision] decision_published dec-space-memory'
       );
@@ -332,6 +465,9 @@ describe('session-start.sh offline notification delivery (slice #35)', () => {
       );
       expect(stderr).toContain('teamem.get_finding');
       expect(stderr).toContain('teamem.acknowledge_finding');
+      expect(stdout).not.toContain('dec-space-memory');
+      expect(stdout).not.toContain('finding-space-memory');
+      expect(stdout).not.toContain('Full decision body for SessionStart.');
     } finally {
       rmSync(work, { recursive: true, force: true });
     }

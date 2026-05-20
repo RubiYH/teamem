@@ -22437,9 +22437,10 @@ var TOOL_BINDINGS = {
     handler: async (input, client) => callServer(client, "/tools/teamem.get_contract_state", input)
   },
   "teamem.get_briefing": {
-    description: "Call this at session start and before any non-trivial code change so you understand what your teammates are working on, what's been decided, and what's blocking. Pass `token_budget` to constrain output size.",
+    description: "Call this once at session start/resume, when the human explicitly asks for a refresh, or when context is stale. Do not repeat a full briefing before every edit; edit-time coordination uses claim/conflict tools. Pass `token_budget` to constrain output size. Pass bridge-only `space` when a session-pinned space should override the bridge default.",
     inputSchema: exports_external.object({
       principal: exports_external.string().optional(),
+      space: exports_external.string().optional(),
       token_budget: PositiveIntSchema.optional()
     }).passthrough(),
     handler: async (input, client) => callServer(client, "/tools/teamem.get_briefing", input)
