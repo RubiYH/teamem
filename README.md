@@ -24,8 +24,37 @@ Teamem is useful when:
 
 ## Quick Start
 
-Teamem requires a shared server. Set that up first. Use a server your team
-already runs, or clone this repository and self-host it.
+Teamem needs a shared server. The quickest path is
+[Teamem Cloud](https://teamem.cc): it gives your team a hosted Teamem server
+URL, room code, and setup command so you can start with Claude Code without
+running the server yourself.
+
+### Shortcut: Teamem Cloud
+
+1. Open [Teamem Cloud](https://teamem.cc) and sign in.
+2. Create one free managed Space.
+3. Copy the hosted server URL, room code, and setup command from the dashboard.
+4. Run the setup command on each teammate machine, then launch Claude Code:
+
+```bash
+teamem cc
+```
+
+Teamem Cloud is the provisioning and setup control plane. Your team still uses
+the current Claude Code plugin, bridge, git hooks, room codes, claims,
+briefings, decisions, discussions, and Space Rules runtime flow.
+
+If the setup command does not install the bootstrapper for you, install it
+first:
+
+```bash
+npm install -g @rubiyh05/teamem
+```
+
+### Self-host the shared server
+
+If you want to run your own Teamem server, use a server your team already runs,
+or clone this repository and self-host it.
 
 With Docker Compose:
 
