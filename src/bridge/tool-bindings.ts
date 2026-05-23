@@ -942,21 +942,40 @@ export const TOOL_BINDINGS: Record<string, ToolBinding> = {
 
   'teamem.force_release': {
     description:
-      "Force-release a peer's active claim on a specific repo+branch+path. Coordination escape hatch for stuck `manual_only` claims or abandoned claims from crashed agents. Emits `claim_force_released` visible to all space members; the original holder receives an unread_notifications row and may also see live channel delivery if online. Any space member can force-release any other member's claim — there is no privilege gate.",
+      "Force-release a peer's active or paused claim by claim_id, or by repo+branch+path+target_principal. Coordination escape hatch for stuck `manual_only` claims, abandoned claims from crashed agents, and legacy claims with incomplete identity fields. Emits `claim_force_released` visible to all space members; the original holder receives an unread_notifications row and may also see live channel delivery if online. Any space member can force-release any other member's claim — there is no privilege gate.",
     inputSchema: z
       .object({
-        repo_id: z.string().min(1),
-        branch: z.string().min(1),
-        path: z.string().min(1),
-        target_principal: z.string().min(1)
+        claim_id: z.string().min(1).optional(),
+        repo_id: z.string().min(1).optional(),
+        branch: z.string().min(1).optional(),
+        path: z.string().min(1).optional(),
+        target_principal: z.string().min(1).optional()
       })
-      .passthrough(),
+      .passthrough()
+      .superRefine((input, ctx) => {
+        if (input.claim_id) return;
+        for (const key of [
+          'repo_id',
+          'branch',
+          'path',
+          'target_principal'
+        ] as const) {
+          if (!input[key]) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              path: [key],
+              message: 'Required unless claim_id is provided for force_release'
+            });
+          }
+        }
+      }),
     responseSchema: z.object({
       ok: z.literal(true),
       data: z.object({
         released: z.boolean(),
         claim_id: z.string(),
-        original_holder: z.string()
+        original_holder: z.string(),
+        idempotent: z.boolean().optional()
       })
     }),
     handler: async (input, client) =>

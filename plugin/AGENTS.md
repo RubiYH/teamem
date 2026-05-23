@@ -21,9 +21,9 @@ The Claude Code plugin distribution for Teamem. This directory contains the mark
 | Directory | Purpose |
 |-----------|---------|
 | `.claude-plugin/` | Plugin manifest and metadata — see `.claude-plugin/AGENTS.md` |
-| `agents/` | Subagent prompts (currently briefing only; watcher/negotiator runtime is postponed) — see `agents/AGENTS.md` |
+| `agents/` | Subagent prompts (currently briefing only; watcher/negotiator runtime is postponed) |
 | `bin/` | Executable entry points (teamem-call, teamem-flag, teamem-monitor) — see `bin/AGENTS.md` |
-| `commands/` | Slash command markdown files for non-claim user workflows; claim lifecycle is MCP/hook-driven — see `commands/AGENTS.md` |
+| `commands/` | Slash command markdown files for non-claim user workflows; claim lifecycle is MCP/hook-driven |
 | `git-hooks/` | Git hooks for claim lifecycle (post-commit, post-checkout) — see `git-hooks/AGENTS.md` |
 | `hooks/` | Claude hook configuration and dispatch — see `hooks/AGENTS.md` |
 | `lib/` | Prebuilt JavaScript bundles (bridge.js, channel.js, setup.js) — see `lib/AGENTS.md` |
@@ -53,7 +53,10 @@ The Claude Code plugin distribution for Teamem. This directory contains the mark
 - **Bridge entry point** (`bin/teamem-call`): Thin wrapper that resolves `${CLAUDE_PLUGIN_ROOT}` and runs `bun run ${PLUGIN_ROOT}/lib/bridge.js call <tool> [args]`. Used by slash commands that need synchronous MCP tool invocation.
 - **Plugin root resolution**: Scripts resolve plugin root via `${CLAUDE_PLUGIN_ROOT}` (set by Claude Code) or fallback to relative path. Template substitution `__TEAMEM_PLUGIN_ROOT__` is resolved by the installer for git hooks.
 - **Claim lifecycle hooks**: `PreToolUse` calls `gate-claim.sh` (claim/refresh scope before file edits); `Stop` calls `release-claims.sh` for telemetry only (claims survive session end); `SessionStart` calls `session-start.sh` (stdout briefing prompt injection on startup/resume, Space Rules sync, decision/gotcha replay, durable notifications). The hook prompt is only an instruction for the main agent to perform the actual `get_briefing` read.
+- **Claim cleanup boundary**: Claim cleanup is MCP/hook-driven, not a human slash-command surface. Agents may use `teamem.list_claims` and `teamem.force_release`; do not add `/teamem-claims` or `/teamem-force-release` command files without an explicit product decision.
 - **Slash command format**: Each `.md` file in `commands/` is a complete command. Frontmatter includes `description`, `allowed-tools`, and `argument-hint`. Steps follow imperative logic (parse args, validate, call tools, format response).
+- **Command component hygiene**: Do not put `AGENTS.md` or other non-command markdown files directly in `commands/`; Claude plugin validation treats every markdown file there as a command component. Keep command guidance in this file.
+- **Subagent prompt format**: Each `.md` file in `agents/` is a complete Claude prompt (not a skill). Do not put `AGENTS.md` or other non-agent markdown files directly in `agents/`; Claude plugin validation treats every markdown file there as an agent component.
 - **Channels proof points**: For channel smoke tests, `channel.log` plus `notifications.log` prove the plugin polled and emitted. They do not prove Claude Code rendered the event; `/mcp`, startup flags, org policy, and Claude debug logs own that layer.
 - **Space Rules replica**: `TEAMEM.md` is the user-visible local replica and is gitignored. It should be created/rewritten only through `/teamem-rule init`, `/teamem-rule update`, and the `SessionStart` managed-block sync; do not document `snapshot.json` as a required user artifact.
 

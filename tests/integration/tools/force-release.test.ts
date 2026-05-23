@@ -127,6 +127,55 @@ describe('force_release tool (slice #35)', () => {
     expect(payload.repo_id).toBe(REPO);
   });
 
+  it('claim_id fallback uses stored claim metadata when caller sends conflicting identity fields', () => {
+    const claimId = seedClaim(db, tools, 'alice');
+
+    const result = tools.forceRelease({
+      space_id: SPACE,
+      principal: 'bob',
+      actor: 'bob',
+      delegation: 'bob->bob',
+      claim_id: claimId,
+      repo_id: 'github.com/wrong/repo',
+      branch: 'wrong-branch',
+      path: 'wrong/path.ts',
+      target_principal: 'carol'
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.claim_id).toBe(claimId);
+    expect(result.data.original_holder).toBe('alice');
+
+    const event = db
+      .prepare(
+        `SELECT payload_json FROM events WHERE event_type = 'claim_force_released' LIMIT 1`
+      )
+      .get() as { payload_json: string } | null;
+    expect(event).toBeTruthy();
+    const payload = JSON.parse(event!.payload_json) as Record<string, unknown>;
+    expect(payload.claim_id).toBe(claimId);
+    expect(payload.repo_id).toBe(REPO);
+    expect(payload.branch).toBe(BRANCH);
+    expect(payload.path).toBe(PATH);
+    expect(payload.original_holder).toBe('alice');
+
+    const notif = db
+      .prepare(
+        `SELECT principal, payload_json FROM unread_notifications
+        WHERE space_id = ?1 AND event_type = 'claim_force_released' LIMIT 1`
+      )
+      .get(SPACE) as { principal: string; payload_json: string } | null;
+    expect(notif?.principal).toBe('alice');
+    const notifPayload = JSON.parse(notif!.payload_json) as Record<
+      string,
+      unknown
+    >;
+    expect(notifPayload.repo_id).toBe(REPO);
+    expect(notifPayload.branch).toBe(BRANCH);
+    expect(notifPayload.path).toBe(PATH);
+  });
+
   it('inserts unread_notifications row for original holder in same transaction', () => {
     seedClaim(db, tools, 'alice');
 
@@ -364,6 +413,65 @@ describe('force_release tool (slice #35)', () => {
     if (!result.ok) return;
     expect(result.data.released).toBe(true);
     expect(result.data.original_holder).toBe('alice');
+  });
+
+  it('claim_id fallback releases legacy claims with missing repo or branch', () => {
+    const claimId = seedClaim(db, tools, 'alice');
+    db.prepare(
+      `UPDATE claims
+          SET repo_id = '',
+              branch = ''
+        WHERE claim_id = ?1`
+    ).run(claimId);
+
+    const result = tools.forceRelease({
+      space_id: SPACE,
+      principal: 'bob',
+      actor: 'bob',
+      delegation: 'bob->bob',
+      claim_id: claimId
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.released).toBe(true);
+    expect(result.data.claim_id).toBe(claimId);
+    expect(result.data.original_holder).toBe('alice');
+
+    const claim = db
+      .prepare(`SELECT status, released_at FROM claims WHERE claim_id = ?1`)
+      .get(claimId) as { status: string; released_at: string | null };
+    expect(claim.status).toBe('released');
+    expect(claim.released_at).toBeTruthy();
+  });
+
+  it('claim_id fallback releases paused claims that still block peers', () => {
+    const claimId = seedClaim(db, tools, 'alice');
+    db.prepare(
+      `UPDATE claims
+          SET status = 'paused',
+              paused_at = ?2,
+              paused_reason = 'branch-switch'
+        WHERE claim_id = ?1`
+    ).run(claimId, new Date().toISOString());
+
+    const result = tools.forceRelease({
+      space_id: SPACE,
+      principal: 'bob',
+      actor: 'bob',
+      delegation: 'bob->bob',
+      claim_id: claimId
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.released).toBe(true);
+
+    const claim = db
+      .prepare(`SELECT status, released_at FROM claims WHERE claim_id = ?1`)
+      .get(claimId) as { status: string; released_at: string | null };
+    expect(claim.status).toBe('released');
+    expect(claim.released_at).toBeTruthy();
   });
 });
 

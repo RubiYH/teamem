@@ -56,10 +56,11 @@ function seedClaim(
 }
 
 describe('list_claims tool (slice #36)', () => {
+  let db: Database;
   let tools: ReturnType<typeof createTeamemTools>;
 
   beforeEach(() => {
-    ({ tools } = setup());
+    ({ db, tools } = setup());
   });
 
   it("scope=self: returns only principal's active claims with correct shape", () => {
@@ -157,6 +158,35 @@ describe('list_claims tool (slice #36)', () => {
     expect(claims[0]?.status).toBe('paused');
     expect(claims[0]?.paused_at).toBeTruthy();
     expect(claims[0]?.paused_reason).toBe('branch_switch');
+  });
+
+  it('legacy rows with status=paused are discoverable in space scope', () => {
+    const claimId = seedClaim(tools, 'src/Legacy.tsx');
+    const pausedAt = new Date().toISOString();
+    db.prepare(
+      `UPDATE claims
+          SET status = 'paused',
+              paused_at = ?2,
+              paused_reason = 'legacy-branch-switch'
+        WHERE claim_id = ?1`
+    ).run(claimId, pausedAt);
+
+    const result = tools.listClaims({
+      space_id: SPACE,
+      principal: BOB,
+      scope: 'space'
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const { claims } = result.data as {
+      claims: Array<Record<string, unknown>>;
+    };
+    expect(claims).toHaveLength(1);
+    expect(claims[0]?.claim_id).toBe(claimId);
+    expect(claims[0]?.status).toBe('paused');
+    expect(claims[0]?.paused_at).toBe(pausedAt);
+    expect(claims[0]?.paused_reason).toBe('legacy-branch-switch');
   });
 
   it('empty list returns ok with empty array', () => {
