@@ -39,9 +39,13 @@ Set these variables in Vercel and in local `.env.local` files used by `apps/web`
 | `SUPABASE_SERVICE_ROLE_KEY` | yes | Supabase service-role key for trusted server-side operations. Keep it server-only. |
 | `TEAMEM_CLOUD_RUNTIME_URL` | yes | Hosted Teamem runtime base URL used by provisioning and displayed setup commands. |
 | `TEAMEM_CLOUD_RUNTIME_PROVISIONING_TOKEN` | yes | Shared service token for runtime cloud-admin provisioning. Must match the runtime. |
+| `NEXT_PUBLIC_POSTHOG_TOKEN` | yes | PostHog project token used by client and server analytics capture. |
+| `NEXT_PUBLIC_POSTHOG_HOST` | yes | PostHog ingestion host, usually `https://us.i.posthog.com` or `https://eu.i.posthog.com`. |
 | `GOOGLE_CLIENT_ID` | no | Optional Google OAuth client id. |
 | `GOOGLE_CLIENT_SECRET` | no | Optional Google OAuth client secret. |
 | `TEAMEM_CLOUD_BETTER_AUTH_TABLES` | no | Comma-separated Better Auth table override for deploy smoke only. Defaults to `user,session,account,verification`. |
+
+The web app proxies client-side PostHog traffic through `/tmem`; keep `NEXT_PUBLIC_POSTHOG_HOST` on the matching US or EU ingestion host so the proxy rewrites target the correct region.
 
 The runtime also needs `TEAMEM_CLOUD_RUNTIME_PROVISIONING_TOKEN` so it can authenticate web provisioning requests. Configure the runtime with the public URL it should return in setup commands.
 

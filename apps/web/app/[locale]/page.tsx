@@ -4,6 +4,7 @@ import { Button } from '../../src/components/ui/button';
 import { LanguageSwitcher } from '../../src/components/language-switcher';
 import { buildLocalizedMetadata } from '../../src/i18n/metadata';
 import { normalizeLocale } from '../../src/i18n/return-target';
+import { LandingPrimaryCta, LandingSecondaryCta } from './landing-ctas';
 
 type CapabilityRow = {
   label: string;
@@ -78,17 +79,15 @@ export default async function Home({
               </p>
             </div>
             <div className="flex flex-col gap-3 sm:flex-row">
-              <Button asChild className="w-full sm:w-auto" href={dashboardHref}>
+              <LandingPrimaryCta className="w-full sm:w-auto" href={dashboardHref}>
                 {t('hero.primaryCta')}
-              </Button>
-              <Button
-                asChild
+              </LandingPrimaryCta>
+              <LandingSecondaryCta
                 className="w-full sm:w-auto"
                 href="https://github.com/RubiYH/teamem"
-                variant="secondary"
               >
                 {t('hero.secondaryCta')}
-              </Button>
+              </LandingSecondaryCta>
             </div>
           </div>
 

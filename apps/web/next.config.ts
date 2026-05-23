@@ -7,10 +7,33 @@ import { loadTeamemCloudWebEnv } from '../../src/cloud/env-contract';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const withNextIntl = createNextIntlPlugin();
+const posthogProxyPath = '/tmem';
+const posthogIngestionHost =
+  process.env.NEXT_PUBLIC_POSTHOG_HOST ?? 'https://us.i.posthog.com';
+const posthogAssetHost = posthogIngestionHost.includes('eu.')
+  ? 'https://eu-assets.i.posthog.com'
+  : 'https://us-assets.i.posthog.com';
 
 const nextConfig: NextConfig = {
   outputFileTracingRoot: repoRoot,
   reactStrictMode: true,
+  skipTrailingSlashRedirect: true,
+  async rewrites() {
+    return [
+      {
+        source: `${posthogProxyPath}/static/:path*`,
+        destination: `${posthogAssetHost}/static/:path*`
+      },
+      {
+        source: `${posthogProxyPath}/array/:path*`,
+        destination: `${posthogAssetHost}/array/:path*`
+      },
+      {
+        source: `${posthogProxyPath}/:path*`,
+        destination: `${posthogIngestionHost}/:path*`
+      }
+    ];
+  },
   webpack(config) {
     config.resolve.extensionAlias = {
       ...config.resolve.extensionAlias,

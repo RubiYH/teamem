@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import posthog from 'posthog-js';
 
 export function CopyButton({
   ariaLabel,
@@ -21,6 +22,7 @@ export function CopyButton({
       return;
     }
     await navigator.clipboard.writeText(value);
+    posthog.capture('setup_command_copied', { label: ariaLabel });
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1200);
   }
