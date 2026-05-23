@@ -9,7 +9,7 @@ User input: `$ARGUMENTS`
 This is a **destructive operation** that wipes local Teamem state on the user's machine. Before running anything:
 
 1. Tell the user exactly what will be wiped and ask for explicit "yes" confirmation. Subject to `$ARGUMENTS`:
-   - default: `~/.teamem/credentials.json`, `~/.cache/teamem/`, `${CLAUDE_PLUGIN_DATA}/sessions/<sid>/`, plugin session active flag
+   - default: `~/.teamem/credentials.json`, `~/.cache/teamem/`, `${CLAUDE_PLUGIN_DATA}/sessions/`, `${CLAUDE_PLUGIN_DATA}/projects/`, plugin activation flags
    - `--keep-credentials`: preserve `~/.teamem/credentials.json`
 
 2. **Source-checkout users** can run the canonical reset CLI:
@@ -26,10 +26,11 @@ This is a **destructive operation** that wipes local Teamem state on the user's 
    # Remove hook + monitor caches
    rm -rf ~/.cache/teamem/
 
-   # Remove plugin session state
+   # Remove plugin session and project auto-on state
    rm -rf "${CLAUDE_PLUGIN_DATA}/sessions"
+   rm -rf "${CLAUDE_PLUGIN_DATA}/projects"
 
-   # Disable the plugin's session flag
+   # Disable the current session in case Claude recreates session state
    "${CLAUDE_PLUGIN_ROOT}/bin/teamem-flag" disable
    ```
    The Claude Code plugin tooling does not yet expose a one-shot reset MCP tool; the operations above are entirely client-side and local. v1.x will keep this manual; v2 may bundle a `reset.js` artifact alongside `bridge.js` and `setup.js`.

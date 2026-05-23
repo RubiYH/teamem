@@ -17,8 +17,9 @@ import {
   unlinkSync,
   writeFileSync
 } from 'node:fs';
-import { join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { homedir } from 'node:os';
 
 // Codex F6 fix: resolve the bundled bridge from `${CLAUDE_PLUGIN_ROOT}/lib/bridge.js`
@@ -30,9 +31,79 @@ import { homedir } from 'node:os';
 const PLUGIN_ROOT =
   process.env.CLAUDE_PLUGIN_ROOT ?? join(import.meta.dir ?? '.', '..');
 const BRIDGE_JS = join(PLUGIN_ROOT, 'lib', 'bridge.js');
-const PLUGIN_DATA =
-  process.env.CLAUDE_PLUGIN_DATA ??
-  join(homedir(), '.claude/plugins/data/teamem');
+
+function pluginDataEnvLooksTeamem(): boolean {
+  const value = process.env.CLAUDE_PLUGIN_DATA;
+  if (!value) return false;
+  return /^(teamem|teamem-.+|teamem2|teamem2-.+)$/.test(basename(value));
+}
+
+function dataFromInstalledCache(): string | null {
+  try {
+    const pluginDir = dirname(PLUGIN_ROOT);
+    const marketplaceDir = dirname(pluginDir);
+    const cacheDir = dirname(marketplaceDir);
+    if (basename(cacheDir) !== 'cache') return null;
+    const pluginName = basename(pluginDir);
+    const marketplace = basename(marketplaceDir);
+    if (!pluginName || !marketplace) return null;
+    return join(
+      homedir(),
+      '.claude/plugins/data',
+      `${pluginName}-${marketplace}`
+    );
+  } catch {
+    return null;
+  }
+}
+
+function dataFromSourcePlugin(): string | null {
+  try {
+    const pluginJson = join(PLUGIN_ROOT, '.claude-plugin/plugin.json');
+    const manifest = JSON.parse(readFileSync(pluginJson, 'utf-8')) as {
+      name?: string;
+    };
+    if (manifest.name !== 'teamem' && manifest.name !== 'teamem2') {
+      return null;
+    }
+    const marketplaceJson = join(
+      dirname(PLUGIN_ROOT),
+      '.claude-plugin/marketplace.json'
+    );
+    if (existsSync(marketplaceJson)) {
+      const marketplace = JSON.parse(
+        readFileSync(marketplaceJson, 'utf-8')
+      ) as {
+        name?: string;
+      };
+      if (marketplace.name) {
+        return join(
+          homedir(),
+          '.claude/plugins/data',
+          `teamem-${marketplace.name}`
+        );
+      }
+    }
+    return join(homedir(), '.claude/plugins/data/teamem-inline');
+  } catch {
+    return null;
+  }
+}
+
+function resolvePluginDataDir(): string {
+  const derived = dataFromInstalledCache() ?? dataFromSourcePlugin();
+  if (derived) {
+    return pluginDataEnvLooksTeamem()
+      ? process.env.CLAUDE_PLUGIN_DATA!
+      : derived;
+  }
+  return (
+    process.env.CLAUDE_PLUGIN_DATA ??
+    join(homedir(), '.claude/plugins/data/teamem')
+  );
+}
+
+const PLUGIN_DATA = resolvePluginDataDir();
 const SESSION_ID = process.env.CLAUDE_SESSION_ID ?? 'default';
 // 1000ms floor — guards against accidental tight-loop polling that would burn the bridge subprocess
 const POLL_MS = Math.max(
@@ -51,6 +122,8 @@ const RATE_PER_MIN = Math.min(
 );
 
 const SESSION_DIR = join(PLUGIN_DATA, 'sessions', SESSION_ID);
+const ACTIVE_FILE = join(SESSION_DIR, 'active');
+const DISABLED_FILE = join(SESSION_DIR, 'disabled');
 const CURSOR_FILE = join(SESSION_DIR, 'monitor-cursor');
 const NOTIF_LOG = join(SESSION_DIR, 'notifications.log');
 const PID_FILE = join(SESSION_DIR, 'monitor.pid');
@@ -78,6 +151,41 @@ if (!existsSync(BRIDGE_JS)) {
 
 mkdirSync(SESSION_DIR, { recursive: true });
 mkdirSync(PLUGIN_DATA, { recursive: true });
+
+function gitOutput(args: string[]): string {
+  const result = spawnSync('git', args, {
+    encoding: 'utf-8',
+    env: process.env
+  });
+  return result.status === 0 ? result.stdout.trim() : '';
+}
+
+function projectRoot(): string {
+  if (process.env.TEAMEM_PROJECT_ID) return process.env.TEAMEM_PROJECT_ID;
+  return (
+    gitOutput(['config', '--get', 'remote.origin.url']) ||
+    gitOutput(['rev-parse', '--show-toplevel']) ||
+    process.cwd()
+  );
+}
+
+const PROJECT_KEY = createHash('sha1').update(projectRoot()).digest('hex');
+const PERSIST_FILE = join(PLUGIN_DATA, 'projects', PROJECT_KEY, 'auto-on');
+const LEGACY_PERSIST_FILE = join(PLUGIN_DATA, 'auto-on');
+try {
+  if (existsSync(LEGACY_PERSIST_FILE) && !existsSync(PERSIST_FILE)) {
+    mkdirSync(dirname(PERSIST_FILE), { recursive: true });
+    writeFileSync(PERSIST_FILE, readFileSync(LEGACY_PERSIST_FILE));
+    unlinkSync(LEGACY_PERSIST_FILE);
+  }
+} catch {
+  /* best-effort migration only */
+}
+
+function teamemIsActive(): boolean {
+  if (existsSync(DISABLED_FILE)) return false;
+  return existsSync(ACTIVE_FILE) || existsSync(PERSIST_FILE);
+}
 
 // Best-effort: refuse to start if another monitor is already running for
 // this plugin install. PID-only check; orphaned files are reaped silently.
@@ -175,9 +283,9 @@ try {
     }
   }
 } catch {
-  // No credentials yet — proceed without self-filtering. Hook layer will
-  // still gate on active flag, so worst case is the user sees their own
-  // events for a session.
+  // No credentials yet — proceed without self-filtering. The monitor still
+  // gates polling on active / persistent Teamem state, so worst case is the
+  // user sees their own events for an active session.
 }
 
 let cursor: string | null = null;
@@ -388,7 +496,9 @@ logInternal(
 void (async () => {
   while (!stopped) {
     try {
-      pollOnce();
+      if (teamemIsActive()) {
+        pollOnce();
+      }
     } catch (e) {
       logInternal(`poll_error: ${(e as Error).message}`);
     }

@@ -13,6 +13,7 @@
  */
 import { describe, expect, it } from 'bun:test';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import {
   mkdtempSync,
   mkdirSync,
@@ -21,14 +22,27 @@ import {
   readFileSync,
   chmodSync,
   copyFileSync,
-  existsSync
+  existsSync,
+  unlinkSync
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 
 const REPO_ROOT = resolve(import.meta.dir, '../..');
+const PROJECT_KEY = createHash('sha1')
+  .update('monitor-test-project')
+  .digest('hex');
 
 describe('teamem-monitor works without source-tree config (Codex F6)', () => {
+  it('declares the monitor as always-on so persisted sessions receive peer events', () => {
+    const monitors = JSON.parse(
+      readFileSync(join(REPO_ROOT, 'plugin/monitors/monitors.json'), 'utf-8')
+    ) as Array<{ name: string; when?: string }>;
+    expect(
+      monitors.some((m) => m.name === 'teamem-events' && m.when === 'always')
+    ).toBe(true);
+  });
+
   it('functional code has no CLAUDE_PLUGIN_OPTION_TEAMEM_ROOT reads or src/bridge/index.ts joins', () => {
     const src = readFileSync(
       join(REPO_ROOT, 'plugin/bin/teamem-monitor'),
@@ -120,11 +134,17 @@ process.exit(0);
         CLAUDE_PLUGIN_ROOT: plugin,
         CLAUDE_PLUGIN_DATA: join(plugin, 'data'),
         CLAUDE_SESSION_ID: 'test-session',
+        TEAMEM_PROJECT_ID: 'monitor-test-project',
         // Speed up so we exit promptly after one poll.
         TEAMEM_MONITOR_POLL_MS: '1000'
       };
       delete env.CLAUDE_PLUGIN_OPTION_TEAMEM_ROOT;
       delete env.TEAMEM_ROOT;
+
+      mkdirSync(join(plugin, 'data/sessions/test-session'), {
+        recursive: true
+      });
+      writeFileSync(join(plugin, 'data/sessions/test-session/active'), 'now');
 
       // Spawn detached, kill after a short window so the polling loop runs ≥1 cycle.
       const child = require('node:child_process').spawn(
@@ -170,6 +190,86 @@ process.exit(0);
       // Negative: never references the source-tree path.
       const argvJoined = firstPoll.join(' ');
       expect(argvJoined).not.toContain('src/bridge/index.ts');
+    } finally {
+      rmSync(plugin, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  it('idles until Teamem is active, respects disabled override, then polls using project auto-on', () => {
+    const plugin = mkdtempSync(join(tmpdir(), 'teamem-monitor-auto-on-'));
+    try {
+      mkdirSync(join(plugin, 'bin'));
+      mkdirSync(join(plugin, 'lib'));
+
+      copyFileSync(
+        join(REPO_ROOT, 'plugin/bin/teamem-monitor'),
+        join(plugin, 'bin/teamem-monitor')
+      );
+      chmodSync(join(plugin, 'bin/teamem-monitor'), 0o755);
+
+      const sentinel = join(plugin, 'data', 'spawned.json');
+      mkdirSync(join(plugin, 'data'), { recursive: true });
+      writeFileSync(
+        join(plugin, 'lib/bridge.js'),
+        `#!/usr/bin/env bun
+import { writeFileSync, existsSync, readFileSync } from 'node:fs';
+const sentinel = ${JSON.stringify(sentinel)};
+const prior = existsSync(sentinel) ? JSON.parse(readFileSync(sentinel, 'utf-8')) : [];
+prior.push(process.argv.slice(2));
+writeFileSync(sentinel, JSON.stringify(prior));
+process.stdout.write(JSON.stringify({ ok: true, data: { events: [] } }));
+process.exit(0);
+`,
+        { mode: 0o755 }
+      );
+
+      const env: Record<string, string | undefined> = {
+        ...process.env,
+        CLAUDE_PLUGIN_ROOT: plugin,
+        CLAUDE_PLUGIN_DATA: join(plugin, 'data'),
+        CLAUDE_SESSION_ID: 'test-session',
+        TEAMEM_PROJECT_ID: 'monitor-test-project',
+        TEAMEM_MONITOR_POLL_MS: '1000'
+      };
+
+      const child = require('node:child_process').spawn(
+        'bun',
+        ['run', join(plugin, 'bin/teamem-monitor')],
+        { env, stdio: ['ignore', 'pipe', 'pipe'] }
+      );
+
+      Bun.sleepSync(1300);
+      expect(existsSync(sentinel)).toBe(false);
+
+      const disabledFile = join(plugin, 'data/sessions/test-session/disabled');
+      mkdirSync(dirname(disabledFile), { recursive: true });
+      writeFileSync(disabledFile, 'now');
+
+      const persistFile = join(
+        plugin,
+        'data',
+        'projects',
+        PROJECT_KEY,
+        'auto-on'
+      );
+      mkdirSync(dirname(persistFile), { recursive: true });
+      writeFileSync(persistFile, 'now');
+
+      Bun.sleepSync(1300);
+      expect(existsSync(sentinel)).toBe(false);
+      unlinkSync(disabledFile);
+
+      const start = Date.now();
+      while (!existsSync(sentinel) && Date.now() - start < 5000) {
+        Bun.sleepSync(50);
+      }
+      try {
+        child.kill('SIGTERM');
+      } catch {
+        /* ignore */
+      }
+
+      expect(existsSync(sentinel)).toBe(true);
     } finally {
       rmSync(plugin, { recursive: true, force: true });
     }

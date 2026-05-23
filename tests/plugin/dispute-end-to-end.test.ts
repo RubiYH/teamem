@@ -216,9 +216,11 @@ process.exit(0);
       );
 
       const sessionId = 'sess-f21-prod';
-      mkdirSync(join(work, 'plugin-data/sessions', sessionId), {
+      const sessionDir = join(work, 'plugin-data/sessions', sessionId);
+      mkdirSync(sessionDir, {
         recursive: true
       });
+      writeFileSync(join(sessionDir, 'active'), new Date().toISOString());
 
       // No credentials → myPrincipal stays empty → both events surface
       // (no self-filter). HOME points at the empty workdir to avoid

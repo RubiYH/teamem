@@ -112,11 +112,12 @@ bootstrapper:
 ## Activation model
 
 Teamem stays inert until you say so. The plugin's hooks and monitor
-short-circuit when `${CLAUDE_PLUGIN_DATA}/sessions/<sid>/active` is missing.
+poll only when the current session has an `active` flag or the project has
+`auto-on`, unless the session has a `disabled` override from `/teamem-off`.
 
 ```text
-/teamem-on   → write active flag → start monitor → fetch briefing → done
-/teamem-off  → remove active flag → kill monitor → MCP stays up
+/teamem-on   → write active flag → monitor begins polling → fetch briefing → done
+/teamem-off  → write disabled override → monitor idles → MCP stays up
 ```
 
 The MCP server stays connected even when "off" so ad-hoc commands like

@@ -91,6 +91,9 @@ async function runMonitorOnce(
   homeOverride: string
 ) {
   const sessionId = 'mon-test';
+  const sessionDir = join(workdir, 'plugin-data/sessions', sessionId);
+  mkdirSync(sessionDir, { recursive: true });
+  writeFileSync(join(sessionDir, 'active'), new Date().toISOString());
   const env: Record<string, string | undefined> = {
     ...process.env,
     CLAUDE_PLUGIN_ROOT: join(workdir, 'plugin'),

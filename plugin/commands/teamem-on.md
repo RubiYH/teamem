@@ -1,5 +1,5 @@
 ---
-description: Activate Teamem for this session — hooks fire, monitor starts, and one briefing loads. Add --persist to also enable for future sessions in this project.
+description: Activate Teamem for this session — hooks fire, monitor polling is enabled, and one briefing loads. Add --persist to also enable future sessions in this project.
 allowed-tools: Bash(${CLAUDE_PLUGIN_ROOT}/bin/teamem-flag:*), Bash(${CLAUDE_PLUGIN_ROOT}/bin/teamem-call:*), mcp__teamem__get_briefing
 argument-hint: "[space?] [--persist]"
 ---

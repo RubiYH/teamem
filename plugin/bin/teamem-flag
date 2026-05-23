@@ -7,9 +7,10 @@
 #   teamem-flag status
 #
 # Storage:
-#   ${CLAUDE_PLUGIN_DATA}/sessions/${SID}/active   — per-session opt-in
-#   ${CLAUDE_PLUGIN_DATA}/sessions/${SID}/space    — pinned space (text)
-#   ${CLAUDE_PLUGIN_DATA}/auto-on                  — project-wide auto-opt-in
+#   ${CLAUDE_PLUGIN_DATA}/sessions/${SID}/active    — per-session opt-in
+#   ${CLAUDE_PLUGIN_DATA}/sessions/${SID}/disabled  — per-session opt-out over project auto-on
+#   ${CLAUDE_PLUGIN_DATA}/sessions/${SID}/space     — pinned space (text)
+#   ${CLAUDE_PLUGIN_DATA}/projects/<key>/auto-on    — project-wide auto-opt-in
 #
 # Exit 0 unless arguments are malformed.
 
@@ -36,6 +37,7 @@ done
 
 case "$cmd" in
   enable)
+    rm -f "${DISABLED_FLAG}" 2>/dev/null || true
     date -u +"%Y-%m-%dT%H:%M:%SZ" > "${ACTIVE_FLAG}" 2>/dev/null || true
     if [ -n "${space}" ]; then
       printf '%s' "${space}" > "${SESSION_DIR}/space" 2>/dev/null || true
@@ -52,25 +54,20 @@ case "$cmd" in
     ;;
   disable)
     rm -f "${ACTIVE_FLAG}" 2>/dev/null || true
-    # Kill the monitor if its PID file is present and the process is alive.
-    pidf="${SESSION_DIR}/monitor.pid"
-    if [ -f "${pidf}" ]; then
-      pid=$(cat "${pidf}" 2>/dev/null || echo "")
-      if [ -n "${pid}" ] && kill -0 "${pid}" 2>/dev/null; then
-        kill "${pid}" 2>/dev/null || true
-      fi
-      rm -f "${pidf}" 2>/dev/null || true
-    fi
+    date -u +"%Y-%m-%dT%H:%M:%SZ" > "${DISABLED_FLAG}" 2>/dev/null || true
     teamem_log "disabled"
     printf 'teamem: DISABLED for session %s\n' "${SESSION_ID}"
     ;;
   forget)
     rm -f "${PERSIST_FLAG}" 2>/dev/null || true
+    rm -f "${DISABLED_FLAG}" 2>/dev/null || true
     teamem_log "persist_cleared"
     printf 'teamem: project-wide auto-on cleared\n'
     ;;
   status)
+    active=0
     if teamem_is_active; then
+      active=1
       printf 'teamem: ACTIVE'
       [ -f "${ACTIVE_FLAG}" ] && printf ' [session]'
       if [ -f "${PERSIST_FLAG}" ]; then
@@ -81,12 +78,17 @@ case "$cmd" in
       printf '  session_dir: %s\n' "${SESSION_DIR}"
     else
       printf 'teamem: idle (run /teamem-on to activate)\n'
+      [ -f "${DISABLED_FLAG}" ] && printf '  disabled_for_session: yes\n'
     fi
     pidf="${SESSION_DIR}/monitor.pid"
     if [ -f "${pidf}" ]; then
       pid=$(cat "${pidf}" 2>/dev/null || echo "")
       if [ -n "${pid}" ] && kill -0 "${pid}" 2>/dev/null; then
-        printf '  monitor: running (pid=%s)\n' "${pid}"
+        if [ "${active}" = "1" ]; then
+          printf '  monitor: running (pid=%s)\n' "${pid}"
+        else
+          printf '  monitor: running idle (pid=%s)\n' "${pid}"
+        fi
       else
         printf '  monitor: stale pidfile (pid=%s)\n' "${pid:-?}"
       fi

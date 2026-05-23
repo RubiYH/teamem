@@ -93,6 +93,7 @@ async function runMonitorOnce(
   const sessionId = 'sess-monitor-pin';
   const sd = join(workdir, 'plugin-data/sessions', sessionId);
   mkdirSync(sd, { recursive: true });
+  writeFileSync(join(sd, 'active'), new Date().toISOString());
   if (sessionPin) {
     writeFileSync(join(sd, 'space'), sessionPin);
   }

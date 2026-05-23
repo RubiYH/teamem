@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Shared helpers for the teamem plugin's hook + command scripts.
-# Source this file. Sets: SESSION_ID, SESSION_DIR, ACTIVE_FLAG, PERSIST_FLAG.
+# Source this file. Sets: SESSION_ID, SESSION_DIR, ACTIVE_FLAG, DISABLED_FLAG, PERSIST_FLAG.
 # Provides: teamem_is_active, teamem_session_id_from_stdin_json.
 
 TEAMEM_DEFAULT_SPACE="${CLAUDE_PLUGIN_OPTION_DEFAULT_SPACE:-}"
@@ -162,14 +162,17 @@ teamem_resolve_session_dir() {
   SESSION_ID="$sid"
   SESSION_DIR="${TEAMEM_DATA}/sessions/${SESSION_ID}"
   ACTIVE_FLAG="${SESSION_DIR}/active"
+  DISABLED_FLAG="${SESSION_DIR}/disabled"
   mkdir -p "${SESSION_DIR}" 2>/dev/null || true
 }
 
 # Truthy when:
 #   1. ${SESSION_DIR}/active exists, OR
 #   2. ${PERSIST_FLAG} (project-wide auto-on) exists
+# unless ${SESSION_DIR}/disabled exists as a current-session override.
 # Both are simple file-presence checks; no parsing.
 teamem_is_active() {
+  [ -f "${DISABLED_FLAG:-}" ] && return 1
   [ -f "${ACTIVE_FLAG:-}" ] && return 0
   [ -f "${PERSIST_FLAG}" ] && return 0
   return 1

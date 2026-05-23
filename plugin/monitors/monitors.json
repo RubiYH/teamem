@@ -3,6 +3,6 @@
     "name": "teamem-events",
     "command": "${CLAUDE_PLUGIN_ROOT}/bin/teamem-monitor",
     "description": "Teamem peer events — claims, releases, decisions, discussions",
-    "when": "on-skill-invoke:teamem-on"
+    "when": "always"
   }
 ]

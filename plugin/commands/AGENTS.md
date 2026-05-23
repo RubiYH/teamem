@@ -22,7 +22,7 @@ Slash command definitions for Teamem. Each `.md` file is a complete command that
 | `teamem-gotcha.md` | Share a persistent gotcha with summary, tags, and severity |
 | `teamem-grant.md` | Grant a pending legacy/internal edit-permission request |
 | `teamem-off.md` | Deactivate Teamem for this session (stop monitor, keep MCP) |
-| `teamem-on.md` | Activate Teamem for this session (start monitor, fetch briefing) |
+| `teamem-on.md` | Activate Teamem for this session (enable monitor polling, fetch briefing) |
 | `teamem-reset.md` | Reset session state (clear cursor, retry claims, remove local state) |
 | `teamem-restore.md` | Restore a soft-disbanded space within the 7-day grace window |
 | `teamem-rule.md` | Initialize or publish Space Rules through the managed `TEAMEM.md` replica |

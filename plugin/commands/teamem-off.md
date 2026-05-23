@@ -1,5 +1,5 @@
 ---
-description: Deactivate Teamem for this session. Hooks become no-ops, monitor stops. MCP server stays connected for ad-hoc /teamem-* calls.
+description: Deactivate Teamem for this session. Hooks become no-ops, monitor polling idles. MCP server stays connected for ad-hoc /teamem-* calls.
 allowed-tools: Bash(${CLAUDE_PLUGIN_ROOT}/bin/teamem-flag:*)
 argument-hint: "[--forget]"
 ---
