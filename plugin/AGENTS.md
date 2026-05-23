@@ -37,6 +37,7 @@ The Claude Code plugin distribution for Teamem. This directory contains the mark
 
 - **Bundled artifact model**: The plugin ships as a single marketplace install. All runtime logic lives in committed `.js` bundles. Source code for these bundles lives in `src/` at the project root; always rebuild via `bun build` commands after changes.
 - **Plugin version**: Bump the version in `plugin.json` before each plugin iteration (cache integrity check in Claude Code rejects stale bundles).
+- **Marketplace version gate**: If a change must reach users through `teamem update`, `teamem cc --update`, or `claude plugin update teamem@teamem-alpha`, bump both `plugin/.claude-plugin/plugin.json` and root `.claude-plugin/marketplace.json` before committing. Keep the marketplace plugin entry version mirrored to the plugin manifest version.
 - **Cache integrity**: Claude Code validates `~/.claude/plugins/cache/...` — never edit cache files directly. Always: change source → bump version in `plugin.json` → clear cache (`rm -rf ~/.claude/plugins/cache/<plugin>`) → reinstall.
 - **Marketplace trust**: The plugin is self-contained. All dependencies (Bun, Node, MCP SDK) are resolved at plugin execution time, not installation time. Hooks assume Bun is available; they exit gracefully if not.
 - **Channels local-dev startup**: `--plugin-dir` loads commands/agents, but a development channel still needs the `--dangerously-load-development-channels server:teamem-channel` flag and a real `.mcp.json` `teamem-channel` entry in the launching repo. Placeholder paths such as `/path/to/teamem/plugin/lib/channel.js` make `/mcp` show the server as failed.
@@ -56,6 +57,13 @@ The Claude Code plugin distribution for Teamem. This directory contains the mark
 - **Slash command format**: Each `.md` file in `commands/` is a complete command. Frontmatter includes `description`, `allowed-tools`, and `argument-hint`. Steps follow imperative logic (parse args, validate, call tools, format response).
 - **Channels proof points**: For channel smoke tests, `channel.log` plus `notifications.log` prove the plugin polled and emitted. They do not prove Claude Code rendered the event; `/mcp`, startup flags, org policy, and Claude debug logs own that layer.
 - **Space Rules replica**: `TEAMEM.md` is the user-visible local replica and is gitignored. It should be created/rewritten only through `/teamem-rule init`, `/teamem-rule update`, and the `SessionStart` managed-block sync; do not document `snapshot.json` as a required user artifact.
+
+### Pre-Commit Checklist
+
+- For plugin manifest, command, monitor, hook, script, or runtime behavior changes, confirm whether marketplace users need a new plugin artifact. If yes, bump the mirrored plugin and marketplace versions in the same commit.
+- For changes under `src/bridge/`, `src/channel/`, or `src/cli/setup.ts`, run `bun run build:plugin` and commit the regenerated `plugin/lib/*.js` bundles.
+- For plugin activation, hook, monitor, or delivery behavior, run the relevant focused `tests/plugin/*.test.ts` files plus `bun run typecheck`; use `bun run lint` when TypeScript, test, or docs lint coverage is touched.
+- Before committing, check that the installed Claude cache is not being edited directly and that the staged diff contains source/plugin files, not `~/.claude/plugins/cache/...` artifacts.
 
 ## Dependencies
 

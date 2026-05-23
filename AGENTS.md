@@ -55,6 +55,13 @@ See `.docs/integrations/agent-prompt-snippet.md` for the internal system-prompt 
 - Database-backed tests use `:memory:` SQLite and apply `src/infra/db/migrations/001_init.sql` (and optionally `002_decisions_kind_and_indexes.sql`) per test.
 - Perf benches live in `tests/perf/` and assert p50 latency budgets — see `tests/perf/*.bench.ts`.
 
+### Commit Checklist
+
+- Before committing, run `git status --short` and review the staged diff with `git diff --cached --stat` or `git diff --cached`. Stage only files that belong to the requested change; leave unrelated user or generated changes alone.
+- Verify with the smallest meaningful gate for the touched surface before commit. Use targeted tests for narrow changes, then `bun run typecheck`, `bun run lint`, `bun run build:plugin`, or the full `bun test` gate when the touched code requires it.
+- Commit messages must use the Lore protocol: an intent line first, then relevant trailers such as `Constraint:`, `Rejected:`, `Confidence:`, `Scope-risk:`, `Directive:`, `Tested:`, and `Not-tested:`. Include known verification gaps explicitly.
+- Every agent-authored commit must include `Co-authored-by: OmX <omx@oh-my-codex.dev>`.
+
 ### Common Patterns
 
 - **Event sourcing**: state changes go through `validateEvent` → `SqliteEventStore.append` → `applyProjectionUpdate`.
