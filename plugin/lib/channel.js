@@ -23003,19 +23003,38 @@ var TOOL_BINDINGS = {
     handler: async (input, client) => callServer(client, "/tools/teamem.list_claims", input)
   },
   "teamem.force_release": {
-    description: "Force-release a peer's active claim on a specific repo+branch+path. Coordination escape hatch for stuck `manual_only` claims or abandoned claims from crashed agents. Emits `claim_force_released` visible to all space members; the original holder receives an unread_notifications row and may also see live channel delivery if online. Any space member can force-release any other member's claim \u2014 there is no privilege gate.",
+    description: "Force-release a peer's active or paused claim by claim_id, or by repo+branch+path+target_principal. Coordination escape hatch for stuck `manual_only` claims, abandoned claims from crashed agents, and legacy claims with incomplete identity fields. Emits `claim_force_released` visible to all space members; the original holder receives an unread_notifications row and may also see live channel delivery if online. Any space member can force-release any other member's claim \u2014 there is no privilege gate.",
     inputSchema: exports_external.object({
-      repo_id: exports_external.string().min(1),
-      branch: exports_external.string().min(1),
-      path: exports_external.string().min(1),
-      target_principal: exports_external.string().min(1)
-    }).passthrough(),
+      claim_id: exports_external.string().min(1).optional(),
+      repo_id: exports_external.string().min(1).optional(),
+      branch: exports_external.string().min(1).optional(),
+      path: exports_external.string().min(1).optional(),
+      target_principal: exports_external.string().min(1).optional()
+    }).passthrough().superRefine((input, ctx) => {
+      if (input.claim_id)
+        return;
+      for (const key of [
+        "repo_id",
+        "branch",
+        "path",
+        "target_principal"
+      ]) {
+        if (!input[key]) {
+          ctx.addIssue({
+            code: exports_external.ZodIssueCode.custom,
+            path: [key],
+            message: "Required unless claim_id is provided for force_release"
+          });
+        }
+      }
+    }),
     responseSchema: exports_external.object({
       ok: exports_external.literal(true),
       data: exports_external.object({
         released: exports_external.boolean(),
         claim_id: exports_external.string(),
-        original_holder: exports_external.string()
+        original_holder: exports_external.string(),
+        idempotent: exports_external.boolean().optional()
       })
     }),
     handler: async (input, client) => callServer(client, "/tools/teamem.force_release", input)

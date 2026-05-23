@@ -701,10 +701,11 @@ export function forceRelease(
     principal: string;
     actor: string;
     delegation: string;
-    repo_id: string;
-    branch: string;
-    path: string;
-    target_principal: string;
+    claim_id?: string;
+    repo_id?: string;
+    branch?: string;
+    path?: string;
+    target_principal?: string;
   }
 ): ToolResponse<{
   released: boolean;
@@ -712,14 +713,26 @@ export function forceRelease(
   original_holder: string;
   idempotent?: boolean;
 }> {
-  if (!input.repo_id)
-    return ctx.toolError('INVALID_PAYLOAD', 'repo_id is required', {});
-  if (!input.branch)
-    return ctx.toolError('INVALID_PAYLOAD', 'branch is required', {});
-  if (!input.path)
-    return ctx.toolError('INVALID_PAYLOAD', 'path is required', {});
-  if (!input.target_principal)
-    return ctx.toolError('INVALID_PAYLOAD', 'target_principal is required', {});
+  const byClaimId = typeof input.claim_id === 'string' && input.claim_id !== '';
+  if (!byClaimId) {
+    if (!input.repo_id)
+      return ctx.toolError('INVALID_PAYLOAD', 'repo_id is required', {});
+    if (!input.branch)
+      return ctx.toolError('INVALID_PAYLOAD', 'branch is required', {});
+    if (!input.path)
+      return ctx.toolError('INVALID_PAYLOAD', 'path is required', {});
+    if (!input.target_principal)
+      return ctx.toolError(
+        'INVALID_PAYLOAD',
+        'target_principal is required',
+        {}
+      );
+  }
+  const claimId = input.claim_id ?? '';
+  const requestedRepoId = input.repo_id ?? '';
+  const requestedBranch = input.branch ?? '';
+  const requestedPath = input.path ?? '';
+  const requestedTargetPrincipal = input.target_principal ?? '';
 
   // codex-review fix (task #2): wrap in `.immediate()` to acquire
   // SQLite's RESERVED lock at BEGIN. Without it, two concurrent
@@ -733,33 +746,56 @@ export function forceRelease(
       // SELECT runs inside the RESERVED-locked tx. Both `status = 'active'`
       // and the released_at guard ensure the second concurrent caller
       // sees no row after the first commits.
-      const claim = ctx.db
-        .prepare(
-          `SELECT claim_id, principal, status, released_at, scope_json
-         FROM claims
-        WHERE space_id = ?1
-          AND repo_id = ?2
-          AND branch = ?3
-          AND path = ?4
-          AND principal = ?5
-          AND status = 'active'
-          AND (released_at IS NULL OR released_at > strftime('%Y-%m-%dT%H:%M:%fZ','now'))
-          AND tombstoned_at IS NULL
-        ORDER BY created_at DESC
-        LIMIT 1`
-        )
-        .get(
-          input.space_id,
-          input.repo_id,
-          input.branch,
-          input.path,
-          input.target_principal
-        ) as {
+      const claim = (
+        byClaimId
+          ? ctx.db
+              .prepare(
+                `SELECT claim_id, principal, status, released_at, scope_json, repo_id, branch, path
+                   FROM claims
+                  WHERE space_id = ?1
+                    AND claim_id = ?2
+                    AND status IN ('active', 'paused')
+                    AND (released_at IS NULL OR released_at > strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+                    AND tombstoned_at IS NULL
+                  ORDER BY created_at DESC
+                  LIMIT 1`
+              )
+              .get(input.space_id, claimId)
+          : ctx.db
+              .prepare(
+                `SELECT claim_id, principal, status, released_at, scope_json, repo_id, branch, path
+                   FROM claims
+                  WHERE space_id = ?1
+                    AND repo_id = ?2
+                    AND branch = ?3
+                    AND principal = ?5
+                    AND status IN ('active', 'paused')
+                    AND (path = ?4 OR EXISTS (
+                      SELECT 1
+                        FROM json_each(json_extract(scope_json, '$.paths')) je
+                       WHERE je.value = ?4
+                    ))
+                    AND (released_at IS NULL OR released_at > strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+                    AND tombstoned_at IS NULL
+                  ORDER BY created_at DESC
+                  LIMIT 1`
+              )
+              .get(
+                input.space_id,
+                requestedRepoId,
+                requestedBranch,
+                requestedPath,
+                requestedTargetPrincipal
+              )
+      ) as {
         claim_id: string;
         principal: string;
         status: string;
         released_at: string | null;
         scope_json: string;
+        repo_id: string;
+        branch: string;
+        path: string;
       } | null;
 
       if (!claim) {
@@ -767,26 +803,44 @@ export function forceRelease(
         // peer? Surface a typed idempotent-success rather than
         // claim_not_found so concurrent callers all observe the same
         // released-once outcome.
-        const recentlyReleased = ctx.db
-          .prepare(
-            `SELECT claim_id FROM claims
-          WHERE space_id = ?1
-            AND repo_id = ?2
-            AND branch = ?3
-            AND path = ?4
-            AND principal = ?5
-            AND status = 'released'
-            AND tombstoned_at IS NULL
-          ORDER BY released_at DESC
-          LIMIT 1`
-          )
-          .get(
-            input.space_id,
-            input.repo_id,
-            input.branch,
-            input.path,
-            input.target_principal
-          ) as { claim_id: string } | null;
+        const recentlyReleased = (
+          byClaimId
+            ? ctx.db
+                .prepare(
+                  `SELECT claim_id, principal FROM claims
+                    WHERE space_id = ?1
+                      AND claim_id = ?2
+                      AND status = 'released'
+                      AND tombstoned_at IS NULL
+                    ORDER BY released_at DESC
+                    LIMIT 1`
+                )
+                .get(input.space_id, claimId)
+            : ctx.db
+                .prepare(
+                  `SELECT claim_id, principal FROM claims
+                    WHERE space_id = ?1
+                      AND repo_id = ?2
+                      AND branch = ?3
+                      AND principal = ?5
+                      AND status = 'released'
+                      AND (path = ?4 OR EXISTS (
+                        SELECT 1
+                          FROM json_each(json_extract(scope_json, '$.paths')) je
+                         WHERE je.value = ?4
+                      ))
+                      AND tombstoned_at IS NULL
+                    ORDER BY released_at DESC
+                    LIMIT 1`
+                )
+                .get(
+                  input.space_id,
+                  requestedRepoId,
+                  requestedBranch,
+                  requestedPath,
+                  requestedTargetPrincipal
+                )
+        ) as { claim_id: string; principal: string } | null;
 
         if (recentlyReleased) {
           return {
@@ -794,7 +848,7 @@ export function forceRelease(
             data: {
               released: true,
               claim_id: recentlyReleased.claim_id,
-              original_holder: input.target_principal,
+              original_holder: recentlyReleased.principal,
               idempotent: true
             }
           };
@@ -802,13 +856,35 @@ export function forceRelease(
 
         return ctx.toolError(
           'claim_not_found',
-          `No active claim held by ${input.target_principal} on ${input.path} (branch=${input.branch})`
+          byClaimId
+            ? `No active or paused claim ${claimId}`
+            : `No active or paused claim held by ${requestedTargetPrincipal} on ${requestedPath} (branch=${requestedBranch})`
         );
       }
 
       const now = new Date().toISOString();
       const eventId = ctx.newEventId();
       const idempotencyKey = `force-release-${claim.claim_id}-${input.principal}`;
+      let fallbackPath = claim.path;
+      try {
+        const parsed = JSON.parse(claim.scope_json) as TeamemEvent['scope'];
+        fallbackPath =
+          fallbackPath ||
+          (Array.isArray(parsed.paths) && typeof parsed.paths[0] === 'string'
+            ? parsed.paths[0]
+            : '');
+      } catch {
+        // Keep the projection-owned path if legacy scope_json is malformed.
+      }
+      const releasedPath = byClaimId
+        ? fallbackPath
+        : (input.path ?? fallbackPath);
+      const releasedRepoId = byClaimId
+        ? claim.repo_id
+        : (input.repo_id ?? claim.repo_id);
+      const releasedBranch = byClaimId
+        ? claim.branch
+        : (input.branch ?? claim.branch);
 
       const event: TeamemEvent = {
         schema_version: '1.0',
@@ -820,14 +896,14 @@ export function forceRelease(
         actor: input.actor,
         delegation: input.delegation,
         event_type: 'claim_force_released',
-        scope: { paths: [input.path] },
+        scope: releasedPath ? { paths: [releasedPath] } : {},
         payload: {
           claim_id: claim.claim_id,
-          repo_id: input.repo_id,
-          branch: input.branch,
-          path: input.path,
+          repo_id: releasedRepoId,
+          branch: releasedBranch,
+          path: releasedPath,
           released_by: input.principal,
-          original_holder: input.target_principal,
+          original_holder: claim.principal,
           released_at: now
         }
       };
@@ -852,7 +928,7 @@ export function forceRelease(
           )
           .run(
             input.space_id,
-            input.target_principal,
+            claim.principal,
             eventId,
             'claim_force_released',
             JSON.stringify(event.payload),
@@ -869,7 +945,7 @@ export function forceRelease(
         data: {
           released: true,
           claim_id: claim.claim_id,
-          original_holder: input.target_principal
+          original_holder: claim.principal
         }
       };
     })
@@ -1182,7 +1258,7 @@ export function listClaims(
            FROM claims
           WHERE space_id = ?1
             AND principal = ?2
-            AND status IN ('active')
+            AND status IN ('active', 'paused')
             AND tombstoned_at IS NULL
           ORDER BY created_at ASC`
           )
@@ -1193,7 +1269,7 @@ export function listClaims(
                 status, paused_at, paused_reason, created_at, last_edit_at, expires_at
            FROM claims
           WHERE space_id = ?1
-            AND status IN ('active')
+            AND status IN ('active', 'paused')
             AND tombstoned_at IS NULL
           ORDER BY principal ASC, created_at ASC`
           )

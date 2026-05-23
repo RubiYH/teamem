@@ -138,6 +138,19 @@ describe('bridge → server round-trip (in-process)', () => {
     expect(parsed.token_budget).toBe(2000);
   });
 
+  it('force_release binding accepts claim_id without repo/branch/path identity fields', () => {
+    const parsed = TOOL_BINDINGS['teamem.force_release'].inputSchema.parse({
+      claim_id: '01KSA7Y8H9XQNADEQC3B3D51T7'
+    }) as { claim_id: string };
+
+    expect(parsed.claim_id).toBe('01KSA7Y8H9XQNADEQC3B3D51T7');
+    expect(() =>
+      TOOL_BINDINGS['teamem.force_release'].inputSchema.parse({
+        path: 'src/Form.jsx'
+      })
+    ).toThrow();
+  });
+
   it('share_finding/get_finding bridge schemas document persistent gotcha fields', () => {
     const shared = TOOL_BINDINGS['teamem.share_finding'].responseSchema?.parse({
       ok: true,

@@ -26,6 +26,13 @@ describe('teamem alpha marketplace contract', () => {
     // The plugin manifest remains the MCP authority; the marketplace file only
     // points Claude Code at the existing plugin bundle.
     expect(pluginManifest.mcpServers).toBe('./.mcp.json');
+    expect(pluginManifest.commands).not.toContain(
+      './commands/teamem-claims.md'
+    );
+    expect(pluginManifest.commands).not.toContain(
+      './commands/teamem-force-release.md'
+    );
+    expect(pluginManifest.agents).toEqual(['./agents/teamem-briefer.md']);
     expect(marketplace.mcpServers).toBeUndefined();
   });
 });
