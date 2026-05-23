@@ -141,8 +141,8 @@ full briefing before every edit.
 ## Roadmap
 
 The current build is intentionally narrow: Claude Code first, queue-first
-coordination, and a self-hosted server. Backlog items already captured in the
-project docs include:
+coordination, and a shared server that can be hosted by Teamem Cloud or run by
+your team. Backlog items already captured in the project docs include:
 
 | Area | What remains |
 | --- | --- |
@@ -170,6 +170,7 @@ User-scope installs work for personal testing.
 - [Quickstart](docs/getting-started/quickstart.md)
 - [Claude Code plugin guide](docs/integrations/claude-code-plugin.md)
 - [Local development](docs/getting-started/local-dev.md)
+- [Teamem Cloud deployment](docs/deploy/teamem-cloud.md)
 - [Architecture](docs/architecture.md)
 - [Hooks](docs/integrations/hooks.md)
 - [VPS deployment](docs/deploy/vps.md)
