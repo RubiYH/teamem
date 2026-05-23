@@ -5,7 +5,7 @@
 
 ## Purpose
 
-Publishable npm package for the `teamem` CLI. This package is the first-run bootstrapper users install with `npm install -g @rubiyh05/teamem`; it prepares Claude Code marketplace/plugin state, delegates to Teamem setup, installs optional git hooks, updates the plugin, and launches Claude Code with Teamem enabled.
+Publishable npm package for the `teamem` CLI. This package is the first-run bootstrapper users install with `npm install -g @rubiyh05/teamem`; it prepares Claude Code marketplace/plugin state, delegates to Teamem setup, installs optional git hooks, updates or uninstalls the plugin, and launches Claude Code with Teamem enabled.
 
 ## Key Files
 
@@ -13,11 +13,12 @@ Publishable npm package for the `teamem` CLI. This package is the first-run boot
 |------|-------------|
 | `package.json` | npm package metadata; published package name is `@rubiyh05/teamem`, bin points at `dist/bin/teamem.js` |
 | `src/bin/teamem.ts` | executable entry point; must keep the Bun shebang |
-| `src/cli.ts` | command parser and command orchestration for `init`, `update`, and `cc` |
+| `src/cli.ts` | command parser and command orchestration for `init`, `update`, `uninstall`, and `cc` |
 | `src/plugin-installer.ts` | marketplace add/update/install flow, plugin scope resolution, scope memory |
 | `src/claude-plugin-list.ts` | source of truth for parsing `claude plugin list --json` |
 | `src/setup-delegation.ts` | delegates create/join setup to the installed Teamem plugin setup bundle |
-| `src/git-hooks.ts` | optional post-setup git hook installer prompt and execution |
+| `src/git-hooks.ts` | optional post-setup git hook installer/uninstaller prompt and execution |
+| `src/uninstall-executor.ts` | first-class uninstall cleanup path for plugin, marketplace, hooks, local state, and credentials |
 | `src/cc-launcher.ts` | optional update-before-launch prompt and Claude Code launch command |
 | `src/runtime-prompt.ts` | Bun-backed interactive prompt wrapper used by every CLI prompt |
 | `tests/package-artifact.test.ts` | packed npm artifact/install smoke coverage |
@@ -32,6 +33,7 @@ Publishable npm package for the `teamem` CLI. This package is the first-run boot
 - Keep marketplace defaults pinned to `https://github.com/RubiYH/teamem`, `teamem-alpha`, and `teamem@teamem-alpha`.
 - Preserve `--scope project|user|local` flags and `.teamem/bootstrapper.json` scope memory. Commands should prefer explicit flags, then remembered scope, then safe prompting/defaults.
 - Keep `--dry-run` useful: it should show planned external commands without mutating Claude Code, git hooks, credentials, or scope memory.
+- Keep `teamem uninstall` comprehensive: uninstall the plugin, remove the marketplace source, uninstall Teamem-managed git hooks, remove bootstrapper scope memory, clear local run/cache/plugin data, and remove credentials unless `--keep-credentials` is set. Continue local cleanup after non-fatal Claude command failures.
 - Keep dist/package behavior in mind. Source changes are not enough; `bun run build` updates `dist/`, and package artifact tests should catch broken bin metadata.
 
 ### Runtime and Prompt Gotchas
@@ -58,6 +60,7 @@ Publishable npm package for the `teamem` CLI. This package is the first-run boot
 
 - Hook installation is optional after setup, unless a non-interactive flag explicitly requests install/skip.
 - Installed hooks must be the plugin-managed `post-commit` and `post-checkout` hooks with the `# teamem-managed-hook` marker and executable mode.
+- Hook uninstall must remove only Teamem-managed hooks, restore `.teamem-backup` files when present, and preserve user-owned hooks.
 - Hook installer code must respect `core.hooksPath` / worktree behavior. Do not hardcode `.git/hooks/` in new logic.
 - A hook smoke should include a first commit; the first commit path needs `git diff-tree --root` coverage in the installed hook.
 
@@ -80,6 +83,8 @@ PATH="/tmp/teamem-prefix/bin:$PATH" teamem init --dry-run --scope project
 PATH="/tmp/teamem-prefix/bin:$PATH" teamem update --dry-run --scope project
 PATH="/tmp/teamem-prefix/bin:$PATH" teamem cc --dry-run --scope project
 ```
+
+For uninstall/reset changes, also run or update focused tests that cover `teamem uninstall --dry-run`, command-failure continuation, credential preservation with `--keep-credentials`, plugin data slug cleanup, and hook uninstall under `core.hooksPath`.
 
 Do not use the developer's real `~/.teamem/credentials.json` or long-lived Claude plugin data in automated tests unless the test is explicitly a manual smoke.
 

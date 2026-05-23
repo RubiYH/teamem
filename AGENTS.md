@@ -57,10 +57,12 @@ See `.docs/integrations/agent-prompt-snippet.md` for the internal system-prompt 
 
 ### Commit Checklist
 
-- Before committing, run `git status --short` and review the staged diff with `git diff --cached --stat` or `git diff --cached`. Stage only files that belong to the requested change; leave unrelated user or generated changes alone.
+- Before committing, run `git status --short`, inspect staged and unstaged diffs, and review recent commit style. Stage only files that belong to the requested change; leave unrelated user or generated changes alone.
 - Verify with the smallest meaningful gate for the touched surface before commit. Use targeted tests for narrow changes, then `bun run typecheck`, `bun run lint`, `bun run build:plugin`, or the full `bun test` gate when the touched code requires it.
-- Commit messages must use the Lore protocol: an intent line first, then relevant trailers such as `Constraint:`, `Rejected:`, `Confidence:`, `Scope-risk:`, `Directive:`, `Tested:`, and `Not-tested:`. Include known verification gaps explicitly.
+- If a CLI/operator-facing change triggers a document-refresh warning, refresh the relevant docs or explicitly record why no refresh is needed.
+- Commit messages must use the Lore protocol and a conventional subject line such as `fix(cli): make uninstall finish cleanup`: an intent line first, then relevant trailers such as `Constraint:`, `Rejected:`, `Confidence:`, `Scope-risk:`, `Directive:`, `Tested:`, and `Not-tested:`. Include known verification gaps explicitly.
 - Every agent-authored commit must include `Co-authored-by: OmX <omx@oh-my-codex.dev>`.
+- Use inline `git commit -m ...` message arguments so local hooks can inspect the message before commit execution. Do not use `--no-verify`, do not push unless explicitly requested, and do not amend an existing commit unless the user asks for an amend.
 
 ### Common Patterns
 
@@ -116,6 +118,8 @@ See `.docs/integrations/agent-prompt-snippet.md` for the internal system-prompt 
 
 7. **Git hooks are installed after setup** — `teamem init` first ensures marketplace/plugin availability, then runs the same create/join setup surface as `src/cli/setup.ts`, then optionally installs Teamem git hooks into the current repo. The hook prompt must work from an npm-installed binary.
 
+8. **Uninstall is a first-class cleanup path** — `teamem uninstall` should remove Teamem-managed Claude plugin state, marketplace registration, git hooks, bootstrapper scope memory, local run/cache state, and credentials unless `--keep-credentials` is set. Cleanup should continue after non-fatal Claude plugin command failures so local state is still removed.
+
 ### Gotchas grounded in the bootstrapper session
 
 - **npm bin runtime must be Bun**: the published `teamem` bin intentionally uses `#!/usr/bin/env bun`. Interactive prompts rely on Bun's `globalThis.prompt`; a Node-launched binary can fail in raw stdin paths with `EAGAIN` on macOS.
@@ -140,6 +144,8 @@ bun run build
 ```
 
 For package/runtime changes, also run a packed install smoke with a temporary npm prefix and verify `teamem init --dry-run`, `teamem update --dry-run`, and `teamem cc --dry-run`.
+
+For uninstall/reset changes, also verify `teamem uninstall --dry-run` and hook removal/restoration behavior with `core.hooksPath`.
 
 ---
 
