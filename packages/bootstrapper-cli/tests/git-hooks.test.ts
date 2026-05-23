@@ -190,6 +190,43 @@ describe('createGitHookInstaller', () => {
       'post-commit already has a non-Teamem backup'
     );
   });
+
+  it('uninstalls only Teamem-managed hooks and restores backups from core.hooksPath', () => {
+    const fileSystem = createMemoryGitHookFileSystem({
+      '/repo/.githooks/post-commit':
+        '#!/usr/bin/env bash\n# teamem-managed-hook\nteamem\n',
+      '/repo/.githooks/post-commit.teamem-backup':
+        '#!/usr/bin/env bash\necho original\n',
+      '/repo/.githooks/post-checkout': '#!/usr/bin/env bash\necho user-owned\n',
+      '/repo/.githooks/post-checkout.teamem-backup':
+        '#!/usr/bin/env bash\necho checkout backup\n'
+    });
+
+    const installer = createGitHookInstaller({
+      cwd: '/repo',
+      commandRunner: createFakeRunner({
+        'git rev-parse --show-toplevel': ok('/repo\n'),
+        'git config --get core.hooksPath': ok('.githooks\n')
+      }),
+      fileSystem
+    });
+
+    const result = installer.uninstall();
+
+    expect(result.ok).toBe(true);
+    expect(fileSystem.files.get('/repo/.githooks/post-commit')).toBe(
+      '#!/usr/bin/env bash\necho original\n'
+    );
+    expect(
+      fileSystem.files.has('/repo/.githooks/post-commit.teamem-backup')
+    ).toBe(false);
+    expect(fileSystem.files.get('/repo/.githooks/post-checkout')).toBe(
+      '#!/usr/bin/env bash\necho user-owned\n'
+    );
+    expect(
+      fileSystem.files.get('/repo/.githooks/post-checkout.teamem-backup')
+    ).toBe('#!/usr/bin/env bash\necho checkout backup\n');
+  });
 });
 
 function createFakeRunner(
@@ -261,6 +298,10 @@ function createMemoryGitHookFileSystem(
         throw new Error(`Missing file: ${source}`);
       }
       files.set(destination, value);
+    },
+    removeFile(path: string): void {
+      files.delete(path);
+      modes.delete(path);
     },
     mkdir(): void {},
     chmod(path: string, mode: number): void {

@@ -198,16 +198,23 @@ export function uninstallGitHooks(repoRoot?: string): void {
   for (const hookName of HOOK_NAMES) {
     const destHook = join(hooksDir, hookName);
     const backupHook = join(hooksDir, `${hookName}.teamem-backup`);
+    let removedManagedHook = false;
 
-    if (!existsSync(destHook)) continue;
+    if (existsSync(destHook)) {
+      const destContent = readFileSync(destHook, 'utf-8');
+      if (!isTeamemManagedHook(destContent)) {
+        continue;
+      }
+      unlinkSync(destHook);
+      removedManagedHook = true;
+    }
 
-    unlinkSync(destHook);
     if (existsSync(backupHook)) {
       copyFileSync(backupHook, destHook);
       chmodSync(destHook, 0o755);
       unlinkSync(backupHook);
       process.stdout.write(`teamem: restored ${hookName} from backup\n`);
-    } else {
+    } else if (removedManagedHook) {
       process.stdout.write(`teamem: removed ${hookName} hook\n`);
     }
   }

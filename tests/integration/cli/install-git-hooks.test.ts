@@ -307,4 +307,37 @@ describe('uninstallGitHooks', () => {
     uninstallGitHooks(repoRoot);
     expect(existsSync(hookPath)).toBe(false);
   });
+
+  it('does not remove non-teamem hooks during uninstall', () => {
+    const hookPath = join(repoRoot, '.git', 'hooks', 'post-commit');
+    const originalContent = '#!/bin/sh\necho "user hook"\n';
+    writeFileSync(hookPath, originalContent, { mode: 0o755 });
+
+    uninstallGitHooks(repoRoot);
+
+    expect(readFileSync(hookPath, 'utf-8')).toBe(originalContent);
+  });
+
+  it('restores backups from core.hooksPath', () => {
+    const hooksDir = join(repoRoot, '.githooks');
+    gitSync(repoRoot, ['config', 'core.hooksPath', '.githooks']);
+    mkdirSync(hooksDir, { recursive: true });
+    const hookPath = join(hooksDir, 'post-checkout');
+    const backupPath = join(hooksDir, 'post-checkout.teamem-backup');
+    writeFileSync(
+      hookPath,
+      '#!/usr/bin/env bash\n# teamem-managed-hook\nteamem\n',
+      { mode: 0o755 }
+    );
+    writeFileSync(backupPath, '#!/bin/sh\necho "original checkout"\n', {
+      mode: 0o755
+    });
+
+    uninstallGitHooks(repoRoot);
+
+    expect(existsSync(backupPath)).toBe(false);
+    expect(readFileSync(hookPath, 'utf-8')).toBe(
+      '#!/bin/sh\necho "original checkout"\n'
+    );
+  });
 });

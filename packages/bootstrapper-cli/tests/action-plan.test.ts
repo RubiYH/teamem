@@ -73,4 +73,27 @@ describe('buildActionPlan', () => {
       args: ['plugin', 'update', 'teamem@teamem-alpha', '--scope', '<scope>']
     });
   });
+
+  it('returns plugin removal plus local cleanup for uninstall', () => {
+    const plan = buildActionPlan({ command: 'uninstall', scope: 'user' });
+
+    expect(plan.actions.map((action) => action.kind)).toEqual([
+      'uninstall-plugin',
+      'remove-marketplace',
+      'uninstall-git-hooks',
+      'clear-local-state'
+    ]);
+    expect(plan.actions[0]?.externalCommand).toEqual({
+      command: 'claude',
+      args: [
+        'plugin',
+        'uninstall',
+        'teamem@teamem-alpha',
+        '--scope',
+        'user',
+        '--prune',
+        '-y'
+      ]
+    });
+  });
 });

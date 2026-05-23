@@ -4,6 +4,7 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  unlinkSync,
   writeFileSync
 } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -35,6 +36,7 @@ export type GitHookPromptEnvironment = RuntimePromptEnvironment;
 
 export interface GitHookInstaller {
   install(options: { readonly scope: PluginScope }): GitHookInstallResult;
+  uninstall(): GitHookInstallResult;
 }
 
 export interface GitHookInstallerEnvironment {
@@ -52,6 +54,7 @@ export interface GitHookFileSystem {
     options?: { readonly mode?: number }
   ): void;
   copyFile(source: string, destination: string): void;
+  removeFile(path: string): void;
   mkdir(path: string): void;
   chmod(path: string, mode: number): void;
 }
@@ -142,6 +145,42 @@ export function createGitHookInstaller(
         ok: true,
         exitCode: 0,
         message: `Installed Teamem git hooks from ${pluginRoot.pluginRoot} into ${hooksDir.path}.`
+      };
+    },
+    uninstall(): GitHookInstallResult {
+      const repoRoot = resolveRepoRoot(commandRunner, 'uninstall');
+      if (!repoRoot.ok) {
+        return repoRoot;
+      }
+
+      const hooksDir = resolveHooksDir({
+        commandRunner,
+        repoRoot: repoRoot.repoRoot
+      });
+      if (!hooksDir.ok) {
+        return hooksDir;
+      }
+
+      try {
+        for (const hookName of HOOK_NAMES) {
+          uninstallHookFile({
+            fileSystem,
+            hooksDir: hooksDir.path,
+            hookName
+          });
+        }
+      } catch (error) {
+        return {
+          ok: false,
+          exitCode: 1,
+          message: error instanceof Error ? error.message : String(error)
+        };
+      }
+
+      return {
+        ok: true,
+        exitCode: 0,
+        message: `Removed Teamem git hooks from ${hooksDir.path}.`
       };
     }
   };
@@ -239,8 +278,35 @@ function installHookFile(options: {
   options.fileSystem.chmod(destinationHook, 0o755);
 }
 
+function uninstallHookFile(options: {
+  readonly fileSystem: GitHookFileSystem;
+  readonly hooksDir: string;
+  readonly hookName: (typeof HOOK_NAMES)[number];
+}): void {
+  const destinationHook = join(options.hooksDir, options.hookName);
+  const backupHook = join(
+    options.hooksDir,
+    `${options.hookName}.teamem-backup`
+  );
+
+  if (options.fileSystem.exists(destinationHook)) {
+    const destinationContent = options.fileSystem.readFile(destinationHook);
+    if (!isTeamemManagedHook(destinationContent)) {
+      return;
+    }
+    options.fileSystem.removeFile(destinationHook);
+  }
+
+  if (options.fileSystem.exists(backupHook)) {
+    options.fileSystem.copyFile(backupHook, destinationHook);
+    options.fileSystem.chmod(destinationHook, 0o755);
+    options.fileSystem.removeFile(backupHook);
+  }
+}
+
 function resolveRepoRoot(
-  commandRunner: CommandRunner
+  commandRunner: CommandRunner,
+  action: 'install' | 'uninstall' = 'install'
 ):
   | { readonly ok: true; readonly repoRoot: string }
   | { readonly ok: false; readonly exitCode: 1; readonly message: string } {
@@ -250,7 +316,9 @@ function resolveRepoRoot(
       ok: false,
       exitCode: 1,
       message:
-        'Git hooks can only be installed inside a git repository. Re-run teamem init from a repository root or pass --skip-git-hooks.'
+        action === 'install'
+          ? 'Git hooks can only be installed inside a git repository. Re-run teamem init from a repository root or pass --skip-git-hooks.'
+          : 'Git hooks can only be uninstalled inside a git repository. Re-run teamem uninstall from the repository where Teamem hooks were installed.'
     };
   }
 
@@ -321,6 +389,9 @@ function createNodeGitHookFileSystem(): GitHookFileSystem {
     },
     copyFile(source: string, destination: string): void {
       copyFileSync(source, destination);
+    },
+    removeFile(path: string): void {
+      unlinkSync(path);
     },
     mkdir(path: string): void {
       mkdirSync(path, { recursive: true });

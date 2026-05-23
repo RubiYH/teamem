@@ -29,6 +29,7 @@ plugin setup bundle, and prompts for Teamem git hooks.
 | `teamem init` | Install the Claude Code plugin and run create/join setup. |
 | `teamem update` | Refresh the marketplace and update the installed plugin. |
 | `teamem cc` | Launch Claude Code with Teamem enabled. |
+| `teamem uninstall` | Remove the Claude Code plugin, Teamem-managed git hooks, and local Teamem state. |
 
 `teamem cc` can prompt to update first. Use `teamem cc --update`,
 `teamem cc --no-update`, or `teamem cc -- <claude args>` to control launch

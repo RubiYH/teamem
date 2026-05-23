@@ -11,10 +11,11 @@ This is a **destructive operation** that wipes local Teamem state on the user's 
 1. Tell the user exactly what will be wiped and ask for explicit "yes" confirmation. Subject to `$ARGUMENTS`:
    - default: `~/.teamem/credentials.json`, `~/.cache/teamem/`, `${CLAUDE_PLUGIN_DATA}/sessions/`, `${CLAUDE_PLUGIN_DATA}/projects/`, plugin activation flags
    - `--keep-credentials`: preserve `~/.teamem/credentials.json`
+   - source-checkout reset also removes Teamem-managed git hooks from the current repo, or from `--repo <path>` if supplied, and restores `.teamem-backup` hooks
 
 2. **Source-checkout users** can run the canonical reset CLI:
    ```bash
-   cd <teamem-checkout> && bun run reset --yes <flags>
+   cd <teamem-checkout> && bun run teamem uninstall --yes --repo <target-repo> <flags>
    ```
    That handles docker volume + daemon teardown if applicable. This path requires you to know where the source tree lives — there is no bundled equivalent in the plugin because the reset CLI operates on the user's local Claude config and (optionally) docker volumes, not on server-side data the plugin can reach via MCP.
 
@@ -28,6 +29,7 @@ This is a **destructive operation** that wipes local Teamem state on the user's 
 
    # Remove plugin session and project auto-on state
    rm -rf "${CLAUDE_PLUGIN_DATA}/sessions"
+   rm -f "${CLAUDE_PLUGIN_DATA}/auto-on"
    rm -rf "${CLAUDE_PLUGIN_DATA}/projects"
 
    # Disable the current session in case Claude recreates session state

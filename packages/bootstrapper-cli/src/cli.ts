@@ -44,6 +44,12 @@ import {
   renderUpdateExecutionReport,
   resolveUpdateScope
 } from './update-executor.js';
+import {
+  createNodeLocalStateFileSystem,
+  executeUninstall,
+  renderUninstallExecutionReport,
+  type LocalStateFileSystem
+} from './uninstall-executor.js';
 
 export interface CliIo {
   readonly stdout: { write(text: string): void };
@@ -59,6 +65,8 @@ export interface CliEnvironment {
   readonly gitHookInstaller?: GitHookInstaller;
   readonly ccUpdatePrompter?: CcUpdatePrompter;
   readonly claudeLauncher?: ClaudeProcessLauncher;
+  readonly localStateFileSystem?: LocalStateFileSystem;
+  readonly homeDir?: string;
 }
 
 export interface SetupSelectionArgs {
@@ -80,6 +88,9 @@ export interface ParsedCliArgs {
     readonly updateMode: CcUpdateMode;
     readonly claudeArgs: readonly string[];
   };
+  readonly uninstall?: {
+    readonly keepCredentials: boolean;
+  };
 }
 
 export interface CliSuccess {
@@ -96,7 +107,12 @@ export type CliParseResult = CliSuccess | CliFailure;
 
 const HELP_FLAGS = new Set(['--help', '-h']);
 const DRY_RUN_FLAGS = new Set(['--dry-run', '-n']);
-const COMMANDS = new Set<BootstrapperCommand>(['init', 'cc', 'update']);
+const COMMANDS = new Set<BootstrapperCommand>([
+  'init',
+  'cc',
+  'update',
+  'uninstall'
+]);
 
 export function parseCliArgs(argv: readonly string[]): CliParseResult {
   if (argv.length === 0) {
@@ -138,6 +154,7 @@ export function parseCliArgs(argv: readonly string[]): CliParseResult {
   let gitHooks: 'install' | 'skip' | undefined;
   let ccUpdateMode: CcUpdateMode = 'prompt';
   let ccClaudeArgs: string[] = [];
+  let keepCredentials = false;
   for (let index = 0; index < rest.length; index += 1) {
     const arg = rest[index];
     if (HELP_FLAGS.has(arg)) {
@@ -286,6 +303,12 @@ export function parseCliArgs(argv: readonly string[]): CliParseResult {
         continue;
       }
     }
+    if (first === 'uninstall') {
+      if (arg === '--keep-credentials') {
+        keepCredentials = true;
+        continue;
+      }
+    }
     return {
       ok: false,
       error: `Unknown option for ${first}: ${arg}`
@@ -307,6 +330,12 @@ export function parseCliArgs(argv: readonly string[]): CliParseResult {
               claudeArgs: ccClaudeArgs
             }
           : undefined,
+      uninstall:
+        first === 'uninstall'
+          ? {
+              keepCredentials
+            }
+          : undefined,
       setup: {
         flow,
         serverUrl,
@@ -326,6 +355,7 @@ Commands:
   init      Diagnose prerequisites, install Teamem marketplace/plugin, then run Teamem setup
   cc        Optionally update Teamem, then launch Claude Code with Teamem loaded
   update    Refresh Teamem marketplace metadata and update the installed plugin
+  uninstall Uninstall the Claude Code plugin, git hooks, and local Teamem state
 
 Options:
   -n, --dry-run   Print the intended action plan without running commands
@@ -339,6 +369,7 @@ Options:
   --member-name   Setup member name for non-interactive init setup
   --label         Optional setup space label for --create
   --room-code     Setup room code for --join
+  --keep-credentials For \`teamem uninstall\`, preserve ~/.teamem/credentials.json
   --install-git-hooks  Install Teamem git hooks after setup without prompting
   --skip-git-hooks     Skip Teamem git hook installation after setup
   -h, --help      Show help
@@ -592,6 +623,46 @@ export function runCli(
       return 1;
     }
     return 0;
+  }
+
+  if (parsed.value.command === 'uninstall') {
+    if (parsed.value.dryRun) {
+      const dryRunScope = resolveUpdateScope({
+        ...installerEnvironment,
+        requestedScope: parsed.value.scope
+      });
+      const plan = buildActionPlan({
+        command: parsed.value.command,
+        dryRun: true,
+        scope: dryRunScope?.scope
+      });
+      io.stdout.write(renderPlan(plan));
+      return 0;
+    }
+
+    const execution = executeUninstall({
+      cwd: installerEnvironment.cwd,
+      commandRunner: installerEnvironment.commandRunner,
+      scopeFileSystem: installerEnvironment.fileSystem,
+      localStateFileSystem:
+        environment.localStateFileSystem ?? createNodeLocalStateFileSystem(),
+      gitHookInstaller:
+        environment.gitHookInstaller ??
+        createGitHookInstaller({
+          cwd: installerEnvironment.cwd,
+          commandRunner: installerEnvironment.commandRunner
+        }),
+      homeDir: environment.homeDir,
+      dryRun: false,
+      requestedScope: parsed.value.scope,
+      keepCredentials: parsed.value.uninstall?.keepCredentials ?? false
+    });
+    io.stdout.write(
+      renderUninstallExecutionReport(execution, {
+        dryRun: parsed.value.dryRun
+      })
+    );
+    return execution.ok ? 0 : 1;
   }
 
   if (parsed.value.command === 'update') {

@@ -69,6 +69,21 @@ describe('teamem CLI dispatcher', () => {
       expect(result.status).not.toBe(0);
       expect(result.stderr).toContain('Usage:');
       expect(result.stderr).toContain('install-git-hooks');
+      expect(result.stderr).toContain('uninstall');
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('routes uninstall to the reset CLI help without mutating state', () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), 'teamem-cli-uninstall-test-'));
+    try {
+      const result = runBun(tmpDir, ['uninstall', '--help']);
+
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain('Usage: bun run teamem uninstall');
+      expect(result.stdout).toContain('--keep-credentials');
+      expect(result.stdout).toContain('--keep-bridge');
     } finally {
       rmSync(tmpDir, { recursive: true, force: true });
     }

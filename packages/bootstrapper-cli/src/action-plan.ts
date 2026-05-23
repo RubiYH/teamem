@@ -1,11 +1,15 @@
 import { TEAMEM_MARKETPLACE, TEAMEM_PLUGIN } from './plugin-installer.js';
 
-export type BootstrapperCommand = 'init' | 'cc' | 'update';
+export type BootstrapperCommand = 'init' | 'cc' | 'update' | 'uninstall';
 
 export type BootstrapperActionKind =
   | 'diagnose-prerequisites'
   | 'ensure-marketplace'
   | 'install-plugin'
+  | 'uninstall-plugin'
+  | 'remove-marketplace'
+  | 'uninstall-git-hooks'
+  | 'clear-local-state'
   | 'run-setup-flow'
   | 'check-for-updates'
   | 'launch-claude';
@@ -145,6 +149,53 @@ export function buildActionPlan(options: BuildActionPlanOptions): ActionPlan {
               command: 'claude',
               args: ['plugin', 'update', TEAMEM_PLUGIN, '--scope', scope]
             }
+          }
+        ]
+      };
+    case 'uninstall':
+      return {
+        command: 'uninstall',
+        dryRun,
+        actions: [
+          {
+            kind: 'uninstall-plugin',
+            title: 'Uninstall Teamem plugin',
+            description:
+              'Remove the Teamem Claude Code plugin from the selected scope and prune unused dependencies.',
+            externalCommand: {
+              command: 'claude',
+              args: [
+                'plugin',
+                'uninstall',
+                TEAMEM_PLUGIN,
+                '--scope',
+                scope,
+                '--prune',
+                '-y'
+              ]
+            }
+          },
+          {
+            kind: 'remove-marketplace',
+            title: 'Remove Teamem marketplace',
+            description:
+              'Remove the Teamem marketplace registration from Claude Code.',
+            externalCommand: {
+              command: 'claude',
+              args: ['plugin', 'marketplace', 'remove', TEAMEM_MARKETPLACE]
+            }
+          },
+          {
+            kind: 'uninstall-git-hooks',
+            title: 'Uninstall Teamem git hooks',
+            description:
+              'Remove Teamem-managed post-commit and post-checkout hooks from the current repository and restore .teamem-backup hooks.'
+          },
+          {
+            kind: 'clear-local-state',
+            title: 'Clear local Teamem state',
+            description:
+              'Delete local Teamem credentials, run/cache state, Claude plugin session data, and bootstrapper scope memory.'
           }
         ]
       };

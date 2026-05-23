@@ -16,6 +16,7 @@ import type {
 import type { BootstrapperFileSystem } from '../src/plugin-installer.js';
 import type {
   ScopePrompter,
+  LocalStateFileSystem,
   SetupCommandRunner,
   SetupInvocation
 } from '../src/index.js';
@@ -84,6 +85,30 @@ describe('parseCliArgs', () => {
     expect(parseCliArgs(['wat'])).toEqual({
       ok: false,
       error: 'Unknown command: wat'
+    });
+  });
+
+  it('parses uninstall with credential preservation', () => {
+    expect(
+      parseCliArgs(['uninstall', '--scope', 'user', '--keep-credentials'])
+    ).toEqual({
+      ok: true,
+      value: {
+        command: 'uninstall',
+        dryRun: false,
+        help: false,
+        scope: 'user',
+        uninstall: {
+          keepCredentials: true
+        },
+        setup: {
+          flow: undefined,
+          serverUrl: undefined,
+          memberName: undefined,
+          spaceLabel: undefined,
+          roomCode: undefined
+        }
+      }
     });
   });
 
@@ -844,6 +869,159 @@ describe('runCli', () => {
     );
   });
 
+  it('dry-runs uninstall as a first-class command', () => {
+    const writes: string[] = [];
+    const exitCode = runCli(
+      ['uninstall', '--dry-run', '--scope', 'user'],
+      {
+        stdout: {
+          write(text: string) {
+            writes.push(text);
+          }
+        },
+        stderr: { write() {} }
+      },
+      {
+        prerequisites: {
+          platform: 'linux',
+          cwd: '/tmp/project',
+          commandRunner: createFakeRunner({})
+        },
+        installer: {
+          cwd: '/tmp/project',
+          commandRunner: createFakeRunner({}),
+          fileSystem: createMemoryFileSystem()
+        }
+      }
+    );
+
+    expect(exitCode).toBe(0);
+    expect(writes.join('')).toContain('teamem uninstall');
+    expect(writes.join('')).toContain(
+      'claude plugin uninstall teamem@teamem-alpha --scope user --prune -y'
+    );
+    expect(writes.join('')).toContain(
+      'claude plugin marketplace remove teamem-alpha'
+    );
+  });
+
+  it('executes uninstall using remembered scope and clears local state', () => {
+    const writes: string[] = [];
+    const localStateFileSystem = createLocalStateFileSystemStub();
+    const gitHookInstaller = createGitHookInstallerStub();
+    const commandRunner = createRecordingRunner({
+      'claude plugin uninstall teamem@teamem-alpha --scope user --prune -y':
+        ok('uninstalled'),
+      'claude plugin marketplace remove teamem-alpha': ok('removed')
+    });
+
+    const exitCode = runCli(
+      ['uninstall'],
+      {
+        stdout: {
+          write(text: string) {
+            writes.push(text);
+          }
+        },
+        stderr: { write() {} }
+      },
+      {
+        prerequisites: {
+          platform: 'linux',
+          cwd: '/tmp/project',
+          commandRunner
+        },
+        installer: {
+          cwd: '/tmp/project',
+          commandRunner,
+          fileSystem: createMemoryFileSystem({
+            '/tmp/project/.teamem/bootstrapper.json':
+              '{\n  "pluginScope": "user"\n}\n'
+          })
+        },
+        homeDir: '/tmp/home',
+        localStateFileSystem,
+        gitHookInstaller
+      }
+    );
+
+    expect(exitCode).toBe(0);
+    expect(commandRunner.invocations).toEqual([
+      'claude plugin uninstall teamem@teamem-alpha --scope user --prune -y',
+      'claude plugin marketplace remove teamem-alpha'
+    ]);
+    expect(localStateFileSystem.removedPaths).toEqual([
+      '/tmp/home/.teamem/credentials.json',
+      '/tmp/home/.teamem/run',
+      '/tmp/home/.cache/teamem',
+      '/tmp/home/.claude/plugins/data/teamem',
+      '/tmp/home/.claude/plugins/data/teamem-teamem-alpha',
+      '/tmp/home/.claude/plugins/data/teamem-teamem-local',
+      '/tmp/home/.claude/plugins/data/teamem-teamem2-local',
+      '/tmp/home/.claude/plugins/data/teamem2',
+      '/tmp/home/.claude/plugins/data/teamem2-teamem-alpha',
+      '/tmp/home/.claude/plugins/data/teamem2-teamem-local',
+      '/tmp/home/.claude/plugins/data/teamem2-teamem2-local',
+      '/tmp/home/.claude/plugins/data/teamem2-inline',
+      '/tmp/home/.claude/plugins/data/teamem-inline',
+      '/tmp/project/.teamem/bootstrapper.json'
+    ]);
+    expect(writes.join('')).toContain('Selected plugin scope: user (memory)');
+    expect(writes.join('')).toContain(
+      'Teamem plugin, git hooks, and local state were uninstalled.'
+    );
+  });
+
+  it('preserves credentials when uninstall uses --keep-credentials', () => {
+    const localStateFileSystem = createLocalStateFileSystemStub();
+    const gitHookInstaller = createGitHookInstallerStub();
+    const commandRunner = createRecordingRunner({
+      'claude plugin uninstall teamem@teamem-alpha --scope local --prune -y':
+        ok('uninstalled'),
+      'claude plugin marketplace remove teamem-alpha': ok('removed')
+    });
+
+    const exitCode = runCli(
+      ['uninstall', '--scope', 'local', '--keep-credentials'],
+      {
+        stdout: { write() {} },
+        stderr: { write() {} }
+      },
+      {
+        prerequisites: {
+          platform: 'linux',
+          cwd: '/tmp/project',
+          commandRunner
+        },
+        installer: {
+          cwd: '/tmp/project',
+          commandRunner,
+          fileSystem: createMemoryFileSystem()
+        },
+        homeDir: '/tmp/home',
+        localStateFileSystem,
+        gitHookInstaller
+      }
+    );
+
+    expect(exitCode).toBe(0);
+    expect(localStateFileSystem.removedPaths).toEqual([
+      '/tmp/home/.teamem/run',
+      '/tmp/home/.cache/teamem',
+      '/tmp/home/.claude/plugins/data/teamem',
+      '/tmp/home/.claude/plugins/data/teamem-teamem-alpha',
+      '/tmp/home/.claude/plugins/data/teamem-teamem-local',
+      '/tmp/home/.claude/plugins/data/teamem-teamem2-local',
+      '/tmp/home/.claude/plugins/data/teamem2',
+      '/tmp/home/.claude/plugins/data/teamem2-teamem-alpha',
+      '/tmp/home/.claude/plugins/data/teamem2-teamem-local',
+      '/tmp/home/.claude/plugins/data/teamem2-teamem2-local',
+      '/tmp/home/.claude/plugins/data/teamem2-inline',
+      '/tmp/home/.claude/plugins/data/teamem-inline',
+      '/tmp/project/.teamem/bootstrapper.json'
+    ]);
+  });
+
   it('prints help and exits non-zero for invalid commands', () => {
     const stderr: string[] = [];
     const exitCode = runCli(['broken'], {
@@ -1430,6 +1608,13 @@ function createGitHookInstallerStub(
     install(invocation) {
       invocations.push(invocation);
       return result;
+    },
+    uninstall() {
+      return {
+        ok: true,
+        exitCode: 0,
+        message: 'Removed Teamem git hooks.'
+      };
     }
   };
 }
@@ -1443,6 +1628,18 @@ function createClaudeLauncherStub(
     launch(command, args) {
       invocations.push([command, ...args].join(' '));
       return { status };
+    }
+  };
+}
+
+function createLocalStateFileSystemStub(): LocalStateFileSystem & {
+  removedPaths: string[];
+} {
+  const removedPaths: string[] = [];
+  return {
+    removedPaths,
+    rm(path: string): void {
+      removedPaths.push(path);
     }
   };
 }

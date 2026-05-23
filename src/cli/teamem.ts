@@ -4,6 +4,8 @@ function printUsage(): void {
   process.stderr.write(`Usage:
   bun run teamem install-git-hooks [--repo <path>]
   bun run teamem install-git-hooks --uninstall [--repo <path>]
+  bun run teamem uninstall [--yes] [--keep-credentials] [--keep-bridge] [--repo <path>] [--bob-home <path>]
+  bun run teamem reset [--yes] [--keep-credentials] [--keep-bridge] [--repo <path>] [--bob-home <path>]
 
 Notes:
   --repo <path>   Explicit target repo (overrides INIT_CWD / cwd inference).
@@ -27,14 +29,20 @@ if (import.meta.main) {
   const argv = process.argv.slice(2);
   const command = argv[0];
   const isUninstall = argv.includes('--uninstall');
-  const repo = parseRepoFlag(argv);
 
   if (command === 'install-git-hooks') {
+    const repo = parseRepoFlag(argv);
     if (isUninstall) {
       uninstallGitHooks(repo);
     } else {
       installGitHooks(repo);
     }
+  } else if (command === 'uninstall' || command === 'reset') {
+    const { runResetCli } = await import('./reset.js');
+    await runResetCli(argv.slice(1), {
+      commandName: `bun run teamem ${command}`,
+      title: `teamem ${command}`
+    });
   } else {
     printUsage();
     process.exit(1);

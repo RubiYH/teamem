@@ -102,3 +102,14 @@ export {
   type UpdateExecutionResult,
   type UpdateScopeResolution
 } from './update-executor.js';
+export {
+  createNodeLocalStateFileSystem,
+  executeUninstall,
+  renderUninstallExecutionReport,
+  type LocalStateFileSystem,
+  type LocalCleanupFailure,
+  type UninstallCommandFailure,
+  type UninstallExecutionEnvironment,
+  type UninstallExecutionOptions,
+  type UninstallExecutionResult
+} from './uninstall-executor.js';
