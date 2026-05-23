@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
+import posthog from 'posthog-js';
 import { Button } from '../../../src/components/ui/button';
 import { authClient } from '../../../src/lib/auth-client';
 
@@ -20,6 +21,7 @@ export function LoginActions({
   );
 
   async function signIn(provider: OAuthProvider) {
+    posthog.capture('login_clicked', { provider });
     setPendingProvider(provider);
     try {
       await authClient.signIn.social({

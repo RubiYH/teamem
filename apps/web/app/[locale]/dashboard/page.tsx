@@ -21,6 +21,7 @@ import { normalizeLocale } from '../../../src/i18n/return-target';
 import { RotateRoomCodeButton } from './rotate-room-code-button';
 import { SubmitButton } from './submit-button';
 import { TrialTime } from './trial-time';
+import { PostHogIdentify } from './posthog-identify';
 
 export const dynamic = 'force-dynamic';
 
@@ -156,6 +157,7 @@ export default async function DashboardPage({
 
   return (
     <main className="min-h-screen bg-background text-foreground">
+      <PostHogIdentify userId={session.user.id} email={session.user.email} />
       <section className="mx-auto flex min-h-screen w-full max-w-6xl flex-col px-5 py-5 sm:px-8 lg:px-10">
         <header className="flex items-center justify-between border-b border-border pb-4">
           <a className="text-sm font-semibold" href={`/${locale}`}>
