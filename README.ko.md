@@ -15,8 +15,36 @@ Teamem은 이런 상황에서 유용합니다:
 
 ## 빠른 시작
 
-Teamem을 사용하려면 공유 서버가 먼저 필요합니다. 팀에서 이미 운영 중인
-서버가 있다면, 이 저장소를 clone한 뒤 직접 호스팅하세요.
+Teamem을 사용하려면 공유 서버가 먼저 필요합니다. 가장 빠른 경로는
+[Teamem Cloud](https://teamem.cc)입니다. 호스팅된 Teamem 서버 URL, 참여
+코드, 설정 명령어를 대시보드에서 받아 Claude Code와 함께 바로 시작할 수
+있습니다.
+
+### 바로 시작: Teamem Cloud
+
+1. [Teamem Cloud](https://teamem.cc)를 열고 로그인합니다.
+2. 무료 관리형 Space를 하나 만듭니다.
+3. 대시보드에서 호스팅된 서버 URL, 참여 코드, 설정 명령어를 복사합니다.
+4. 각 팀원 머신에서 설정 명령어를 실행한 뒤 Claude Code를 시작합니다:
+
+```bash
+teamem cc
+```
+
+Teamem Cloud는 프로비저닝과 설정을 위한 control plane입니다. 실제 작업
+흐름은 현재 Claude Code 플러그인, 브리지, git hook, 참여 코드, 클레임,
+브리핑, 결정, 토론, Space Rules 런타임 흐름을 그대로 사용합니다.
+
+설정 명령어가 부트스트래퍼 설치를 대신해 주지 않는다면 먼저 설치하세요:
+
+```bash
+npm install -g @rubiyh05/teamem
+```
+
+### 공유 서버 직접 호스팅
+
+직접 서버를 운영하려면 이 저장소를 clone한 뒤 Docker Compose 또는 Bun으로
+실행하세요.
 
 Docker Compose로 실행:
 
@@ -133,8 +161,8 @@ Claude Code plugin
 ## 로드맵
 
 현재 빌드는 의도적으로 좁은 범위에 집중합니다. Claude Code 우선, 큐 기반
-조율, 직접 호스팅하는 서버가 기본 전제입니다. 프로젝트 문서에 남아 있는
-주요 백로그는 다음과 같습니다:
+조율, Teamem Cloud 또는 팀이 직접 운영하는 공유 서버가 기본 전제입니다.
+프로젝트 문서에 남아 있는 주요 백로그는 다음과 같습니다:
 
 | 영역 | 남은 작업 |
 | --- | --- |
@@ -162,6 +190,7 @@ Project scope 설치는 해당 저장소를 사용하는 모든 사람에게 플
 - [Quickstart](docs/getting-started/quickstart.md)
 - [Claude Code plugin guide](docs/integrations/claude-code-plugin.md)
 - [Local development](docs/getting-started/local-dev.md)
+- [Teamem Cloud deployment](docs/deploy/teamem-cloud.md)
 - [Architecture](docs/architecture.md)
 - [Hooks](docs/integrations/hooks.md)
 - [VPS deployment](docs/deploy/vps.md)

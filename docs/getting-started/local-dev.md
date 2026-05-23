@@ -46,6 +46,23 @@ bun run build:plugin
 
 Run this after changing bridge, setup, or channel runtime code.
 
+## Run the web control plane
+
+Teamem Cloud's Next.js control plane lives in `apps/web`. Copy its own env
+example before running it locally:
+
+```bash
+cp apps/web/.env.example apps/web/.env.local
+cd apps/web
+bun install
+bun run dev
+```
+
+The web env includes Better Auth, GitHub OAuth, Supabase, the hosted runtime
+provisioning token, and PostHog analytics settings. See
+[Teamem Cloud Deployment](../deploy/teamem-cloud.md) for the full hosted
+configuration.
+
 ## Test and verify
 
 ```bash

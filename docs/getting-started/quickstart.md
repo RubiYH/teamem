@@ -5,8 +5,12 @@ using Teamem.
 
 ## 1. Start or choose a Teamem server
 
-Teamem requires a shared server. If your team already runs one, get the server
-URL and onboarding code from your team lead.
+Teamem requires a shared server. The shortest path is Teamem Cloud: open
+[teamem.cc](https://teamem.cc), sign in, create a free managed Space, and copy
+the hosted setup command from the dashboard.
+
+If your team already runs a server, get the server URL and onboarding code from
+your team lead.
 
 To self-host locally with Docker Compose:
 

@@ -25,6 +25,11 @@ Set these variables on the Teamem runtime:
 ## Web Environment
 
 Set these variables in Vercel and in local `.env.local` files used by `apps/web`.
+For local development, start from the tracked example:
+
+```bash
+cp apps/web/.env.example apps/web/.env.local
+```
 
 | Variable | Required | Purpose |
 | --- | --- | --- |
@@ -39,8 +44,8 @@ Set these variables in Vercel and in local `.env.local` files used by `apps/web`
 | `SUPABASE_SERVICE_ROLE_KEY` | yes | Supabase service-role key for trusted server-side operations. Keep it server-only. |
 | `TEAMEM_CLOUD_RUNTIME_URL` | yes | Hosted Teamem runtime base URL used by provisioning and displayed setup commands. |
 | `TEAMEM_CLOUD_RUNTIME_PROVISIONING_TOKEN` | yes | Shared service token for runtime cloud-admin provisioning. Must match the runtime. |
-| `NEXT_PUBLIC_POSTHOG_TOKEN` | yes | PostHog project token used by client and server analytics capture. |
-| `NEXT_PUBLIC_POSTHOG_HOST` | yes | PostHog ingestion host, usually `https://us.i.posthog.com` or `https://eu.i.posthog.com`. |
+| `NEXT_PUBLIC_POSTHOG_TOKEN` | yes for analytics | PostHog project token used by client and server analytics capture. |
+| `NEXT_PUBLIC_POSTHOG_HOST` | no | PostHog ingestion host, usually `https://us.i.posthog.com` or `https://eu.i.posthog.com`. Defaults to the US ingestion host. |
 | `GOOGLE_CLIENT_ID` | no | Optional Google OAuth client id. |
 | `GOOGLE_CLIENT_SECRET` | no | Optional Google OAuth client secret. |
 | `TEAMEM_CLOUD_BETTER_AUTH_TABLES` | no | Comma-separated Better Auth table override for deploy smoke only. Defaults to `user,session,account,verification`. |
