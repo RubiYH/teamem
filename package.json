@@ -21,6 +21,7 @@
     "web:typecheck": "cd apps/web && bun run typecheck",
     "web:build": "cd apps/web && bun run build",
     "web:smoke:deploy": "cd apps/web && bun run smoke:deploy",
+    "check:plugin-version": "bun test tests/plugin/version-bump-required.test.ts",
     "check": "bun run typecheck && bun run web:typecheck && bun run lint && bun run format:check && bun run web:build",
     "lint": "eslint .",
     "format": "prettier --write .",
