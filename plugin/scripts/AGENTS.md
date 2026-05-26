@@ -33,7 +33,7 @@ Bash runtime utilities and lifecycle hooks. Contains shared helper functions (`_
   4. Handles conflicts (queueing active conflicts; legacy auto-discuss rows degrade to the same queue path)
   5. Updates claim cache for fast refresh
   6. Exits 0/1 to allow/deny the edit
-  (See root AGENTS.md §96 for `claims.path` projection truncation gotcha)
+  (`claims.path` projection truncation is documented in `src/server/tools/AGENTS.md`.)
 
 ### Common Patterns
 
@@ -49,6 +49,7 @@ Bash runtime utilities and lifecycle hooks. Contains shared helper functions (`_
 - **SessionStart stdout contract**: `session-start.sh` does not perform the full briefing read itself. On startup/resume it emits exactly one stdout instruction telling the main agent to call `mcp__teamem__get_briefing`; when `_teamem_resolve_space` finds a session-pinned or configured space, that prompt payload must preserve it. Decision, gotcha, and unread-notification payloads stay on stderr.
 - **SessionStart de-dupe**: Gotcha notices are delivered through `teamem.session_sync`, not `fetch_unread_notifications`. Do not re-add gotchas to `fetch_unread_notifications`; doing so duplicates notices on every resume and breaks the intended split where decisions replay with full text and gotchas replay as lightweight notices.
 - **TEAMEM.md managed block**: `space-rules-file.js` owns the managed block and metadata comment. Escape metadata for HTML comments (`--`, `<`, `>`) and preserve user text outside the block. SessionStart should refresh from the server snapshot, never trust arbitrary local `TEAMEM.md` edits as applied until `/teamem-rule update` publishes them.
+- **Space Rules command surface**: The plugin command source of truth is `plugin/commands/teamem-rule.md`. Runtime scripts are `teamem-rule-init.sh`, `teamem-rule-update.sh`, and `space-rules-file.js`; the starter template is `plugin/templates/TEAMEM.starter.md`. Keep these files in lockstep with `teamem.export_space_rules_snapshot` and bridge response schemas.
 
 ## Dependencies
 

@@ -84,6 +84,15 @@ PRD §150: `expires_at` is NULL for `on_commit` and `manual_only`. The previous 
 
 Rules, decisions, and gotchas are intentionally different surfaces. Rules sync into `TEAMEM.md`; decisions can replay with full text because they are team direction; gotchas stay lightweight by default. Briefing `recent_findings` must omit full gotcha bodies and must hide direct gotchas from non-recipients. `getFinding` must take the authenticated principal into account and return `finding_not_found` for a direct gotcha requested by a non-recipient.
 
+Space Memory scopes stay distinct:
+
+- **Space Rules** are the only Space Memory content replicated into local `TEAMEM.md`. Server state lives in SQLite; local `.teamem/` and `TEAMEM.md` are generated caches.
+- **Gotchas** are persistent findings and should deliver short notices plus fetch-by-id, not full replay into `TEAMEM.md`.
+- **Decisions** are durable direction changes with amendment/supersession semantics. They may be broadcast or replayed, but do not belong in `TEAMEM.md`.
+- **Discuss** is persisted coordination conversation. Direct-thread visibility and reply authority are policy/security boundaries.
+
+`teamem.export_space_rules_snapshot` is the snapshot export contract. Hard-wipe and disband-GC must delete `space_rules_snapshots`; soft-wipe should leave Space Rules durable.
+
 ### Gotcha acknowledgement version checks
 
 `acknowledgeFinding` acknowledges a concrete finding version. If a caller asks to acknowledge a version greater than the current finding version, return `invalid_version`; do not silently acknowledge the latest version. This prevents agents from marking unseen future revisions as read.

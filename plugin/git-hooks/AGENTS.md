@@ -23,7 +23,7 @@ Git lifecycle hooks that integrate Teamem's claim lifecycle with Git operations.
   2. Uses template substitution to replace `__TEAMEM_PLUGIN_ROOT__` with the absolute plugin path
   3. Marks installed hooks with `# teamem-managed-hook` on line 2 (idempotency marker)
   4. Creates `.teamem-backup` on first install (abort if backup exists and incumbent file is non-teamem)
-- **Bash interpreter requirement**: Hooks MUST use `bash "/absolute/path/scripts/X.sh"`, NOT shebang execution. Claude Code's hook runtime fails silently on shebang exec. See root AGENTS.md Gotchas.
+- **Bash interpreter requirement**: Hooks MUST use `bash "/absolute/path/scripts/X.sh"`, NOT shebang execution. Claude Code's hook runtime fails silently on shebang exec.
 - **Repo_id canonicalization**: Both hooks call `canonicalizeRepoId()` to compute the source-of-truth repo ID. This logic MUST stay byte-equivalent with `src/domain/claim-identity-core.ts`. Any drift produces cross-machine claim invisibility.
 
 ### Common Patterns

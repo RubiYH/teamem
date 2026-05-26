@@ -5,7 +5,7 @@
 
 ## Purpose
 
-Publishable npm package for the `teamem` CLI. This package is the first-run bootstrapper users install with `npm install -g @rubiyh05/teamem`; it prepares Claude Code marketplace/plugin state, delegates to Teamem setup, installs optional git hooks, updates or uninstalls the plugin, and launches Claude Code with Teamem enabled.
+Publishable npm package for the `teamem` CLI. This package is the first-run bootstrapper users install with `npm install -g @rubiyh05/teamem`; it prepares Claude Code marketplace/plugin state, delegates to Teamem setup, installs optional git hooks, updates or uninstalls the plugin, and owns the real machine-local install/status/uninstall lifecycle for the opt-in Teamem-aware Claude launcher.
 
 ## Key Files
 
@@ -13,13 +13,12 @@ Publishable npm package for the `teamem` CLI. This package is the first-run boot
 |------|-------------|
 | `package.json` | npm package metadata; published package name is `@rubiyh05/teamem`, bin points at `dist/bin/teamem.js` |
 | `src/bin/teamem.ts` | executable entry point; must keep the Bun shebang |
-| `src/cli.ts` | command parser and command orchestration for `init`, `update`, `uninstall`, and `cc` |
+| `src/cli.ts` | command parser and command orchestration for `init`, `update`, `uninstall`, `claude`, and `cc` compatibility errors |
 | `src/plugin-installer.ts` | marketplace add/update/install flow, plugin scope resolution, scope memory |
 | `src/claude-plugin-list.ts` | source of truth for parsing `claude plugin list --json` |
 | `src/setup-delegation.ts` | delegates create/join setup to the installed Teamem plugin setup bundle |
 | `src/git-hooks.ts` | optional post-setup git hook installer/uninstaller prompt and execution |
 | `src/uninstall-executor.ts` | first-class uninstall cleanup path for plugin, marketplace, hooks, local state, and credentials |
-| `src/cc-launcher.ts` | optional update-before-launch prompt and Claude Code launch command |
 | `src/runtime-prompt.ts` | Bun-backed interactive prompt wrapper used by every CLI prompt |
 | `tests/package-artifact.test.ts` | packed npm artifact/install smoke coverage |
 
@@ -52,9 +51,8 @@ Publishable npm package for the `teamem` CLI. This package is the first-run boot
   - `claude plugin marketplace update teamem-alpha`
   - `claude plugin install teamem@teamem-alpha --scope <scope>`
 - `teamem update` should refresh marketplace metadata before updating the plugin.
-- `teamem cc` intentionally launches:
-  - `claude --dangerously-load-development-channels plugin:teamem@teamem-alpha`
-  Keep this pinned until the Teamem channel no longer depends on the development-channel source.
+- `teamem claude install`, `teamem claude status`, and `teamem claude uninstall` are the Teamem-aware Claude launcher lifecycle command family.
+- `teamem cc` is a compatibility error only. It must not launch Claude Code; it should point users toward `teamem claude install` and the prompt-based `claude` shim.
 
 ### Git Hook Contracts
 
@@ -66,7 +64,8 @@ Publishable npm package for the `teamem` CLI. This package is the first-run boot
 
 ### Testing Requirements
 
-Run the package gates before declaring bootstrapper work complete:
+Run the package gates from `packages/bootstrapper-cli/` before declaring
+bootstrapper work complete:
 
 ```bash
 bun test ./tests
@@ -81,8 +80,10 @@ npm pack
 npm install -g --prefix /tmp/teamem-prefix ./rubiyh05-teamem-*.tgz
 PATH="/tmp/teamem-prefix/bin:$PATH" teamem init --dry-run --scope project
 PATH="/tmp/teamem-prefix/bin:$PATH" teamem update --dry-run --scope project
-PATH="/tmp/teamem-prefix/bin:$PATH" teamem cc --dry-run --scope project
+PATH="/tmp/teamem-prefix/bin:$PATH" teamem claude status --dry-run
 ```
+
+Do not include `teamem cc --dry-run` in the successful launch smoke. `teamem cc` intentionally exits non-zero as a compatibility migration message; cover it only with focused tests or manual checks that assert both the non-zero status and migration text.
 
 For uninstall/reset changes, also run or update focused tests that cover `teamem uninstall --dry-run`, command-failure continuation, credential preservation with `--keep-credentials`, plugin data slug cleanup, and hook uninstall under `core.hooksPath`.
 
@@ -95,7 +96,8 @@ Do not use the developer's real `~/.teamem/credentials.json` or long-lived Claud
 - `plugin/.claude-plugin/plugin.json` for Teamem plugin identity/version expectations
 - `plugin/lib/setup.js` for setup delegation once the plugin is installed
 - `plugin/git-hooks/` for installed hook templates and behavior
-- root `AGENTS.md` npm bootstrapper section for cross-surface decisions
+- `plugin/AGENTS.md` for plugin ownership of MCP JSON, marketplace versioning, and install/update boundaries
+- root `AGENTS.md` for repo-wide commit, verification, and release rules
 
 ### External
 

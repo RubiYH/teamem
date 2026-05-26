@@ -35,9 +35,9 @@ The Claude Code plugin distribution for Teamem. This directory contains the mark
 
 ### Working In This Directory
 
-- **Bundled artifact model**: The plugin ships as a single marketplace install. All runtime logic lives in committed `.js` bundles. Source code for these bundles lives in `src/` at the project root; always rebuild via `bun build` commands after changes.
+- **Bundled artifact model**: The plugin ships as a single marketplace install. All runtime logic lives in committed `.js` bundles. Source code for these bundles lives in `src/` at the project root; for bundle-source changes, rebuild with `bun run build:plugin`.
 - **Plugin version**: Bump the version in `plugin/.claude-plugin/plugin.json` before each plugin iteration and mirror the same version in the root `.claude-plugin/marketplace.json`. Plugin command, hook, script, manifest, skill, agent, monitor, or bundled-runtime changes need this bump so Claude Code marketplace/cache consumers see the update.
-- **Marketplace version gate**: If a change must reach users through `teamem update`, `teamem cc --update`, or `claude plugin update teamem@teamem-alpha`, verify both manifests were bumped before committing.
+- **Marketplace version gate**: If a change must reach users through `teamem update`, `teamem claude install/status/uninstall`, or `claude plugin update teamem@teamem-alpha`, verify both manifests were bumped before committing.
 - **Cache integrity**: Claude Code validates `~/.claude/plugins/cache/...` — never edit cache files directly. Always: change source → bump version in `plugin.json` → clear cache (`rm -rf ~/.claude/plugins/cache/<plugin>`) → reinstall.
 - **Marketplace trust**: The plugin is self-contained. All dependencies (Bun, Node, MCP SDK) are resolved at plugin execution time, not installation time. Hooks assume Bun is available; they exit gracefully if not.
 - **Channels local-dev startup**: `--plugin-dir` loads commands/agents, but a development channel still needs the `--dangerously-load-development-channels server:teamem-channel` flag and a real `.mcp.json` `teamem-channel` entry in the launching repo. Placeholder paths such as `/path/to/teamem/plugin/lib/channel.js` make `/mcp` show the server as failed.
@@ -45,7 +45,7 @@ The Claude Code plugin distribution for Teamem. This directory contains the mark
 - **Two-persona local E2E**: Distinct computers should use the normal default `~/.teamem/credentials.json` on each machine. Only when simulating Alice and Bob on one machine, avoid overwriting the default file back and forth by launching each Claude Code session with a distinct `TEAMEM_CREDENTIALS` path (for example `/tmp/teamem-alice.credentials.json` and `/tmp/teamem-bob.credentials.json`).
 - **Fresh local reset**: A fresh DB is not enough for end-to-end retests. Also clear persona credentials and plugin session state (`~/.teamem/credentials.json`, any `TEAMEM_CREDENTIALS` files, `~/.claude/plugins/data/teamem*`, and repo-local `TEAMEM.md`) or Claude Code may keep authenticating against an old space.
 - **npm bootstrapper boundary**: The npm `teamem` CLI in `packages/bootstrapper-cli` installs/updates this marketplace plugin and delegates setup here. Do not move MCP JSON writing into the bootstrapper; this plugin remains the MCP manifest owner.
-- **Marketplace channel launch**: `teamem cc` uses `claude --dangerously-load-development-channels plugin:teamem@teamem-alpha`. Treat that as an intentional local-marketplace/development-channel requirement, not an accidental unsafe flag. Replacing it with `--plugin-dir` requires fresh `/mcp`, channel log, and plugin data-path verification.
+- **Teamem-aware launcher transition**: `teamem cc` remains compatibility-only and exits non-zero with migration guidance. The installed Teamem-owned `claude` shim owns prompt/pure-vs-Teamem launch selection, readiness checks, plugin-owned activation intent/default Space behavior, and reversible cleanup. Do not re-teach the old `teamem cc` development-channel launch path here.
 - **Marketplace repo name**: Bootstrapper defaults must point at `https://github.com/RubiYH/teamem`, not the old `teamem-poc` repo name.
 
 ### Common Patterns
