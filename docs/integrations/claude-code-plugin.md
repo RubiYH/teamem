@@ -28,6 +28,11 @@ files by default:
 export PATH="$HOME/.teamem/bin:$PATH"
 ```
 
+Teamem is not affiliated with Anthropic. The shim does not handle Claude
+credentials or proxy Claude requests; it prompts whether to launch Claude Code
+with Teamem plugin activation or as pure Claude Code, then execs the real Claude
+Code binary. Remove it with `teamem claude uninstall`.
+
 Once the shim directory is first on PATH, launch Claude Code as usual with
 `claude`. Interactive `claude` prompts on every launch. Use `claude --teamem` or
 `claude --pure` for explicit launch choices; non-interactive `claude` defaults

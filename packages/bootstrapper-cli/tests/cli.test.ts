@@ -393,6 +393,9 @@ describe('runCli', () => {
       launcherFileSystem.executableFiles.has('/tmp/home/.teamem/bin/claude')
     ).toBe(true);
     expect(writes.join('')).toContain('Status: installed-on-path');
+    expect(writes.join('')).toContain('not affiliated with Anthropic');
+    expect(writes.join('')).toContain('does not handle Claude credentials');
+    expect(writes.join('')).toContain('teamem claude uninstall');
     expect(writes.join('')).toContain(
       'export PATH="/tmp/home/.teamem/bin:$PATH"'
     );

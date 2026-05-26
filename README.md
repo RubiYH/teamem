@@ -55,6 +55,12 @@ Once the shim directory is first on `PATH`, start Claude Code the usual way:
 claude
 ```
 
+> Teamem installs an opt-in local `claude` launcher shim. Teamem is not
+> affiliated with Anthropic. The shim does not handle Claude credentials or
+> proxy Claude requests; it prompts whether to launch Claude Code with Teamem
+> plugin activation or as pure Claude Code, then execs the real Claude Code
+> binary. Remove it with `teamem claude uninstall`.
+
 Interactive `claude` launches ask whether to start with Teamem or stay pure.
 Non-interactive launches stay pure unless you pass `claude --teamem ...`; use
 `claude --pure ...` to force the pure path. A Teamem launch blocks before

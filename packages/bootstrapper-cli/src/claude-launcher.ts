@@ -274,6 +274,9 @@ export function installClaudeLauncher(
         ? 'Teamem-aware Claude launcher was refreshed.'
         : 'Teamem-aware Claude launcher was installed.',
     details: [
+      'Teamem is not affiliated with Anthropic and does not handle Claude credentials.',
+      'The shim prompts for Teamem or pure Claude Code, then execs the real Claude Code binary.',
+      'Remove the shim with `teamem claude uninstall`.',
       `Recorded real Claude Code: ${realClaudePath}`,
       `Teamem shim: ${context.paths.shimPath}`,
       `Add Teamem's shim directory before the real Claude Code directory on PATH:`,
