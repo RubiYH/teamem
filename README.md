@@ -24,18 +24,52 @@ Teamem is useful when:
 
 ## Quick Start
 
-Teamem needs a shared server. The quickest path is
-[Teamem Cloud](https://teamem.cc): it gives your team a hosted Teamem server
-URL, room code, and setup command so you can start with Claude Code without
-running the server yourself.
+Teamem has two parts:
 
-### Shortcut: Teamem Cloud
+- a shared Teamem server, either hosted by Teamem Cloud or self-hosted by your
+  team;
+- a local Teamem bootstrapper and Claude Code plugin on each teammate machine.
+
+### 1. Install the Teamem CLI
+
+Install Bun first if you do not already have it:
+
+```bash
+curl -fsSL https://bun.sh/install | bash
+```
+
+Then install the Teamem bootstrapper:
+
+```bash
+npm install -g @rubiyh05/teamem
+```
+
+### 2. Choose a shared server
+
+#### Option A: Teamem Cloud
+
+Use [Teamem Cloud](https://teamem.cc) when you want the fastest path and do not
+want to run the server yourself.
 
 1. Open [Teamem Cloud](https://teamem.cc) and sign in.
 2. Create one free managed Space.
 3. Copy the hosted server URL, room code, and setup command from the dashboard.
-4. Run the setup command on each teammate machine, then prepare the opt-in
-   Teamem-aware Claude launcher:
+4. Run that setup command on each teammate machine.
+
+Teamem Cloud is the provisioning and setup control plane. Your team still uses
+the current Claude Code plugin, bridge, git hooks, room codes, claims,
+briefings, decisions, discussions, and Space Rules runtime flow.
+
+#### Option B: Self-host
+
+Use self-hosting when your team wants to run the Teamem server. Follow the
+[self-host guide](docs/deploy/self-host.md) to start the server, then run the
+generated setup command on each teammate machine.
+
+### 3. Install the Claude launcher
+
+After setup succeeds on a teammate machine, install the opt-in Teamem-aware
+Claude launcher:
 
 ```bash
 teamem claude install
@@ -67,22 +101,7 @@ Non-interactive launches stay pure unless you pass `claude --teamem ...`; use
 opening Claude Code when setup, credentials, plugin install, or runtime Space
 readiness is missing, and prints the repair command to run next.
 
-Teamem Cloud is the provisioning and setup control plane. Your team still uses
-the current Claude Code plugin, bridge, git hooks, room codes, claims,
-briefings, decisions, discussions, and Space Rules runtime flow.
-
-If the setup command does not install the bootstrapper for you, install it
-first:
-
-```bash
-npm install -g @rubiyh05/teamem
-```
-
-### Self-host the shared server
-
-Want to run the server yourself? Follow the
-[self-host guide](docs/deploy/self-host.md) for Docker Compose, Bun, and
-teammate setup commands.
+### 4. Start working in Claude Code
 
 > [!WARNING]
 > Teamem currently uses Claude Code's experimental Channels feature for live
@@ -92,18 +111,18 @@ teammate setup commands.
 
 Normal onboarding starts Claude Code through the PATH shim: run `claude` and
 choose Teamem, or use `claude --teamem ...`. If an already-running session was
-launched without Teamem activation, use the manual fallback:
+launched without Teamem activation, restart it through the launcher or use
+on-demand read commands:
 
 ```text
-/teamem-on
-/teamem-on --persist
 /teamem-briefing
+/teamem-status
 ```
 
-Use `/teamem-on --persist` only when this repository should default to Teamem
-being on in future Claude Code sessions. From there, edit normally. Teamem hooks
-claim paths before edits, release `on_commit` claims after commits, and surface
-conflicts or queued work through the plugin.
+The deprecated `/teamem-on` activation command is no longer shipped. From a
+Teamem-launched session, edit normally. Teamem hooks claim paths before edits,
+release `on_commit` claims after commits, and surface conflicts or queued work
+through the plugin.
 
 ## How it works
 
@@ -160,8 +179,6 @@ full briefing before every edit.
 | `teamem claude install` | Install the opt-in Teamem-aware `claude` launcher. |
 | `teamem claude uninstall` | Unwrap `claude` and restore the normal Claude Code command. |
 | `teamem cc` | Compatibility error; it points existing users toward the launcher migration. |
-| `/teamem-on` | Fallback/manual activation for an already-running Claude Code session. |
-| `/teamem-on --persist` | Optional persistent auto-on for future Claude Code sessions in this repo. |
 | `/teamem-off` | Silence Teamem for the current session. |
 | `/teamem-briefing` | Fetch the team context briefing. |
 | `/teamem-status` | Check activation, monitor health, and recent notifications. |

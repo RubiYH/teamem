@@ -26,4 +26,4 @@ Steps:
 
 4. After `rotate-code`, remind the user the new code expires in 30 days and must be shared securely.
 
-This command does NOT activate Teamem — it's pure space governance. Activation is `/teamem-on`. Disband + restore use their own dedicated slash commands so the destructive label-confirmation flow is isolated. Listing local credentials is a local-only read; `/teamem-status` is the supported entry point.
+This command does NOT activate Teamem — it's pure space governance. Activation happens through the Teamem-aware `claude` launcher. Disband + restore use their own dedicated slash commands so the destructive label-confirmation flow is isolated. Listing local credentials is a local-only read; `/teamem-status` is the supported entry point.

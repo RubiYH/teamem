@@ -39,11 +39,14 @@ const TEAMEM_DEVELOPMENT_CHANNEL_ARGS = [
 ] as const;
 const REQUIRED_TEAMEM_COMMANDS = [
   './commands/teamem-setup.md',
-  './commands/teamem-on.md',
   './commands/teamem-off.md',
   './commands/teamem-status.md',
   './commands/teamem-briefing.md'
 ] as const;
+const REQUIRED_SESSION_START_SCRIPT = 'scripts/session-start.sh';
+const REQUIRED_SESSION_START_HOOK_COMMAND =
+  'bash "$CLAUDE_PLUGIN_ROOT"/scripts/session-start.sh';
+const REQUIRED_TEAMEM_FLAG_BIN = 'bin/teamem-flag';
 
 export interface ClaudeLauncherFileSystem {
   exists(path: string): boolean;
@@ -721,7 +724,73 @@ function validateInstalledTeamemPluginSurface(
     };
   }
 
+  const hooksPath = join(installPath, 'hooks', 'hooks.json');
+  if (!fileSystem.isReadableFile(hooksPath)) {
+    return {
+      ok: false,
+      message: `Plugin hook manifest is missing or unreadable: ${hooksPath}`
+    };
+  }
+
+  let hooksManifest: unknown;
+  try {
+    hooksManifest = JSON.parse(fileSystem.readFile(hooksPath));
+  } catch {
+    return {
+      ok: false,
+      message: `Plugin hook manifest is malformed: ${hooksPath}`
+    };
+  }
+
+  if (!hasSessionStartHook(hooksManifest)) {
+    return {
+      ok: false,
+      message: `Plugin hook manifest is missing required SessionStart hook wiring for ${REQUIRED_SESSION_START_SCRIPT}`
+    };
+  }
+
+  const sessionStartPath = join(installPath, REQUIRED_SESSION_START_SCRIPT);
+  if (!fileSystem.isReadableFile(sessionStartPath)) {
+    return {
+      ok: false,
+      message: `Plugin SessionStart script is missing or unreadable: ${sessionStartPath}`
+    };
+  }
+
+  const teamemFlagPath = join(installPath, REQUIRED_TEAMEM_FLAG_BIN);
+  if (!fileSystem.isExecutableFile(teamemFlagPath)) {
+    return {
+      ok: false,
+      message: `Plugin activation flag binary is missing or not executable: ${teamemFlagPath}`
+    };
+  }
+
   return { ok: true };
+}
+
+function hasSessionStartHook(value: unknown): boolean {
+  if (!isRecord(value) || !isRecord(value.hooks)) {
+    return false;
+  }
+  const sessionStartEntries = value.hooks.SessionStart;
+  if (!Array.isArray(sessionStartEntries)) {
+    return false;
+  }
+  return sessionStartEntries.some((entry) => {
+    if (!isRecord(entry) || !Array.isArray(entry.hooks)) {
+      return false;
+    }
+    return entry.hooks.some((hook) => {
+      if (!isRecord(hook)) {
+        return false;
+      }
+      return (
+        hook.type === 'command' &&
+        typeof hook.command === 'string' &&
+        hook.command.trim() === REQUIRED_SESSION_START_HOOK_COMMAND
+      );
+    });
+  });
 }
 
 function resolveLaunchProjectPath(

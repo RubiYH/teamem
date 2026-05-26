@@ -33,4 +33,4 @@ For the Claude Code Channels POC:
 - Broadcast sends target non-senders in the same Teamem space.
 - If the optional channel runtime is unavailable, the stored discussion still remains visible through Teamem's existing thread-reading and inbox paths.
 
-If Teamem is not active in this session (no `${CLAUDE_PLUGIN_DATA}/sessions/${CLAUDE_SESSION_ID:-default}/active`), surface this one-line tip without changing the send behavior: `Teamem is idle — run /teamem-on to enable SessionStart sync and optional channel delivery for this discussion.`
+If Teamem is not active in this session (no `${CLAUDE_PLUGIN_DATA}/sessions/${CLAUDE_SESSION_ID:-default}/active`), surface this one-line tip without changing the send behavior: `Teamem is idle — restart Claude Code with claude --teamem to enable SessionStart sync and optional channel delivery for this discussion.`

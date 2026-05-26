@@ -5,7 +5,7 @@
  * Original bug: the monitor read `CLAUDE_PLUGIN_OPTION_TEAMEM_ROOT` and
  * exited 1 when unset, then shelled out to `${TEAMEM_ROOT}/src/bridge/index.ts`.
  * The plugin manifest no longer exposes `teamem_root`, so a marketplace
- * install activated `/teamem-on` but never streamed peer notifications.
+ * install activated via teamem-flag but never streamed peer notifications.
  *
  * Fix: resolve `${CLAUDE_PLUGIN_ROOT}/lib/bridge.js` exactly like
  * `plugin/bin/teamem-call`. No `CLAUDE_PLUGIN_OPTION_TEAMEM_ROOT`

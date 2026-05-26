@@ -1316,7 +1316,101 @@ describe('runCli', () => {
     expect(result.invocations).toEqual([]);
     expect(result.stderr).toContain('plugin install is incomplete or stale');
     expect(result.stderr).toContain(
-      'missing required command entry: ./commands/teamem-on.md'
+      'missing required command entry: ./commands/teamem-off.md'
+    );
+  });
+
+  it('blocks Teamem launch when the installed Teamem plugin lacks SessionStart hook wiring', () => {
+    const fileSystem = createInstalledLauncherFileSystem();
+    fileSystem.files.set(
+      '/plugins/teamem/hooks/hooks.json',
+      JSON.stringify({
+        hooks: {
+          PreToolUse: [
+            {
+              matcher: '*',
+              hooks: [
+                {
+                  type: 'command',
+                  command: 'bash "$CLAUDE_PLUGIN_ROOT"/scripts/gate-claim.sh'
+                }
+              ]
+            }
+          ]
+        }
+      })
+    );
+    const result = runTeamemReadinessFailure({
+      launcherFileSystem: fileSystem
+    });
+
+    expect(result.exitCode).toBe(1);
+    expect(result.invocations).toEqual([]);
+    expect(result.stderr).toContain('plugin install is incomplete or stale');
+    expect(result.stderr).toContain(
+      'missing required SessionStart hook wiring for scripts/session-start.sh'
+    );
+  });
+
+  it('blocks Teamem launch when SessionStart hook only mentions the script without invoking it', () => {
+    const fileSystem = createInstalledLauncherFileSystem();
+    fileSystem.files.set(
+      '/plugins/teamem/hooks/hooks.json',
+      JSON.stringify({
+        hooks: {
+          SessionStart: [
+            {
+              matcher: '*',
+              hooks: [
+                {
+                  type: 'command',
+                  command: 'echo scripts/session-start.sh'
+                }
+              ]
+            }
+          ]
+        }
+      })
+    );
+    const result = runTeamemReadinessFailure({
+      launcherFileSystem: fileSystem
+    });
+
+    expect(result.exitCode).toBe(1);
+    expect(result.invocations).toEqual([]);
+    expect(result.stderr).toContain('plugin install is incomplete or stale');
+    expect(result.stderr).toContain(
+      'missing required SessionStart hook wiring for scripts/session-start.sh'
+    );
+  });
+
+  it('blocks Teamem launch when the installed Teamem plugin lacks the SessionStart script', () => {
+    const fileSystem = createInstalledLauncherFileSystem();
+    fileSystem.files.delete('/plugins/teamem/scripts/session-start.sh');
+    const result = runTeamemReadinessFailure({
+      launcherFileSystem: fileSystem
+    });
+
+    expect(result.exitCode).toBe(1);
+    expect(result.invocations).toEqual([]);
+    expect(result.stderr).toContain('plugin install is incomplete or stale');
+    expect(result.stderr).toContain(
+      'Plugin SessionStart script is missing or unreadable'
+    );
+  });
+
+  it('blocks Teamem launch when the installed Teamem plugin lacks teamem-flag', () => {
+    const fileSystem = createInstalledLauncherFileSystem();
+    fileSystem.executableFiles.delete('/plugins/teamem/bin/teamem-flag');
+    const result = runTeamemReadinessFailure({
+      launcherFileSystem: fileSystem
+    });
+
+    expect(result.exitCode).toBe(1);
+    expect(result.invocations).toEqual([]);
+    expect(result.stderr).toContain('plugin install is incomplete or stale');
+    expect(result.stderr).toContain(
+      'Plugin activation flag binary is missing or not executable'
     );
   });
 
@@ -3336,7 +3430,11 @@ function createInstalledLauncherFileSystem(options?: {
   readonly executableFiles: Set<string>;
 } {
   return createLauncherFileSystem({
-    executableFiles: ['/tmp/home/.teamem/bin/claude', '/opt/claude/bin/claude'],
+    executableFiles: [
+      '/tmp/home/.teamem/bin/claude',
+      '/opt/claude/bin/claude',
+      '/plugins/teamem/bin/teamem-flag'
+    ],
     files: {
       '/tmp/home/.teamem/bin/claude': '# teamem-owned-claude-shim\n',
       '/tmp/home/.teamem/launcher/claude.json':
@@ -3348,7 +3446,6 @@ function createInstalledLauncherFileSystem(options?: {
         version: '0.3.20',
         commands: [
           './commands/teamem-setup.md',
-          './commands/teamem-on.md',
           './commands/teamem-off.md',
           './commands/teamem-status.md',
           './commands/teamem-briefing.md'
@@ -3358,14 +3455,32 @@ function createInstalledLauncherFileSystem(options?: {
       }),
       '/plugins/teamem/commands/teamem-setup.md':
         '---\ndescription: Setup Teamem\n---\n',
-      '/plugins/teamem/commands/teamem-on.md':
-        '---\ndescription: Activate Teamem\n---\n',
       '/plugins/teamem/commands/teamem-off.md':
         '---\ndescription: Deactivate Teamem\n---\n',
       '/plugins/teamem/commands/teamem-status.md':
         '---\ndescription: Check Teamem status\n---\n',
       '/plugins/teamem/commands/teamem-briefing.md':
-        '---\ndescription: Fetch Teamem briefing\n---\n'
+        '---\ndescription: Fetch Teamem briefing\n---\n',
+      '/plugins/teamem/hooks/hooks.json': JSON.stringify({
+        hooks: {
+          SessionStart: [
+            {
+              matcher: '*',
+              hooks: [
+                {
+                  type: 'command',
+                  command:
+                    'bash "$CLAUDE_PLUGIN_ROOT"/scripts/session-start.sh',
+                  timeout: 5
+                }
+              ]
+            }
+          ]
+        }
+      }),
+      '/plugins/teamem/scripts/session-start.sh':
+        '#!/usr/bin/env bash\n"$CLAUDE_PLUGIN_ROOT"/bin/teamem-flag enable\n',
+      '/plugins/teamem/bin/teamem-flag': '#!/usr/bin/env bash\n'
     }
   });
 }

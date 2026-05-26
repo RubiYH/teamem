@@ -6,10 +6,10 @@
  * to every `teamem.get_updates` call so the bridge polls the same space
  * the hooks are claiming in.
  *
- * Pre-#22 the monitor only read the env var chain. After
- * `/teamem-on space-B` pinned hooks to space-B, the monitor kept polling
- * space-A and self-filtered against the wrong principal — peer events
- * leaked from a space the user wasn't working in.
+ * Pre-#22 the monitor only read the env var chain. After launcher/SessionStart
+ * activation pinned hooks to space-B, the monitor kept polling space-A and
+ * self-filtered against the wrong principal — peer events leaked from a space
+ * the user wasn't working in.
  *
  * Test pins `${SESSION_DIR}/space` to space-B and sets the manifest
  * default to space-A. Asserts the monitor's bridge subprocess argv

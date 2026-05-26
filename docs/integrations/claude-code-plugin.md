@@ -43,23 +43,17 @@ the repair command to run next.
 When you choose Teamem in the launcher, or pass `claude --teamem`, the shim
 passes activation intent and the selected Space into Claude Code. On
 SessionStart, the Teamem plugin stores that activation in plugin-owned session
-state, so the current session starts active without a separate `/teamem-on`
-step.
+state, so the current session starts active without a separate slash command.
 
 `teamem cc` is now a compatibility error only. It does not launch Claude Code;
 it points existing users toward the launcher migration.
 
 ## Activate in a repo
 
-```text
-/teamem-on
-/teamem-on --persist
-```
-
-`/teamem-on` remains the manual fallback for sessions launched without the
-Teamem launcher path, or for repairing activation state in an already-open
-session. `/teamem-on --persist` makes Teamem default to on for future Claude
-Code sessions in this repository.
+Start Claude Code through the Teamem launcher and choose Teamem, or pass
+`claude --teamem ...` for an explicit Teamem launch. The deprecated `/teamem-on`
+activation command is no longer shipped; restart an already-open pure session
+through the launcher when you need hooks and monitor delivery.
 
 Use `/teamem-off` to turn it off for the current session.
 

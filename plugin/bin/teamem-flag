@@ -77,7 +77,7 @@ case "$cmd" in
       [ -f "${SESSION_DIR}/space" ] && printf '  space: %s\n' "$(cat "${SESSION_DIR}/space" 2>/dev/null)"
       printf '  session_dir: %s\n' "${SESSION_DIR}"
     else
-      printf 'teamem: idle (run /teamem-on to activate)\n'
+      printf 'teamem: idle (restart Claude Code with claude --teamem to activate)\n'
       [ -f "${DISABLED_FLAG}" ] && printf '  disabled_for_session: yes\n'
     fi
     pidf="${SESSION_DIR}/monitor.pid"

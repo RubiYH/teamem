@@ -29,4 +29,4 @@ Steps:
 
 5. If the user passed anything else, stop and tell them `/teamem-rule` currently supports only `init` and `update`.
 
-6. If the script fails because credentials or membership are missing, direct the user to `/teamem-setup` or `/teamem-on`.
+6. If the script fails because credentials or membership are missing, direct the user to `/teamem-setup` or to restart Claude Code with `claude --teamem`.

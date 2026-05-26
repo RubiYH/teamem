@@ -39,7 +39,7 @@ Structured skill for handing off claimed scope to a specific teammate. Guides th
 - **Refusal cases**:
   - User tries to hand off a claim ID they did not enumerate themselves
   - Recipient principal is not in the user's active space
-  - Teamem is idle (no `/teamem-on`) — recipient won't see the message until their next session
+  - Teamem is idle (session was not launched with Teamem) — recipient won't see the message until their next Teamem-launched session
 - **Tool sequence**:
   1. `mcp__teamem__post_message` with recipient and formatted note
   2. `mcp__teamem__release_scope` with claim ID

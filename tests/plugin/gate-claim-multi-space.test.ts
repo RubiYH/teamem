@@ -4,9 +4,9 @@
  * via `${SESSION_DIR}/space` or the manifest's `default_space`.
  *
  * Pre-#21 the hook invoked `bun run "${BRIDGE_JS}" call <tool> --json …`
- * with no `--space` flag. Multi-space users with /teamem-on <space> active
- * had their claims silently land in `credentials.default_space_id`
- * instead of the pinned space.
+ * with no `--space` flag. Multi-space users with a session-pinned space had
+ * their claims silently land in `credentials.default_space_id` instead of the
+ * pinned space.
  *
  * This test stages a fake plugin install with a stub `lib/bridge.js` that
  * records its argv, drives the gate-claim hook with PreToolUse JSON, and

@@ -24,7 +24,7 @@ Interactive onboarding skill for creating or joining a Teamem space. Guides the 
   3. Member name (pre-filled from `git config --global user.name`, with validation to reject generic names like `root`, `ubuntu`, `admin`)
   4. Optional server URL (defaults to `https://teamem.local:7654` or configured default)
 - **Git hook installation**: After setup completes, the skill guides the user to run `bun run teamem install-git-hooks` in their repo. This installs post-commit and post-checkout hooks into the git hooks directory.
-- **Session activation**: Guides the user to launch `claude` and choose Teamem, or use `claude --teamem ...`. `/teamem-on` is the fallback/repair/manual persistent path for an already-running session.
+- **Session activation**: Guides the user to launch `claude` and choose Teamem, or use `claude --teamem ...`. The deprecated `/teamem-on` activation command is no longer shipped; already-running pure sessions should be restarted through the launcher when hooks and monitor delivery are needed.
 
 ### Common Patterns
 
@@ -45,7 +45,7 @@ Interactive onboarding skill for creating or joining a Teamem space. Guides the 
 After the skill completes, the user should:
 1. Run `bun run teamem install-git-hooks` (git hook installation)
 2. Launch `claude` and choose Teamem, or run `claude --teamem ...`
-3. Optional fallback: run `/teamem-on` in an already-running session; add `--persist` only to auto-activate future sessions in this project
+3. Use `/teamem-status` to verify activation and monitor state after launch
 
 ## Dependencies
 

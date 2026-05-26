@@ -26,6 +26,10 @@ cd bob-clone   && bun run teamem install-git-hooks
 cd alice-clone && bun run setup   # creates space, gets SPACE_ID + JWT
 # Bob:
 cd bob-clone   && bun run setup   # joins space with room code from alice
+
+# Launch Teamem-aware Claude Code in each clone
+cd alice-clone && claude --teamem   # or use the Teamem-aware launcher
+cd bob-clone   && claude --teamem   # or use the Teamem-aware launcher
 ```
 
 Verify both clones share the same `repo_id` (same git remote URL → same
@@ -39,7 +43,6 @@ canonical repo_id). If clones have different remotes, set
 Alice:
 
 ```text
-/teamem-on
 Edit src/Form.tsx.
 Show my current Teamem claims.
 ```
@@ -229,9 +232,9 @@ recently edited, then calls `teamem.force_release` with `target_principal`,
 Alice online with Channels enabled: expected live channel notice about
 `force_release`.
 
-Alice offline, or online without a visible live-delivery surface: when Alice
-next activates with `/teamem-on`, expected unread notification delivery for the
-`force_release` event.
+Alice offline, or online without a visible live-delivery surface: on Alice's
+next Teamem-launched SessionStart/session, expected unread notification delivery
+for the `force_release` event.
 
 Ask either agent to show all space claims. Expected: `src/Form.tsx` no longer
 appears under Alice's claims.

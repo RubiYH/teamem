@@ -39,7 +39,7 @@ You are guiding a first-time user through Teamem onboarding. The whole flow runs
 
 - Tell the user the credentials live at `~/.teamem/credentials.json` (mode 0600).
 - Tell them the normal launcher path is to start Claude Code with `claude` and choose Teamem, or to run `claude --teamem ...` for explicit activation.
-- Present `/teamem-on` as the fallback/repair/manual activation path for an already-running session, with `/teamem-on --persist` optional for project-wide auto-on.
+- Explain that the deprecated `/teamem-on` activation command is no longer shipped. Already-running pure sessions should be restarted through the Teamem-aware launcher when hooks and monitor delivery are needed.
 - Tell them the first thing the plugin will do on activation is fetch a briefing — no claims yet.
 
 ## Common failure modes

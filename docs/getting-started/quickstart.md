@@ -3,14 +3,38 @@
 This guide is the shortest path from a fresh machine to a Claude Code session
 using Teamem.
 
-## 1. Start or choose a Teamem server
+## 1. Install the Teamem CLI
 
-Teamem requires a shared server. The shortest path is Teamem Cloud: open
-[teamem.cc](https://teamem.cc), sign in, create a free managed Space, and copy
-the hosted setup command from the dashboard.
+Install Bun first if it is not already on this machine:
 
-If your team already runs a server, get the server URL and onboarding code from
-your team lead.
+```bash
+curl -fsSL https://bun.sh/install | bash
+```
+
+Then install the Teamem bootstrapper:
+
+```bash
+npm install -g @rubiyh05/teamem
+```
+
+## 2. Choose a shared server
+
+Teamem requires a shared server. Choose Teamem Cloud when you want a managed
+server, or self-host when your team wants to run the server.
+
+### Option A: Teamem Cloud
+
+Open [teamem.cc](https://teamem.cc), sign in, create a free managed Space, and
+copy the hosted server URL, room code, and setup command from the dashboard.
+Run that setup command on each teammate machine.
+
+Teamem Cloud is the provisioning and setup control plane. Your team still uses
+the Teamem runtime/plugin flow for Claude Code, bridge, git hooks, room codes,
+claims, briefings, discussions, and Space Rules.
+
+### Option B: Self-host
+
+Use a server your team already runs, or clone this repository and self-host it.
 
 To self-host locally with Docker Compose:
 
@@ -36,21 +60,15 @@ mkdir -p data
 bun run server
 ```
 
-## 2. Install the bootstrapper
-
-Install Bun first if it is not already on this machine:
-
-```bash
-curl -fsSL https://bun.sh/install | bash
-```
+After the server is available, run the generated setup command on each teammate
+machine. If you are using the guided local setup flow, run:
 
 ```bash
-npm install -g @rubiyh05/teamem
 teamem init
 ```
 
-`teamem init` installs the Claude Code plugin, runs create/join setup, and can
-install Teamem git hooks.
+`teamem init` checks prerequisites, installs or refreshes the Claude Code
+plugin, runs create/join setup, and can install Teamem git hooks.
 
 ## 3. Prepare the launcher and start Claude Code
 
@@ -82,16 +100,15 @@ runtime Space readiness is missing, and prints the repair command to run next.
 
 Normal onboarding starts Claude Code through the PATH shim: run `claude` and
 choose Teamem, or use `claude --teamem ...`. If an already-running session was
-launched without Teamem activation, use the manual fallback:
+launched without Teamem activation, restart it through the launcher or use
+on-demand read commands:
 
 ```text
-/teamem-on
-/teamem-on --persist
 /teamem-briefing
+/teamem-status
 ```
 
-Use `/teamem-on --persist` only when Teamem should default to on for future
-Claude Code sessions in this repository.
+The deprecated `/teamem-on` activation command is no longer shipped.
 
 ## 4. Work normally
 

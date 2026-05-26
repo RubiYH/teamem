@@ -119,7 +119,8 @@ PROJECT_ROOT=$(_teamem_project_root)
 # `shasum` is macOS-default; `sha1sum` is Linux-default. Without this
 # fallback `_common.sh` was sourcing under `set -euo pipefail` and exiting
 # on Linux installs because `shasum` was not on PATH — every slash command
-# (including `/teamem-on`) died before the active flag could be written.
+# and launcher-driven SessionStart activation died before teamem-flag could
+# write the active flag.
 _teamem_sha1() {
   if command -v shasum >/dev/null 2>&1; then
     printf '%s' "$1" | shasum -a 1 | awk '{print $1}'
@@ -228,13 +229,15 @@ teamem_bridge_js() {
 # Codex F14: resolve which Teamem space the hook should target on each
 # bridge call. Without this helper, gate-claim.sh and release-claims.sh
 # invoked the bridge with no `--space` flag, and the bridge fell back to
-# `credentials.default_space_id` regardless of which space the user
-# pinned via `/teamem-on <space>` or the manifest's `default_space`.
+# `credentials.default_space_id` regardless of which space the launcher or
+# SessionStart teamem-flag activation pinned, or the manifest's
+# `default_space`.
 # Multi-space users hit "claims silently land in the wrong space".
 #
 # Resolution order (echoes the resolved value to stdout, returns 0 on hit):
-#   1. Per-session pin: `${SESSION_DIR}/space` (written by /teamem-on
-#      <space>; preserved across hooks for the same session_id).
+#   1. Per-session pin: `${SESSION_DIR}/space` (written by teamem-flag
+#      during launcher/SessionStart activation; preserved across hooks for
+#      the same session_id).
 #   2. Explicit launcher/environment override: `${TEAMEM_SPACE}` (label or
 #      space_id; mirrors the bridge credential priority).
 #   3. Manifest default: `${CLAUDE_PLUGIN_OPTION_DEFAULT_SPACE}` (label

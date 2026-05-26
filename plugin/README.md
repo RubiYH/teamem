@@ -11,7 +11,7 @@ dependency, no per-machine path configuration.
 | Capability | How |
 | --- | --- |
 | **Self-contained install** | `plugin/lib/bridge.js` is a single-file `bun build` artifact bundled with the marketplace plugin. `teamem init` / `teamem update` install it on any machine that has Bun and Claude Code. |
-| **Slash commands** | `/teamem-on`, `/teamem-off`, `/teamem-status`, `/teamem-briefing`, `/teamem-decide`, `/teamem-space`, `/teamem-setup`, `/teamem-reset`, `/teamem-disband`, `/teamem-restore`, `/teamem-gotcha`, `/teamem-coord-pref`, `/teamem-grant`, `/teamem-deny`, `/teamem-end-dispute`, `/teamem-clear-queue`. |
+| **Slash commands** | `/teamem-off`, `/teamem-status`, `/teamem-briefing`, `/teamem-decide`, `/teamem-space`, `/teamem-setup`, `/teamem-reset`, `/teamem-disband`, `/teamem-restore`, `/teamem-gotcha`, `/teamem-coord-pref`, `/teamem-grant`, `/teamem-deny`, `/teamem-end-dispute`, `/teamem-clear-queue`. |
 | **Agent-driven claims** | Claims are managed through MCP tools and hooks, not human slash commands. Edit gates auto-claim in `on_commit` mode; agents use `teamem.claim_scope`, `teamem.list_claims`, `teamem.release_scope`, and `teamem.force_release` for natural-language claim requests. |
 | **Queue-first coordination + legacy permission primitives** | `auto-skip` is the active user-facing coordination preference. Stored or legacy `auto-discuss` values are treated as queued fallbacks in the current plugin build while negotiator automation is postponed. Legacy permission-request / grant / deny primitives still exist for compatibility and alert handling. |
 | **Soft-by-default destructive ops** | `wipe` masks projection rows but retains them; `unwipe` recovers. `disband` tombstones the space for 7 days; `restore` undoes within the grace window. `wipe --hard` is the compliance escape hatch. |
@@ -127,10 +127,10 @@ bootstrapper:
    bun run teamem install-git-hooks
    ```
    This installs `post-commit` and `post-checkout` hooks into Git's configured hooks directory. Run this in every clone. If you use a hook manager (husky, lefthook), add entries that call `${CLAUDE_PLUGIN_ROOT}/git-hooks/post-commit` and `${CLAUDE_PLUGIN_ROOT}/git-hooks/post-checkout`.
-3. If you are launching directly from the source checkout without the Teamem
-   launcher shim, run `/teamem-on` to manually activate the plugin for your
-   session.
-4. Optional: `/teamem-on --persist` makes the next session in this project auto-activate. Worktrees of the same repo share the persist flag.
+3. If you are launching directly from the source checkout, pass
+   `claude --teamem --plugin-dir /absolute/path/to/teamem/plugin` so the
+   launcher intent activates the session. The deprecated `/teamem-on` activation
+   command is no longer shipped.
 
 ## Activation model
 
@@ -138,17 +138,16 @@ Teamem stays inert for pure launches. In the normal marketplace flow, the
 Teamem launcher shim asks whether to start Claude Code with Teamem; choosing
 Teamem, or running `claude --teamem`, passes a launch intent that the
 SessionStart hook consumes. That hook writes the same active-session flag as
-`/teamem-on`, then fetches the startup sync.
+the retired manual command used to write, then fetches the startup sync.
 
-Use `/teamem-on` as a fallback or repair command when a session was launched
-without that intent, or as a manual persistent activation command with
-`/teamem-on --persist`. The plugin's hooks and monitor poll only when the
-current session has an `active` flag or the project has `auto-on`, unless the
-session has a `disabled` override from `/teamem-off`.
+The deprecated `/teamem-on` activation command is no longer shipped. Restart pure
+sessions through `claude --teamem` when hooks and monitor delivery are needed.
+The plugin's hooks and monitor poll only when the current session has an
+`active` flag or the project has `auto-on`, unless the session has a `disabled`
+override from `/teamem-off`.
 
 ```text
 claude --teamem → SessionStart writes active flag → startup sync → done
-/teamem-on      → fallback/manual active flag → startup sync available → done
 /teamem-off     → write disabled override → monitor idles → MCP stays up
 ```
 
@@ -171,7 +170,7 @@ Delivery expectations for this POC:
 - Broadcast discussion messages (`*`) are visible to non-senders in the same Teamem space.
 - Legacy permission requests may also surface as urgent incumbent-only channel alerts carrying the exact metadata fields `req_id`, `blocking_claim_id`, `incumbent_principal`, `event_id`, `event_type`, and `principal`. The JSON content retains the full payload and scope and must surface `/teamem-grant <req_id>` and `/teamem-deny <req_id>`.
 - `teamem.read_thread`, `/teamem-status`, unread notifications, and the next SessionStart sync remain the fallback path when the channel runtime is disabled, unavailable, or not yet enabled in a session.
-- Local `--plugin-dir` channel sessions poll whenever `teamem-channel` starts successfully. Set `TEAMEM_CHANNEL_REQUIRE_ACTIVE=1` only when you specifically want channel polling gated by the `/teamem-on` session active flag.
+- Local `--plugin-dir` channel sessions poll whenever `teamem-channel` starts successfully. Set `TEAMEM_CHANNEL_REQUIRE_ACTIVE=1` only when you specifically want channel polling gated by the session active flag.
 - Teamem space membership is the default trust boundary. For stricter sender gating during local tests, set `TEAMEM_CHANNEL_ALLOWED_SENDERS=bob,alice`; messages from other principals are dropped before `notifications/claude/channel`.
 
 ### Run and verify the POC
@@ -209,8 +208,7 @@ Delivery expectations for this POC:
    ```
    This is the same stdio MCP runtime shipped as `plugin/lib/channel.js`. In normal usage Claude Code starts it from `plugin/.mcp.json`.
 6. In Alice and Bob Claude Code sessions for the same Teamem space, use
-   `claude --teamem`; if these local sessions bypass the Teamem launcher shim,
-   run `/teamem-on` as the manual activation fallback.
+   `claude --teamem`.
 7. From Bob, send the manual smoke message:
    ```text
    /teamem-discuss alice -- Can you see this over the Teamem channel?
@@ -274,8 +272,8 @@ confirmation before risky force-release decisions.
 
 Force-release notifies the claim holder through the unread queue on their next
 active SessionStart; channel-enabled sessions may also surface it live. If a
-session was launched without Teamem intent, `/teamem-on` remains the manual
-repair path that makes the queued notice visible.
+session was launched without Teamem intent, restart with `claude --teamem` to
+make the queued notice visible.
 
 ## Coordination prefs (the conflict story)
 

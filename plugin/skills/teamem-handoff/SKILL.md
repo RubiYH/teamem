@@ -45,4 +45,4 @@ If any are missing, ask before doing anything.
 
 - Refuse to release a claim_id the user didn't enumerate themselves (cross-check against their `active_claims`).
 - Refuse to handoff to a principal who is not in the user's active space (verify via `get_briefing` if uncertain).
-- Refuse if Teamem is idle (`/teamem-on` first) — without active subscribers, the recipient won't see the message until their next /teamem-on.
+- Refuse if Teamem is idle (the session was not launched with Teamem) — without active subscribers, the recipient won't see the message until their next Teamem-launched session.

@@ -213,15 +213,15 @@ writeFileSync(PID_FILE, String(process.pid));
 //
 // Pre-#22 the monitor read `process.env.TEAMEM_SPACE ??
 // process.env.CLAUDE_PLUGIN_OPTION_DEFAULT_SPACE ?? creds.default_space_id`,
-// which IGNORED the per-session pin written by `/teamem-on <space>` to
-// `${SESSION_DIR}/space`. After a session-pin to space-B, hooks claimed
-// in space-B but the monitor kept polling space-A and self-filtered
-// against the wrong principal. The user got peer events from a space
-// they weren't actually working in, and their own events leaked through
+// which IGNORED the per-session pin written by launcher/SessionStart
+// teamem-flag activation to `${SESSION_DIR}/space`. After a session-pin to
+// space-B, hooks claimed in space-B but the monitor kept polling space-A and
+// self-filtered against the wrong principal. The user got peer events from a
+// space they weren't actually working in, and their own events leaked through
 // because `myPrincipal` referenced the wrong member row.
 //
 // Resolution order (matches `_teamem_resolve_space` in _common.sh):
-//   1. `${SESSION_DIR}/space` — per-session pin from /teamem-on <space>
+//   1. `${SESSION_DIR}/space` — per-session pin from launcher/SessionStart activation
 //   2. process.env.TEAMEM_SPACE — explicit override (rare; not set in marketplace)
 //   3. process.env.CLAUDE_PLUGIN_OPTION_DEFAULT_SPACE — manifest default
 //   4. creds.default_space_id — credentials fallback (single-space install)

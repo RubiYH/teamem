@@ -65,8 +65,9 @@ esac
 # Step 3: now safe to enable strict mode.
 set -euo pipefail
 
-# Step 3b: respect /teamem-on / auto-on. The plugin scripts gate on session
-# state files written by the slash commands; if neither is present, exit 0.
+# Step 3b: respect launcher/SessionStart activation and project auto-on. The
+# plugin scripts gate on session state files written by teamem-flag; if neither
+# is present, exit 0.
 teamem_resolve_session_dir "${SESSION_ID:-default}"
 if ! teamem_is_active; then
   _LOG_DIR="${HOME}/.cache/teamem"
@@ -255,9 +256,10 @@ process.stdout.write(JSON.stringify(ps));
 
 # Codex F17 — resolve the *current* space at gate time and persist it with
 # diagnostic cache entries. Pre-#22 cache lookups were keyed only on
-# `(session_id, path)`, so after `/teamem-on space-B` the gate could treat a
-# claim originally minted in space-A as safe in space-B. Runtime no longer
-# reads the cache for allow decisions, but writes keep the metadata accurate.
+# `(session_id, path)`, so after a session space pin changed to space-B the
+# gate could treat a claim originally minted in space-A as safe in space-B.
+# Runtime no longer reads the cache for allow decisions, but writes keep the
+# metadata accurate.
 RESOLVED_SPACE=$(_teamem_resolve_space || true)
 RESOLVED_SPACE="${RESOLVED_SPACE:-}"
 
@@ -449,7 +451,7 @@ try {
   const claimId = process.argv[3];
   const expiresAt = process.argv[4];
   // Codex F17 — record the resolved space alongside each entry so a
-  // subsequent /teamem-on <other-space> invalidates the cache for the
+  // subsequent session pin to another space invalidates the cache for the
   // new space. Empty string means "no resolution" (single-space install,
   // pre-#22 behavior).
   const space = process.argv[5] || "";
@@ -552,8 +554,8 @@ try {
       #
       # Cache the resolved principal in `${SESSION_DIR}/whoami` so we don't
       # round-trip the bridge on every PreToolUse gate. The file holds the
-      # principal string; it's invalidated when the user runs /teamem-on
-      # against a different space (the slash command rewrites
+      # principal string; it's invalidated when launcher/SessionStart
+      # activation pins a different space (teamem-flag rewrites
       # `${SESSION_DIR}/space` and SHOULD also delete `${SESSION_DIR}/whoami`,
       # but if it doesn't, the cache survives at most until session end).
       MY_NAME=""

@@ -3,10 +3,10 @@
  * SPACE-AWARE.
  *
  * Pre-#22 cache entries were keyed only on `(session_id, path)`. After
- * `/teamem-on space-B` rewrote `${SESSION_DIR}/space`, the local cache could
- * treat a path claimed in space-A as safe in space-B. The Stop hook similarly
- * tried to release space-A's claim_id against whatever space was currently
- * resolved, releasing nothing.
+ * SessionStart/teamem-flag activation rewrote `${SESSION_DIR}/space`, the
+ * local cache could treat a path claimed in space-A as safe in space-B. The
+ * Stop hook similarly tried to release space-A's claim_id against whatever
+ * space was currently resolved, releasing nothing.
  *
  * This test stages a fake plugin install and:
  *   1. Pins the session to space-A, claims `src/x.ts`. Asserts cache write
@@ -157,7 +157,7 @@ function runStop(
 }
 
 describe('gate-claim cache is space-aware (Codex F17)', () => {
-  it('after /teamem-on switch from space-A to space-B, gate calls claim_scope again (cache invalidated by space mismatch)', () => {
+  it('after session space pin switches from space-A to space-B, gate calls claim_scope again (cache invalidated by space mismatch)', () => {
     const work = mkdtempSync(join(tmpdir(), 'teamem-f17-'));
     try {
       const { sentinel } = stage(work);
