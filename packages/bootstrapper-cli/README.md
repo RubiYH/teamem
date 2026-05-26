@@ -28,12 +28,42 @@ plugin setup bundle, and prompts for Teamem git hooks.
 | --- | --- |
 | `teamem init` | Install the Claude Code plugin and run create/join setup. |
 | `teamem update` | Refresh the marketplace and update the installed plugin. |
-| `teamem cc` | Launch Claude Code with Teamem enabled. |
-| `teamem uninstall` | Remove the Claude Code plugin, Teamem-managed git hooks, and local Teamem state. |
+| `teamem claude install` | Install or refresh Teamem-owned machine-local launcher state and shim files. |
+| `teamem claude status` | Inspect the Teamem-aware Claude launcher lifecycle state. |
+| `teamem claude uninstall` | Remove Teamem-owned launcher state and shim files. |
+| `teamem cc` | Compatibility error; points existing users toward the launcher migration. |
+| `teamem uninstall` | Remove the Claude Code plugin, Teamem-managed git hooks, Teamem-owned launcher shim/state, and local Teamem state while preserving non-Teamem shim files. |
 
-`teamem cc` can prompt to update first. Use `teamem cc --update`,
-`teamem cc --no-update`, or `teamem cc -- <claude args>` to control launch
-behavior.
+`teamem cc` no longer launches Claude Code. Run `teamem claude install` to
+install or refresh the Teamem-owned machine-local launcher state and shim. The
+installer prints the PATH line to add, but does not edit shell startup files by
+default:
+
+```bash
+export PATH="$HOME/.teamem/bin:$PATH"
+```
+
+Then launch Claude Code as usual with `claude`. Interactive shim launches prompt
+for Teamem or pure Claude Code every time; non-interactive launches stay pure
+unless `claude --teamem ...` is used explicitly. Use `claude --pure ...` to
+force the pure path.
+
+`teamem init` offers to install the launcher after setup in interactive runs.
+Use `teamem init --install-claude-launcher` to force launcher installation, or
+`teamem init --skip-claude-launcher` to skip the offer. Non-interactive init
+does not install the launcher unless `--install-claude-launcher` is provided.
+
+Teamem launch readiness is checked before opening Claude Code. If setup,
+credentials, plugin install, or runtime Space readiness is missing, the launcher
+blocks and prints the next repair command, usually a targeted `teamem init`
+rerun.
+
+`teamem uninstall` also cleans up the Teamem-owned Claude launcher state and
+shim. It removes only Teamem-owned launcher files; an existing non-Teamem
+`claude` shim path is preserved and reported instead of overwritten or deleted.
+Use `teamem claude uninstall` when you only want to unwrap `claude` and keep the
+Teamem plugin, git hooks, and credentials. The command prints the restored
+Claude Code path and the shell cache check to run next.
 
 ## Boundaries
 

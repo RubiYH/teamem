@@ -107,9 +107,9 @@
       "bootstrapperPrefix": "필요하면 먼저 bootstrapper를 설치하세요:",
       "setupCommandLabel": "설정 명령",
       "setupCommandUnavailable": "런타임 프로비저닝이 끝나면 설정 명령이 표시됩니다.",
-      "launchPrefix": "설정 후",
-      "launchSuffix": "명령으로 Claude Code를 시작하고",
-      "verifyPrefix": "Claude 안에서",
+      "launchPrefix": "설정 후 Teamem이 소유한 launcher shim은",
+      "launchSuffix": "명령으로 설치하세요. shell startup 파일은 기본으로 수정하지 않으므로 출력된 PATH 안내를 직접 추가한 뒤 claude를 실행하세요. interactive",
+      "verifyPrefix": "명령은 매번 Teamem 사용 여부를 묻습니다. claude --teamem 또는 claude --pure로 명시적으로 선택할 수 있고, non-interactive claude는 기본적으로 순수 Claude로 실행됩니다. 설정이나 런타임 준비가 부족하면 Teamem 실행은 복구 안내와 함께 차단됩니다. Claude 안에서",
       "unavailable": "이 Space가 활성 상태가 아니어서 설정 정보를 아직 볼 수 없습니다."
     },
     "roomCode": {

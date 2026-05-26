@@ -34,11 +34,32 @@ running the server yourself.
 1. Open [Teamem Cloud](https://teamem.cc) and sign in.
 2. Create one free managed Space.
 3. Copy the hosted server URL, room code, and setup command from the dashboard.
-4. Run the setup command on each teammate machine, then launch Claude Code:
+4. Run the setup command on each teammate machine, then prepare the opt-in
+   Teamem-aware Claude launcher:
 
 ```bash
-teamem cc
+teamem claude install
 ```
+
+The install command prepares the machine-local launcher state and shim. The
+launcher does not edit shell startup files by default. Add the printed PATH
+line yourself, usually:
+
+```bash
+export PATH="$HOME/.teamem/bin:$PATH"
+```
+
+Once the shim directory is first on `PATH`, start Claude Code the usual way:
+
+```bash
+claude
+```
+
+Interactive `claude` launches ask whether to start with Teamem or stay pure.
+Non-interactive launches stay pure unless you pass `claude --teamem ...`; use
+`claude --pure ...` to force the pure path. A Teamem launch blocks before
+opening Claude Code when setup, credentials, plugin install, or runtime Space
+readiness is missing, and prints the repair command to run next.
 
 Teamem Cloud is the provisioning and setup control plane. Your team still uses
 the current Claude Code plugin, bridge, git hooks, room codes, claims,
@@ -63,7 +84,9 @@ teammate setup commands.
 > or require fallback to `/teamem-briefing`, `/teamem-status`, and unread
 > notifications.
 
-Inside Claude Code:
+Normal onboarding starts Claude Code through the PATH shim: run `claude` and
+choose Teamem, or use `claude --teamem ...`. If an already-running session was
+launched without Teamem activation, use the manual fallback:
 
 ```text
 /teamem-on
@@ -71,9 +94,9 @@ Inside Claude Code:
 /teamem-briefing
 ```
 
-Use `/teamem-on --persist` when this repository should default to Teamem being
-on in future Claude Code sessions. From there, edit normally. Teamem hooks claim
-paths before edits, release `on_commit` claims after commits, and surface
+Use `/teamem-on --persist` only when this repository should default to Teamem
+being on in future Claude Code sessions. From there, edit normally. Teamem hooks
+claim paths before edits, release `on_commit` claims after commits, and surface
 conflicts or queued work through the plugin.
 
 ## How it works
@@ -128,9 +151,11 @@ full briefing before every edit.
 | --- | --- |
 | `teamem init` | Install or update the Claude Code plugin and run onboarding. |
 | `teamem update` | Refresh the marketplace and installed plugin. |
-| `teamem cc` | Launch Claude Code with Teamem enabled. |
-| `/teamem-on` | Activate Teamem hooks and monitoring for the current session. |
-| `/teamem-on --persist` | Make Teamem default to on for future Claude Code sessions in this repo. |
+| `teamem claude install` | Install the opt-in Teamem-aware `claude` launcher. |
+| `teamem claude uninstall` | Unwrap `claude` and restore the normal Claude Code command. |
+| `teamem cc` | Compatibility error; it points existing users toward the launcher migration. |
+| `/teamem-on` | Fallback/manual activation for an already-running Claude Code session. |
+| `/teamem-on --persist` | Optional persistent auto-on for future Claude Code sessions in this repo. |
 | `/teamem-off` | Silence Teamem for the current session. |
 | `/teamem-briefing` | Fetch the team context briefing. |
 | `/teamem-status` | Check activation, monitor health, and recent notifications. |
@@ -155,15 +180,20 @@ your team. Backlog items already captured in the project docs include:
 
 ## Contribute
 
-Use the Quick Start server setup above when running Teamem locally. When
-developing the plugin itself, install it from the checkout:
+Use the Quick Start server setup above when running Teamem locally. For
+persistent plugin installs, use `teamem init` and `teamem update` so Claude Code
+loads the marketplace artifact. When developing the plugin itself from this
+checkout, load the source tree for the current Claude Code session:
 
 ```bash
-claude plugin install ./plugin --scope project
+claude --plugin-dir /absolute/path/to/teamem-poc/plugin
 ```
 
-Project-scope installs make the plugin available to everyone using the repo.
-User-scope installs work for personal testing.
+Add `--teamem` when testing through the Teamem-aware launcher shim:
+
+```bash
+claude --teamem --plugin-dir /absolute/path/to/teamem-poc/plugin
+```
 
 ## Documentation
 

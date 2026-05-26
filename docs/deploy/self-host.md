@@ -47,10 +47,23 @@ Then install the bootstrapper CLI and run the guided Claude Code setup:
 ```bash
 npm install -g @rubiyh05/teamem
 teamem init
-teamem cc
+teamem claude install
 ```
 
 `teamem init` checks prerequisites, adds or refreshes the `teamem-alpha` Claude
 Code marketplace, installs the `teamem@teamem-alpha` plugin, runs the space
-create or join setup flow, and can install Teamem git hooks. `teamem cc`
-launches Claude Code with the Teamem development channel enabled.
+create or join setup flow, and can install Teamem git hooks. `teamem claude
+install` installs the Teamem-owned `claude` shim and prints the PATH line to
+add, but does not edit shell startup files by default:
+
+```bash
+export PATH="$HOME/.teamem/bin:$PATH"
+```
+
+Once the shim directory is first on PATH, launch Claude Code as usual with
+`claude`. Interactive `claude` prompts on every launch. Use `claude --teamem` or
+`claude --pure` for explicit launch choices; non-interactive `claude` defaults
+pure. `teamem cc` is a compatibility error for older instructions and does not
+launch Claude Code. A Teamem launch blocks before opening Claude Code when
+setup, credentials, plugin install, or runtime Space readiness is missing, and
+prints the repair command to run next.

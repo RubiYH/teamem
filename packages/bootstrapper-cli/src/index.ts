@@ -12,23 +12,11 @@ export {
   type PlannedAction
 } from './action-plan.js';
 export {
-  buildClaudeLaunchCommand,
-  createClaudeProcessLauncher,
-  createInteractiveCcUpdatePrompter,
-  executeCcLaunch,
-  type CcExecutionResult,
-  type CcLaunchEnvironment,
-  type CcLaunchOptions,
-  type CcUpdateMode,
-  type CcUpdatePrompter,
-  type ClaudeLauncherResult,
-  type ClaudeProcessLauncher
-} from './cc-launcher.js';
-export {
   parseCliArgs,
   renderHelp,
   renderPlan,
   runCli,
+  type ClaudeLifecycleCommand,
   type CliEnvironment,
   type CliFailure,
   type CliIo,
@@ -113,3 +101,21 @@ export {
   type UninstallExecutionOptions,
   type UninstallExecutionResult
 } from './uninstall-executor.js';
+export {
+  createNodeClaudeLauncherFileSystem,
+  getClaudeLauncherStatus,
+  installClaudeLauncher,
+  launchClaudeWithTeamemPolicy,
+  renderClaudeLauncherReport,
+  uninstallClaudeLauncher,
+  type ClaudeLaunchEnvironment,
+  type ClaudeLaunchMode,
+  type ClaudeLaunchProcessRunner,
+  type ClaudeLaunchResult,
+  type ClaudeLauncherEnvironment,
+  type ClaudeLauncherFileSystem,
+  type ClaudeLauncherPaths,
+  type ClaudeLauncherResult,
+  type ClaudeLauncherState,
+  type ClaudeLauncherStatus
+} from './claude-launcher.js';

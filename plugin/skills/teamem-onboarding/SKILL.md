@@ -11,7 +11,7 @@ You are guiding a first-time user through Teamem onboarding. The whole flow runs
 
 1. `bun` is on the user's PATH. If not, link them to https://bun.sh and stop.
 2. `~/.teamem/credentials.json` does NOT yet exist (or the user explicitly wants to add another space).
-3. `${CLAUDE_PLUGIN_ROOT}/lib/setup.js` exists. If missing, the plugin install is broken — instruct the user to reinstall via `claude plugin install` from a Teamem source checkout that ran `bun run build:plugin` first.
+3. `${CLAUDE_PLUGIN_ROOT}/lib/setup.js` exists. If missing, the plugin install is broken — instruct the user to run `teamem update` or `teamem init` to reinstall the current marketplace plugin. Source-checkout developers should run `bun run build:plugin` and load the checkout with `claude --plugin-dir /absolute/path/to/teamem/plugin`.
 
 ## Flow
 
@@ -38,12 +38,13 @@ You are guiding a first-time user through Teamem onboarding. The whole flow runs
 ## After successful setup
 
 - Tell the user the credentials live at `~/.teamem/credentials.json` (mode 0600).
-- Tell them to run `/teamem-on` to activate the plugin for this session, optionally with `--persist` for project-wide auto-on.
+- Tell them the normal launcher path is to start Claude Code with `claude` and choose Teamem, or to run `claude --teamem ...` for explicit activation.
+- Present `/teamem-on` as the fallback/repair/manual activation path for an already-running session, with `/teamem-on --persist` optional for project-wide auto-on.
 - Tell them the first thing the plugin will do on activation is fetch a briefing — no claims yet.
 
 ## Common failure modes
 
 - **server unreachable**: ask the user to verify the server URL with `curl <url>/health`. If they're running local-docker, suggest `docker compose up -d` from a Teamem source checkout.
 - **invalid_code / code_expired**: room code is wrong or older than 24h. Ask the creator to run `/teamem-space rotate-code` and resend.
-- **bridge_bundle_missing**: the plugin's `lib/setup.js` or `lib/bridge.js` is absent. Reinstall via `claude plugin install` from a checkout that ran `bun run build:plugin`.
+- **bridge_bundle_missing**: the plugin's `lib/setup.js` or `lib/bridge.js` is absent. Run `teamem update` or `teamem init` to reinstall the current marketplace plugin; source-checkout developers should run `bun run build:plugin` and load with `claude --plugin-dir /absolute/path/to/teamem/plugin`.
 - **setup mid-flight failure**: tell the user to delete `~/.teamem/credentials.json` and retry.

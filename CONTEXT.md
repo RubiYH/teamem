@@ -15,7 +15,46 @@ _Avoid_: npm runtime package, standalone replacement for the Claude Code plugin
 
 The alpha marketplace uses explicit plugin versions: every shipped plugin change must bump `plugin/.claude-plugin/plugin.json` so Claude Code can detect updates.
 
-`teamem cc` checks the `teamem-alpha` marketplace before launching Claude Code and asks whether to update `teamem@teamem-alpha`, defaulting the prompt to update while allowing the teammate to skip.
+`teamem cc` is a compatibility error only. It does not launch Claude Code or check for updates. Existing users should move to the opt-in `teamem claude install` shim or invoke the real Claude Code executable directly when they want to bypass Teamem.
+
+### Teamem-aware Claude launcher
+
+An opt-in local launch path that lets a teammate start Claude Code from their normal `claude` habit while choosing at launch time whether this session should load Teamem.
+_Avoid_: hijack, silent wrapper, forced Claude replacement
+
+It must never silently replace pure Claude Code. The teammate explicitly installs the integration, and each interactive launch preserves a clear pure-Claude option.
+
+The launcher has its own lifecycle because it changes future shell behavior: teammates can install, inspect, or uninstall it directly with `teamem claude install`, `teamem claude status`, and `teamem claude uninstall`.
+
+For migration, `teamem cc` is a compatibility error that does not launch Claude Code. It points users to `teamem claude install` and the opt-in `claude` shim.
+
+Launcher install creates Teamem-owned shim files and prints exact PATH instructions by default; it does not edit user-owned shell startup files.
+
+Launcher state is machine-local Teamem state, not repository-local scope memory.
+
+The runtime implements the actual `claude` shim prompt policy, pure-vs-Teamem launch selection, readiness checks, plugin-owned activation intent, default Space behavior, uninstall cleanup, and final user-facing docs.
+
+Interactive launches prompt on every launch, defaulting to Teamem, rather than remembering a permanent Teamem-or-pure choice.
+
+Non-interactive launches default to pure Claude Code unless the caller explicitly opts into Teamem, so scripts and editor integrations are not changed by surprise.
+
+The launcher intercepts `claude` through a reversible Teamem-owned PATH shim, not by modifying or replacing the real Claude Code executable.
+
+The shim records the real Claude Code executable when installed, uses that saved path for launch, and reports when the saved executable later disappears.
+
+A Teamem launch loads the Teamem plugin channel and passes launch intent to the plugin; a pure launch calls Claude Code unchanged.
+
+Launcher-driven activation is a launch intent handed to the plugin, not direct session-file mutation by the outer shim; the plugin SessionStart hook owns translating that intent into normal active-session state.
+
+If Teamem is not installed or set up well enough to activate, readiness blocks before opening Claude Code and shows the teammate the next repair command. "Set up well enough" means satisfying the same prerequisites `teamem init` requires plus the runtime requirements needed for the plugin to activate against a real Space.
+
+The readiness path diagnoses but does not repair setup; repair stays in explicit `teamem init` and related lifecycle commands.
+
+Space selection stays quiet at launch: the launcher uses the configured default Space unless the teammate provides an explicit Space override.
+
+Readiness checks and activation policy belong in the bootstrapper package and plugin-owned activation path, with the installed shim kept as a thin entrypoint into tested code.
+
+Launcher changes are verified through the bootstrapper package gates plus focused tests for install/status/uninstall, prompt policy and non-interactive behavior, readiness blocking, activation, `teamem cc` migration, uninstall cleanup, and final docs.
 
 ### Coordination preference
 

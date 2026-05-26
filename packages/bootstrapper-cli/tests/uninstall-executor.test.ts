@@ -5,6 +5,7 @@ import {
   renderUninstallExecutionReport,
   type LocalStateFileSystem
 } from '../src/uninstall-executor.js';
+import type { ClaudeLauncherFileSystem } from '../src/claude-launcher.js';
 import type { GitHookInstaller } from '../src/git-hooks.js';
 import type {
   CommandProbeResult,
@@ -13,6 +14,42 @@ import type {
 import type { BootstrapperFileSystem } from '../src/plugin-installer.js';
 
 describe('executeUninstall', () => {
+  it('dry-runs unresolved-scope uninstall without local, hook, or launcher mutation', () => {
+    const commandRunner = createRecordingRunner({
+      'claude plugin list --json': ok('[]')
+    });
+    const localStateFileSystem = createLocalStateFileSystemStub();
+    const gitHookInstaller = createGitHookInstallerStub();
+
+    const result = executeUninstall({
+      cwd: '/repo',
+      commandRunner,
+      scopeFileSystem: createMemoryFileSystem(),
+      localStateFileSystem,
+      claudeLauncherFileSystem: createExplodingLauncherFileSystem(),
+      gitHookInstaller,
+      homeDir: '/home/alice',
+      dryRun: true
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.status).toBe('partial');
+    expect(commandRunner.invocations).toEqual(['claude plugin list --json']);
+    expect(localStateFileSystem.removedPaths).toEqual([]);
+    expect(gitHookInstaller.uninstallInvocations).toBe(0);
+    expect(result.hookCleanup).toBeUndefined();
+    expect(result.launcherCleanup).toBeUndefined();
+    expect(result.removedPaths).toContain('/home/alice/.teamem/run');
+    expect(result.removedPaths).toContain('/repo/.teamem/bootstrapper.json');
+
+    const report = renderUninstallExecutionReport(result, { dryRun: true });
+    expect(report).toContain(
+      'dry-run: local cleanup planned only; plugin uninstall needs an explicit scope'
+    );
+    expect(report).toContain('/home/alice/.teamem/run');
+    expect(report).toContain('/repo/.teamem/bootstrapper.json');
+  });
+
   it('continues hook and local cleanup after Claude plugin command failures', () => {
     const commandRunner = createRecordingRunner({
       'claude plugin uninstall teamem@teamem-alpha --scope user --prune -y':
@@ -188,4 +225,20 @@ function createGitHookInstallerStub(): GitHookInstaller & {
     }
   };
   return installer;
+}
+
+function createExplodingLauncherFileSystem(): ClaudeLauncherFileSystem {
+  const fail = (): never => {
+    throw new Error('launcher cleanup must not run');
+  };
+  return {
+    exists: fail,
+    readFile: fail,
+    isReadableFile: fail,
+    writeFile: fail,
+    mkdir: fail,
+    rm: fail,
+    isExecutableFile: fail,
+    chmodExecutable: fail
+  };
 }

@@ -13,6 +13,12 @@ import {
 import { resolveUpdateScope } from './update-executor.js';
 import type { CommandRunner } from './prerequisites.js';
 import type { GitHookInstallResult, GitHookInstaller } from './git-hooks.js';
+import {
+  createNodeClaudeLauncherFileSystem,
+  uninstallClaudeLauncher,
+  type ClaudeLauncherFileSystem,
+  type ClaudeLauncherResult
+} from './claude-launcher.js';
 
 export interface LocalStateFileSystem {
   rm(path: string): void;
@@ -23,8 +29,11 @@ export interface UninstallExecutionEnvironment {
   readonly commandRunner: CommandRunner;
   readonly scopeFileSystem?: BootstrapperFileSystem;
   readonly localStateFileSystem?: LocalStateFileSystem;
+  readonly claudeLauncherFileSystem?: ClaudeLauncherFileSystem;
   readonly gitHookInstaller?: Pick<GitHookInstaller, 'uninstall'>;
   readonly homeDir?: string;
+  readonly pathEnv?: string;
+  readonly now?: () => Date;
 }
 
 export interface UninstallExecutionOptions {
@@ -40,6 +49,7 @@ export interface UninstallExecutionResult {
   readonly commands: readonly ExecutedCommand[];
   readonly commandFailures: readonly UninstallCommandFailure[];
   readonly hookCleanup?: GitHookInstallResult;
+  readonly launcherCleanup?: ClaudeLauncherResult;
   readonly removedPaths: readonly string[];
   readonly localCleanupFailures: readonly LocalCleanupFailure[];
   readonly message: string;
@@ -75,17 +85,37 @@ export function executeUninstall(
     requestedScope: options.requestedScope
   });
   if (!scope) {
+    if (options.dryRun) {
+      return {
+        ok: false,
+        status: 'partial',
+        commands: [],
+        commandFailures: [],
+        removedPaths: buildLocalStatePaths({
+          cwd: options.cwd,
+          homeDir: options.homeDir ?? homedir(),
+          keepCredentials: options.keepCredentials ?? false
+        }),
+        localCleanupFailures: [],
+        message:
+          'Could not determine which Claude Code plugin scope to uninstall. Dry-run planned local cleanup only; re-run with `teamem uninstall --scope <project|user|local>` to also plan Claude Code plugin removal.'
+      };
+    }
+
     const cleanup = runLocalCleanup(options);
     const hookCleanup = options.gitHookInstaller?.uninstall();
+    const launcherCleanup = runLauncherCleanup(options);
     const cleanupFailed =
       cleanup.localCleanupFailures.length > 0 ||
-      (hookCleanup ? !hookCleanup.ok : false);
+      (hookCleanup ? !hookCleanup.ok : false) ||
+      !launcherCleanup.ok;
     return {
       ok: false,
       status: cleanupFailed ? 'failed' : 'partial',
       commands: [],
       commandFailures: [],
       hookCleanup,
+      launcherCleanup,
       removedPaths: cleanup.removedPaths,
       localCleanupFailures: cleanup.localCleanupFailures,
       message:
@@ -118,16 +148,18 @@ export function executeUninstall(
   });
 
   if (options.dryRun) {
+    const launcherCleanup = runLauncherCleanup(options);
     return {
       ok: true,
       status: 'success',
       scope,
       commands,
       commandFailures: [],
+      launcherCleanup,
       removedPaths,
       localCleanupFailures: [],
       message:
-        'dry-run: plugin uninstall, marketplace removal, git hook uninstall, and local cleanup were planned but not executed'
+        'dry-run: plugin uninstall, marketplace removal, git hook uninstall, launcher cleanup, and local cleanup were planned but not executed'
     };
   }
 
@@ -145,10 +177,12 @@ export function executeUninstall(
 
   const hookCleanup = options.gitHookInstaller?.uninstall();
   const cleanup = runLocalCleanup(options, removedPaths);
+  const launcherCleanup = runLauncherCleanup(options);
   const hasHookFailure = hookCleanup ? !hookCleanup.ok : false;
   const hasFailure =
     commandFailures.length > 0 ||
     hasHookFailure ||
+    !launcherCleanup.ok ||
     cleanup.localCleanupFailures.length > 0;
 
   return {
@@ -158,12 +192,13 @@ export function executeUninstall(
     commands,
     commandFailures,
     hookCleanup,
+    launcherCleanup,
     removedPaths: cleanup.removedPaths,
     localCleanupFailures: cleanup.localCleanupFailures,
     failure: commandFailures[0]?.command,
     message: hasFailure
       ? 'Some uninstall steps failed; remaining cleanup ran where possible.'
-      : 'Teamem plugin, git hooks, and local state were uninstalled.'
+      : 'Teamem plugin, git hooks, launcher files, and local state were uninstalled.'
   };
 }
 
@@ -207,6 +242,21 @@ export function renderUninstallExecutionReport(
     );
   }
 
+  if (execution.launcherCleanup) {
+    lines.push(
+      `Claude launcher: ${execution.launcherCleanup.ok ? 'OK' : 'ERROR'}: ${execution.launcherCleanup.message}`
+    );
+    if (execution.launcherCleanup.plannedRemovals.length > 0) {
+      for (const path of execution.launcherCleanup.plannedRemovals) {
+        lines.push(`  - ${path}`);
+      }
+    }
+    for (const detail of execution.launcherCleanup.details) {
+      lines.push(`  ${detail}`);
+    }
+    lines.push('');
+  }
+
   if (execution.removedPaths.length > 0) {
     lines.push('Local paths:');
     for (const path of execution.removedPaths) {
@@ -234,15 +284,31 @@ function renderUninstallStatusLine(
   options: { dryRun: boolean }
 ): string {
   if (options.dryRun) {
-    return 'dry-run: uninstall commands, git hook uninstall, and local cleanup planned only';
+    if (!execution.scope) {
+      return 'dry-run: local cleanup planned only; plugin uninstall needs an explicit scope';
+    }
+    return 'dry-run: uninstall commands, git hook uninstall, launcher cleanup, and local cleanup planned only';
   }
   if (execution.status === 'success') {
-    return 'executed: Teamem plugin, git hooks, and local cleanup completed';
+    return 'executed: Teamem plugin, git hooks, launcher cleanup, and local cleanup completed';
   }
   if (execution.status === 'partial') {
     return 'partial: some uninstall steps failed; completed remaining cleanup where possible';
   }
   return 'failed: Teamem uninstall could not complete cleanup';
+}
+
+function runLauncherCleanup(
+  options: UninstallExecutionEnvironment & UninstallExecutionOptions
+): ClaudeLauncherResult {
+  return uninstallClaudeLauncher({
+    homeDir: options.homeDir,
+    pathEnv: options.pathEnv,
+    fileSystem:
+      options.claudeLauncherFileSystem ?? createNodeClaudeLauncherFileSystem(),
+    now: options.now,
+    dryRun: options.dryRun
+  });
 }
 
 function buildLocalStatePaths(options: {

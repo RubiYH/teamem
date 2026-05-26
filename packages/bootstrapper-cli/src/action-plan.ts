@@ -1,6 +1,11 @@
 import { TEAMEM_MARKETPLACE, TEAMEM_PLUGIN } from './plugin-installer.js';
 
-export type BootstrapperCommand = 'init' | 'cc' | 'update' | 'uninstall';
+export type BootstrapperCommand =
+  | 'init'
+  | 'cc'
+  | 'update'
+  | 'uninstall'
+  | 'claude';
 
 export type BootstrapperActionKind =
   | 'diagnose-prerequisites'
@@ -12,7 +17,9 @@ export type BootstrapperActionKind =
   | 'clear-local-state'
   | 'run-setup-flow'
   | 'check-for-updates'
-  | 'launch-claude';
+  | 'launch-claude'
+  | 'report-cc-migration'
+  | 'manage-claude-launcher';
 
 export interface PlannedExternalCommand {
   readonly command: string;
@@ -43,8 +50,6 @@ export interface BuildActionPlanOptions {
 export function buildActionPlan(options: BuildActionPlanOptions): ActionPlan {
   const dryRun = options.dryRun ?? false;
   const scope = options.scope ?? '<scope>';
-  const claudeArgs = options.claudeArgs ?? [];
-  const includeUpdateCheck = options.includeUpdateCheck ?? true;
 
   switch (options.command) {
     case 'init':
@@ -95,33 +100,24 @@ export function buildActionPlan(options: BuildActionPlanOptions): ActionPlan {
         command: 'cc',
         dryRun,
         actions: [
-          ...(includeUpdateCheck
-            ? [
-                {
-                  kind: 'check-for-updates' as const,
-                  title: 'Check for Teamem updates',
-                  description:
-                    'Offer to refresh Teamem marketplace/plugin state before launching Claude Code.',
-                  externalCommand: {
-                    command: 'teamem',
-                    args: ['update', '--scope', scope]
-                  }
-                }
-              ]
-            : []),
           {
-            kind: 'launch-claude',
-            title: 'Launch Claude Code',
+            kind: 'report-cc-migration',
+            title: 'Report `teamem cc` migration',
             description:
-              'Launch Claude Code with the Teamem marketplace channel source.',
-            externalCommand: {
-              command: 'claude',
-              args: [
-                '--dangerously-load-development-channels',
-                `plugin:${TEAMEM_PLUGIN}`,
-                ...claudeArgs
-              ]
-            }
+              '`teamem cc` no longer launches Claude Code. Use `teamem claude install` to opt into the machine-local `claude` shim, which prompts before starting Claude Code with Teamem and preserves a pure Claude Code path.'
+          }
+        ]
+      };
+    case 'claude':
+      return {
+        command: 'claude',
+        dryRun,
+        actions: [
+          {
+            kind: 'manage-claude-launcher',
+            title: 'Manage Teamem-aware Claude launcher',
+            description:
+              'Install, inspect, or remove Teamem-owned machine-local launcher state and shim files. With --dry-run, report planned launcher file changes without mutating local state.'
           }
         ]
       };
@@ -190,6 +186,12 @@ export function buildActionPlan(options: BuildActionPlanOptions): ActionPlan {
             title: 'Uninstall Teamem git hooks',
             description:
               'Remove Teamem-managed post-commit and post-checkout hooks from the current repository and restore .teamem-backup hooks.'
+          },
+          {
+            kind: 'manage-claude-launcher',
+            title: 'Remove Teamem-aware Claude launcher',
+            description:
+              'Remove Teamem-owned machine-local Claude launcher state and shim files while preserving non-Teamem files.'
           },
           {
             kind: 'clear-local-state',

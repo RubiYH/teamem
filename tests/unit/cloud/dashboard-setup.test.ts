@@ -118,7 +118,18 @@ describe('Teamem Cloud dashboard setup view', () => {
     );
     expect(dashboardSource).toContain('CopyableField');
     expect(dashboardSource).toContain('npm install -g @rubiyh05/teamem');
-    expect(dashboardSource).toContain('teamem cc');
+    expect(dashboardSource).toContain('teamem claude install');
+    expect(dashboardSource).toContain('claude');
+    expect(messagesSource).toContain('Interactive');
+    expect(messagesSource).toContain('prompts every launch');
+    expect(messagesSource).toContain('does not edit shell startup files');
+    expect(messagesSource).toContain('claude --teamem');
+    expect(messagesSource).toContain('claude --pure');
+    expect(messagesSource).toContain('Non-interactive claude defaults pure');
+    expect(messagesSource).toContain('block with a repair hint');
+    expect(messagesSource).not.toContain('until the #41');
+    expect(messagesSource).not.toContain('follow-up #41');
+    expect(koreanMessagesSource).not.toContain('#41 launch policy');
     expect(dashboardSource).toContain('/teamem-status');
   });
 

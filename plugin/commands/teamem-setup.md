@@ -16,8 +16,8 @@ Steps:
 
    No source-tree dependency — `setup.js` is bundled into the plugin alongside `bridge.js` (see ADR-0003).
 
-2. When setup completes successfully, tell the user to run `/teamem-on` to activate the plugin for the current session (and `/teamem-on --persist` to auto-activate future sessions in this project).
+2. When setup completes successfully, tell the user the normal launcher path is to start Claude Code with `claude` and choose Teamem, or to run `claude --teamem ...` for explicit activation. Present `/teamem-on` as the fallback/repair/manual activation path for an already-running session, and `/teamem-on --persist` as optional project-wide auto-on for future sessions.
 
-3. If `setup.js` is missing under `${CLAUDE_PLUGIN_ROOT}/lib/`, the plugin install is broken — tell the user to reinstall via `claude plugin install` from a Teamem source checkout that ran `bun run build:plugin` first.
+3. If `setup.js` is missing under `${CLAUDE_PLUGIN_ROOT}/lib/`, the plugin install is broken — tell the user to run `teamem update` or `teamem init` to reinstall the current marketplace plugin. Source-checkout developers should run `bun run build:plugin` and load the checkout with `claude --plugin-dir /absolute/path/to/teamem/plugin`.
 
 Never run setup non-interactively from this slash command — it prompts the user for a server URL, room code, and member name and those decisions need their input. The non-interactive `--json` mode is reserved for e2e tests.

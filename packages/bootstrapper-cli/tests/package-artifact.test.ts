@@ -9,10 +9,10 @@ const PACKAGE_JSON_PATH = join(PACKAGE_ROOT, 'package.json');
 const REQUIRED_PACKED_FILES = [
   'dist/bin/teamem.js',
   'dist/cli.js',
+  'dist/claude-launcher.js',
   'dist/prerequisites.js',
   'dist/plugin-installer.js',
   'dist/update-executor.js',
-  'dist/cc-launcher.js',
   'dist/git-hooks.js'
 ] as const;
 
@@ -41,6 +41,9 @@ describe('package artifact', () => {
     expect(packedFiles).toEqual(
       expect.arrayContaining([...REQUIRED_PACKED_FILES])
     );
+    expect(
+      packedFiles.some((path) => path.startsWith('dist/cc-launcher.'))
+    ).toBe(false);
     expect(packedFiles.some((path) => path.startsWith('src/'))).toBe(false);
     expect(packedFiles.some((path) => path.startsWith('tests/'))).toBe(false);
     expect(

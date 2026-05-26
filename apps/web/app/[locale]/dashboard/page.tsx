@@ -383,8 +383,11 @@ function ExistingSpaceState({
             )}
             <p className="text-sm leading-6 text-muted-foreground">
               {copy.setup.launchPrefix}
-              <code className="mx-1 text-foreground">teamem cc</code>
+              <code className="mx-1 text-foreground">
+                teamem claude install
+              </code>
               {copy.setup.launchSuffix}
+              <code className="mx-1 text-foreground">claude</code>
               {copy.setup.verifyPrefix}
               <code className="ml-1 text-foreground">/teamem-status</code>.
             </p>

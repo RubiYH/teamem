@@ -25,11 +25,27 @@ Teamem을 사용하려면 공유 서버가 먼저 필요합니다. 가장 빠른
 1. [Teamem Cloud](https://teamem.cc)를 열고 로그인합니다.
 2. 무료 관리형 Space를 하나 만듭니다.
 3. 대시보드에서 호스팅된 서버 URL, 참여 코드, 설정 명령어를 복사합니다.
-4. 각 팀원 머신에서 설정 명령어를 실행한 뒤 Claude Code를 시작합니다:
+4. 각 팀원 머신에서 설정 명령어를 실행한 뒤 Teamem이 소유한 `claude` shim을
+   설치합니다:
 
 ```bash
-teamem cc
+teamem claude install
 ```
+
+`teamem claude install`은 Teamem이 소유한 `claude` shim을 설치합니다. shim
+디렉터리를 PATH 맨 앞에 두면 interactive `claude`는 실행할 때마다 Teamem
+사용 여부를 묻습니다. 설치 명령은 shell startup 파일을 기본으로 수정하지
+않으므로 출력된 PATH 안내를 직접 추가하세요:
+
+```bash
+export PATH="$HOME/.teamem/bin:$PATH"
+```
+
+그 다음 평소처럼 `claude`를 실행합니다. `claude --teamem`과 `claude --pure`는
+명시적인 선택이고, non-interactive `claude`는 기본적으로 순수 Claude로
+실행됩니다. Teamem 실행에 필요한 설정, credential, 플러그인 설치, 런타임
+Space 준비가 부족하면 Claude Code를 열기 전에 막고 다음 복구 명령을
+보여줍니다.
 
 Teamem Cloud는 프로비저닝과 설정을 위한 control plane입니다. 실제 작업
 흐름은 현재 Claude Code 플러그인, 브리지, git hook, 참여 코드, 클레임,
@@ -81,14 +97,20 @@ curl -fsSL https://bun.sh/install | bash
 ```bash
 npm install -g @rubiyh05/teamem
 teamem init
-teamem cc
+teamem claude install
 ```
 
 `teamem init`은 필수 도구를 점검하고, `teamem-alpha` Claude Code
 마켓플레이스를 추가하거나 갱신한 뒤, `teamem@teamem-alpha` 플러그인을
 설치하고 스페이스 생성 또는 참여 설정을 실행합니다. Teamem git hook 설치도
-선택할 수 있습니다. `teamem cc`는 Teamem 개발 채널을 켠 상태로
-Claude Code를 실행합니다.
+선택할 수 있습니다. `teamem cc`는 이제 호환성 오류만 출력하며 Claude Code를
+실행하지 않습니다. `teamem claude install`은 Teamem이 소유한 `claude` shim을
+설치합니다. shim 디렉터리가 PATH 맨 앞에 있으면 interactive `claude`는 매번
+Teamem 사용 여부를 묻고, `claude --teamem`과 `claude --pure`는 명시적으로
+선택할 수 있습니다. non-interactive `claude`는 기본적으로 순수 Claude로
+실행됩니다. 설치 명령은 shell startup 파일을 기본으로 수정하지 않으므로
+출력된 PATH 안내를 직접 추가하세요. Teamem 실행 준비가 부족하면 Claude Code를
+열기 전에 막고 다음 복구 명령을 보여줍니다.
 
 > [!WARNING]
 > Teamem은 현재 Claude Code의 실험적 Channels 기능으로 실시간 알림을
@@ -96,7 +118,9 @@ Claude Code를 실행합니다.
 > 수 있습니다. 이 경우 `/teamem-briefing`, `/teamem-status`, 읽지 않은
 > 알림으로 확인해야 할 수 있습니다.
 
-Claude Code에서:
+일반 온보딩은 PATH shim으로 Claude Code를 시작합니다. `claude`를 실행해
+Teamem을 선택하거나 `claude --teamem ...`을 사용하세요. 이미 실행 중인
+세션이 Teamem 활성화 없이 시작된 경우에는 수동 fallback을 사용합니다:
 
 ```text
 /teamem-on
@@ -148,9 +172,11 @@ Claude Code plugin
 | --- | --- |
 | `teamem init` | Claude Code 플러그인을 설치하거나 갱신하고 온보딩을 실행합니다. |
 | `teamem update` | 마켓플레이스와 설치된 플러그인을 갱신합니다. |
-| `teamem cc` | Teamem이 켜진 Claude Code를 실행합니다. |
-| `/teamem-on` | 현재 세션에서 Teamem 훅과 모니터를 활성화합니다. |
-| `/teamem-on --persist` | 이 저장소의 이후 Claude Code 세션에서 Teamem이 기본으로 켜지게 합니다. |
+| `teamem claude install` | Teamem이 소유한 `claude` shim을 설치합니다. |
+| `teamem claude uninstall` | `claude`를 unwrap하고 기본 Claude Code 명령으로 되돌립니다. |
+| `teamem cc` | 호환성 오류입니다. 기존 사용자에게 launcher migration을 안내합니다. |
+| `/teamem-on` | 이미 실행 중인 Claude Code 세션의 fallback/manual activation입니다. |
+| `/teamem-on --persist` | 이 저장소의 이후 Claude Code 세션을 위한 선택적 persistent auto-on입니다. |
 | `/teamem-off` | 현재 세션에서 Teamem을 끕니다. |
 | `/teamem-briefing` | 팀 맥락 브리핑을 가져옵니다. |
 | `/teamem-status` | 활성화 상태, 모니터 상태, 최근 알림을 확인합니다. |
@@ -176,14 +202,19 @@ Claude Code plugin
 ## 기여
 
 로컬에서 Teamem을 실행할 때는 위의 빠른 시작 서버 설정을 사용하세요.
-플러그인 자체를 개발할 때는 clone한 저장소에서 플러그인을 설치하세요:
+영구 플러그인 설치는 `teamem init`과 `teamem update`를 사용해 Claude Code가
+마켓플레이스 artifact를 로드하게 하세요. 플러그인 자체를 이 checkout에서
+개발할 때는 현재 Claude Code 세션에 source tree를 로드하세요:
 
 ```bash
-claude plugin install ./plugin --scope project
+claude --plugin-dir /absolute/path/to/teamem-poc/plugin
 ```
 
-Project scope 설치는 해당 저장소를 사용하는 모든 사람에게 플러그인을
-제공합니다. User scope 설치는 개인 테스트에 적합합니다.
+Teamem-aware launcher shim을 통해 테스트할 때는 `--teamem`을 추가하세요:
+
+```bash
+claude --teamem --plugin-dir /absolute/path/to/teamem-poc/plugin
+```
 
 ## 문서
 

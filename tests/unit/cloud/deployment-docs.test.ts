@@ -76,7 +76,15 @@ describe('Teamem Cloud deployment documentation', () => {
     );
     expect(smokeDoc).toContain('without asking the user to self-host Docker');
     expect(smokeDoc).toContain('teamem init --join --server-url');
-    expect(smokeDoc).toContain('teamem cc');
+    expect(smokeDoc).toContain('teamem claude install');
+    expect(smokeDoc).toContain('teamem claude status --dry-run');
+    expect(smokeDoc).toContain('Interactive `claude` prompts');
+    expect(smokeDoc).toContain('does not edit shell startup');
+    expect(smokeDoc).toContain('repair hint');
+    expect(smokeDoc).toContain('`claude --teamem` or `claude --pure`');
+    expect(smokeDoc).toContain('non-interactive `claude` defaults pure');
+    expect(smokeDoc).not.toContain('until the #41');
+    expect(smokeDoc).not.toContain('follow-up #41');
   });
 
   it('documents free-trial policy, grant, runtime copy, and override semantics', () => {

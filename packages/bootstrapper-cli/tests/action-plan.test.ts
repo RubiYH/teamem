@@ -32,33 +32,41 @@ describe('buildActionPlan', () => {
     });
   });
 
-  it('returns launcher planning for cc', () => {
+  it('returns migration planning for cc without a Claude launch command', () => {
     const plan = buildActionPlan({
       command: 'cc',
       claudeArgs: ['--print', 'hello']
     });
 
     expect(plan.actions.map((action) => action.kind)).toEqual([
-      'check-for-updates',
-      'launch-claude'
+      'report-cc-migration'
     ]);
-    expect(plan.actions[1]?.externalCommand?.args).toEqual([
-      '--dangerously-load-development-channels',
-      'plugin:teamem@teamem-alpha',
-      '--print',
-      'hello'
-    ]);
+    expect(plan.actions[0]?.description).toContain('teamem claude install');
+    expect(plan.actions[0]?.description).toContain('claude');
+    expect(plan.actions[0]?.externalCommand).toBeUndefined();
   });
 
-  it('can render cc planning without the update check', () => {
+  it('keeps cc migration planning stable when legacy update check is disabled', () => {
     const plan = buildActionPlan({
       command: 'cc',
       includeUpdateCheck: false
     });
 
     expect(plan.actions.map((action) => action.kind)).toEqual([
-      'launch-claude'
+      'report-cc-migration'
     ]);
+  });
+
+  it('returns lifecycle action planning for the Teamem-aware Claude launcher', () => {
+    const plan = buildActionPlan({ command: 'claude' });
+
+    expect(plan.actions.map((action) => action.kind)).toEqual([
+      'manage-claude-launcher'
+    ]);
+    expect(plan.actions[0]?.description).toContain(
+      'Teamem-owned machine-local launcher state'
+    );
+    expect(plan.actions[0]?.description).toContain('--dry-run');
   });
 
   it('returns marketplace refresh plus plugin update for update', () => {
@@ -81,6 +89,7 @@ describe('buildActionPlan', () => {
       'uninstall-plugin',
       'remove-marketplace',
       'uninstall-git-hooks',
+      'manage-claude-launcher',
       'clear-local-state'
     ]);
     expect(plan.actions[0]?.externalCommand).toEqual({

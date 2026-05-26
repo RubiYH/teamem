@@ -29,9 +29,39 @@ try {
 }
 ' 2>/dev/null || printf '')
 
-teamem_is_active || exit 0
+_teamem_activate_from_launch_intent() {
+  case "${TEAMEM_CLAUDE_LAUNCH_INTENT:-}" in
+    activate|teamem|1|true) ;;
+    *) return 0 ;;
+  esac
+
+  [ -x "${PLUGIN_ROOT}/bin/teamem-flag" ] || {
+    _teamem_warn "launch-intent" "could not activate Teamem because teamem-flag is missing; reinstall with \`teamem init\`."
+    return 1
+  }
+
+  local launch_space="${TEAMEM_CLAUDE_LAUNCH_SPACE:-${TEAMEM_SPACE:-}}"
+  if [ -n "$launch_space" ]; then
+    if ! TEAMEM_SPACE="$launch_space" bun run "$BRIDGE_JS" call teamem.whoami --space "$launch_space" --json '{}' >/dev/null 2>&1; then
+      _teamem_warn "launch-intent" "could not activate Teamem for Space '${launch_space}'; run \`teamem init\` or set TEAMEM_SPACE to a valid Space id or label."
+      return 1
+    fi
+    if ! CLAUDE_SESSION_ID="$SESSION_ID" "${PLUGIN_ROOT}/bin/teamem-flag" enable --space "$launch_space" >/dev/null 2>&1; then
+      _teamem_warn "launch-intent" "could not store Teamem activation for Space '${launch_space}'; run \`teamem init\` to repair the plugin install."
+      return 1
+    fi
+  else
+    if ! CLAUDE_SESSION_ID="$SESSION_ID" "${PLUGIN_ROOT}/bin/teamem-flag" enable >/dev/null 2>&1; then
+      _teamem_warn "launch-intent" "could not store Teamem activation; run \`teamem init\` to repair the plugin install."
+      return 1
+    fi
+  fi
+}
 
 BRIDGE_JS=$(teamem_bridge_js)
+_teamem_activate_from_launch_intent || exit 0
+teamem_is_active || exit 0
+
 [ -f "$BRIDGE_JS" ] || exit 0
 STARTER_TEMPLATE="${PLUGIN_ROOT}/templates/TEAMEM.starter.md"
 SPACE_RULES_HELPER="${PLUGIN_ROOT}/scripts/space-rules-file.js"
@@ -56,7 +86,15 @@ process.stdout.write(JSON.stringify({ token_budget: 2000, space }));
 
 _fetch_session_sync() {
   [ -n "$SESSION_SYNC_RESULT" ] && return 0
-  SESSION_SYNC_RESULT=$(bun run "$BRIDGE_JS" call teamem.session_sync --json '{}' 2>/dev/null) || SESSION_SYNC_RESULT=""
+  local space
+  space=$(_teamem_resolve_space 2>/dev/null) || space=""
+  if [ -n "$space" ]; then
+    SESSION_SYNC_RESULT=$(bun run "$BRIDGE_JS" call teamem.session_sync \
+      --space "$space" --json '{}' 2>/dev/null) || SESSION_SYNC_RESULT=""
+  else
+    SESSION_SYNC_RESULT=$(bun run "$BRIDGE_JS" call teamem.session_sync \
+      --json '{}' 2>/dev/null) || SESSION_SYNC_RESULT=""
+  fi
 }
 
 _sync_space_rules() {

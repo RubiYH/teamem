@@ -107,9 +107,9 @@
       "bootstrapperPrefix": "Install the bootstrapper first if needed:",
       "setupCommandLabel": "Setup command",
       "setupCommandUnavailable": "Setup command will appear when runtime provisioning finishes.",
-      "launchPrefix": "After setup, launch Claude Code with",
-      "launchSuffix": "and verify from Claude with",
-      "verifyPrefix": "",
+      "launchPrefix": "After setup, install the Teamem-owned launcher shim with",
+      "launchSuffix": ". It does not edit shell startup files; add the printed PATH line yourself, then run claude. Interactive",
+      "verifyPrefix": "prompts every launch; use claude --teamem or claude --pure for explicit choices. Non-interactive claude defaults pure. Teamem launches block with a repair hint when setup or runtime readiness is missing. Verify from Claude with",
       "unavailable": "Active setup details are unavailable while this Space is not active."
     },
     "roomCode": {

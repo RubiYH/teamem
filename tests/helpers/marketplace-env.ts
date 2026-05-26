@@ -49,12 +49,14 @@
 import { describe } from 'bun:test';
 
 const FORBIDDEN_PREFIXES = ['TEAMEM_'] as const;
-// Whitelist these even though they share the prefix above — they are
-// internal test plumbing, not "production-shaped" production behavior.
+// Whitelist these even though they share the prefix above. Some are internal
+// test plumbing; the launcher entries model the Teamem-aware Claude shim.
 // The whitelist is intentionally tight; new entries should be argued.
 const TEAMEM_ENV_WHITELIST = new Set<string>([
   'TEAMEM_HOOK_DISABLE', // Some hook-disable tests verify the early exit.
-  'TEAMEM_MONITOR_POLL_MS' // Monitor pacing override (no production semantic).
+  'TEAMEM_MONITOR_POLL_MS', // Monitor pacing override (no production semantic).
+  'TEAMEM_CLAUDE_LAUNCH_INTENT', // Launcher-to-plugin activation contract.
+  'TEAMEM_CLAUDE_LAUNCH_SPACE' // Optional launcher Space override.
 ]);
 
 const ALLOWED_PLUGIN_ENV = [

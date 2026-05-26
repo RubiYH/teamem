@@ -52,13 +52,37 @@ teamem init
 `teamem init` installs the Claude Code plugin, runs create/join setup, and can
 install Teamem git hooks.
 
-## 3. Launch Claude Code
+## 3. Prepare the launcher and start Claude Code
 
 ```bash
-teamem cc
+teamem claude install
 ```
 
-In Claude Code:
+`teamem cc` is kept only as a compatibility error for older instructions. It
+does not launch Claude Code. `teamem claude install` prepares the opt-in
+Teamem-aware launcher state and shim. It does not edit shell startup files by
+default; add the printed PATH line yourself, usually:
+
+```bash
+export PATH="$HOME/.teamem/bin:$PATH"
+```
+
+Then start Claude Code as usual:
+
+```bash
+claude
+```
+
+Interactive `claude` launches prompt for Teamem or pure Claude Code.
+Non-interactive launches stay pure by default, and explicit launcher flags such
+as `claude --teamem --print hi` or `claude --pure --print hi` select the mode
+before forwarding the remaining arguments to Claude Code. A Teamem launch
+blocks before opening Claude Code when setup, credentials, plugin install, or
+runtime Space readiness is missing, and prints the repair command to run next.
+
+Normal onboarding starts Claude Code through the PATH shim: run `claude` and
+choose Teamem, or use `claude --teamem ...`. If an already-running session was
+launched without Teamem activation, use the manual fallback:
 
 ```text
 /teamem-on
@@ -66,8 +90,8 @@ In Claude Code:
 /teamem-briefing
 ```
 
-Use `/teamem-on --persist` when Teamem should default to on for future Claude
-Code sessions in this repository.
+Use `/teamem-on --persist` only when Teamem should default to on for future
+Claude Code sessions in this repository.
 
 ## 4. Work normally
 

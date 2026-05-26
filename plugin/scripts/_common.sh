@@ -235,14 +235,20 @@ teamem_bridge_js() {
 # Resolution order (echoes the resolved value to stdout, returns 0 on hit):
 #   1. Per-session pin: `${SESSION_DIR}/space` (written by /teamem-on
 #      <space>; preserved across hooks for the same session_id).
-#   2. Manifest default: `${CLAUDE_PLUGIN_OPTION_DEFAULT_SPACE}` (label
+#   2. Explicit launcher/environment override: `${TEAMEM_SPACE}` (label or
+#      space_id; mirrors the bridge credential priority).
+#   3. Manifest default: `${CLAUDE_PLUGIN_OPTION_DEFAULT_SPACE}` (label
 #      or space_id; the bridge's pickEntry resolves either form post-#20).
-#   3. None — return 1, caller omits `--space` and the bridge falls back
+#   4. None — return 1, caller omits `--space` and the bridge falls back
 #      to `credentials.default_space_id` (existing behavior, preserved
 #      for single-space users who never set anything).
 _teamem_resolve_space() {
   if [ -n "${SESSION_DIR:-}" ] && [ -f "${SESSION_DIR}/space" ]; then
     cat "${SESSION_DIR}/space" 2>/dev/null
+    return 0
+  fi
+  if [ -n "${TEAMEM_SPACE:-}" ]; then
+    printf '%s' "${TEAMEM_SPACE}"
     return 0
   fi
   if [ -n "${CLAUDE_PLUGIN_OPTION_DEFAULT_SPACE:-}" ]; then

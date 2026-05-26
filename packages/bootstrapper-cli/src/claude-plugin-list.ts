@@ -1,4 +1,5 @@
 import type { PluginScope } from './plugin-installer.js';
+import { resolve } from 'node:path';
 
 export interface ClaudePluginListEntry {
   readonly id?: string;
@@ -6,6 +7,7 @@ export interface ClaudePluginListEntry {
   readonly plugin?: string;
   readonly scope?: PluginScope;
   readonly installPath?: string;
+  readonly projectPath?: string;
 }
 
 export interface InstalledTeamemPlugin {
@@ -14,6 +16,7 @@ export interface InstalledTeamemPlugin {
   readonly plugin?: string;
   readonly scope: PluginScope;
   readonly installPath: string;
+  readonly projectPath?: string;
 }
 
 const PLUGIN_SCOPE_PRECEDENCE: readonly PluginScope[] = [
@@ -50,7 +53,9 @@ export function parseClaudePluginListJson(
         plugin: typeof entry.plugin === 'string' ? entry.plugin : undefined,
         scope: isPluginScope(entry.scope) ? entry.scope : undefined,
         installPath:
-          typeof entry.installPath === 'string' ? entry.installPath : undefined
+          typeof entry.installPath === 'string' ? entry.installPath : undefined,
+        projectPath:
+          typeof entry.projectPath === 'string' ? entry.projectPath : undefined
       }
     ];
   });
@@ -72,10 +77,11 @@ export function detectInstalledTeamemScopeFromJson(
 export function findInstalledTeamemPlugin(
   stdout: string,
   pluginId: string,
-  scope: PluginScope
+  scope: PluginScope,
+  options: { readonly projectPath?: string } = {}
 ): InstalledTeamemPlugin | undefined {
   return parseClaudePluginListJson(stdout).find(
-    isInstalledTeamemPlugin(pluginId, scope)
+    isInstalledTeamemPlugin(pluginId, scope, options)
   );
 }
 
@@ -97,12 +103,23 @@ function isExactPluginEntry(
 
 function isInstalledTeamemPlugin(
   pluginId: string,
-  scope: PluginScope
+  scope: PluginScope,
+  options: { readonly projectPath?: string }
 ): (entry: ClaudePluginListEntry) => entry is InstalledTeamemPlugin {
   return (entry): entry is InstalledTeamemPlugin =>
     isTeamemPluginEntry(entry, pluginId) &&
     entry.scope === scope &&
-    typeof entry.installPath === 'string';
+    typeof entry.installPath === 'string' &&
+    (scope !== 'project' ||
+      options.projectPath === undefined ||
+      pathsMatch(entry.projectPath, options.projectPath));
+}
+
+function pathsMatch(left: string | undefined, right: string): boolean {
+  if (!left) {
+    return false;
+  }
+  return resolve(left) === resolve(right);
 }
 
 function isPluginScope(value: unknown): value is PluginScope {

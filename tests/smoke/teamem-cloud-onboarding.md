@@ -71,21 +71,43 @@ Expected:
 - Local Teamem credentials/config are written for that repository.
 - The CLI does not require Docker to be installed or a local Teamem server to be started.
 
-## Story 5: Claude Code Runtime Usability
+## Story 5: Claude Launcher Lifecycle And Runtime Usability
 
 Action:
 
-1. Start Claude Code through the Teamem CLI:
+1. Install the machine-local launcher lifecycle state:
 
 ```bash
-teamem cc
+teamem claude install
 ```
 
-2. In Claude Code, request a Teamem status or briefing check.
-3. Claim a small test scope or call a basic Teamem runtime read path such as the briefing/status surface.
+2. Confirm the lifecycle surface can report status without mutating files:
+
+```bash
+teamem claude status --dry-run
+```
+
+3. The installer prints the PATH line to add and does not edit shell startup
+   files by default. Add that line, put the installed shim directory first on
+   PATH, then start Claude Code with `claude`. Interactive `claude` prompts on
+   every launch.
+4. Use `claude --teamem` or `claude --pure` when you need an explicit launch
+   choice. Confirm non-interactive `claude` defaults pure.
+5. In Claude Code, request a Teamem status or briefing check.
+6. Claim a small test scope or call a basic Teamem runtime read path such as the briefing/status surface.
 
 Expected:
 
+- `teamem claude install` installs the Teamem-owned `claude` shim.
+- Shell startup files are not edited by default; the teammate adds the printed
+  PATH instruction.
+- Interactive `claude` prompts when the shim directory is first on PATH.
+- `claude --teamem` and `claude --pure` are explicit choices; non-interactive
+  `claude` defaults pure.
+- Teamem launches block with a repair hint when setup, credentials, plugin
+  install, or runtime Space readiness is missing.
+- `teamem cc` is not used as a launch path; if checked, it exits non-zero with
+  compatibility migration guidance.
 - Claude Code can reach the configured Teamem runtime.
 - Teamem reports the joined Space and current member identity.
 - A basic coordination operation works against the cloud-provisioned Space.

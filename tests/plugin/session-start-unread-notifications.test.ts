@@ -45,9 +45,11 @@ function stageFakePlugin(
     event_type: string;
     payload: Record<string, unknown>;
     created_at: string;
-  }>
+  }>,
+  options: { whoamiOk?: boolean } = {}
 ): { sentinel: string } {
   mkdirSync(join(workdir, 'plugin/scripts'), { recursive: true });
+  mkdirSync(join(workdir, 'plugin/bin'), { recursive: true });
   mkdirSync(join(workdir, 'plugin/lib'), { recursive: true });
   mkdirSync(join(workdir, 'plugin/templates'), { recursive: true });
 
@@ -64,11 +66,16 @@ function stageFakePlugin(
     join(workdir, 'plugin/scripts/session-start.sh')
   );
   copyFileSync(
+    join(REPO_ROOT, 'plugin/bin/teamem-flag'),
+    join(workdir, 'plugin/bin/teamem-flag')
+  );
+  copyFileSync(
     join(REPO_ROOT, 'plugin/templates/TEAMEM.starter.md'),
     join(workdir, 'plugin/templates/TEAMEM.starter.md')
   );
   chmodSync(join(workdir, 'plugin/scripts/session-start.sh'), 0o755);
   chmodSync(join(workdir, 'plugin/scripts/space-rules-file.js'), 0o755);
+  chmodSync(join(workdir, 'plugin/bin/teamem-flag'), 0o755);
 
   const sentinel = join(workdir, 'argv.log');
   const notifJson = JSON.stringify(notifications);
@@ -87,6 +94,15 @@ if (tool === 'teamem.session_sync') {
   process.stdout.write(JSON.stringify({
     ok: true,
     data: { notifications: ${notifJson} }
+  }));
+} else if (tool === 'teamem.whoami') {
+  if (${JSON.stringify(options.whoamiOk === false)}) {
+    process.stderr.write('unknown space');
+    process.exit(1);
+  }
+  process.stdout.write(JSON.stringify({
+    ok: true,
+    data: { principal: 'alice', space_id: 'space-B', label: 'Beta' }
   }));
 } else {
   process.stdout.write(JSON.stringify({ ok: true, data: {} }));
@@ -111,13 +127,15 @@ function runSessionStart(
   sessionId: string,
   cwd = workdir,
   source?: 'startup' | 'resume' | 'clear' | 'compact',
-  defaultSpace?: string
+  defaultSpace?: string,
+  extraEnv: NodeJS.ProcessEnv = {}
 ): { status: number | null; stderr: string; stdout: string } {
   const env = marketplaceEnv({
     CLAUDE_PLUGIN_ROOT: join(workdir, 'plugin'),
     CLAUDE_PLUGIN_DATA: join(workdir, 'plugin-data'),
     CLAUDE_SESSION_ID: sessionId,
-    CLAUDE_PLUGIN_OPTION_DEFAULT_SPACE: defaultSpace
+    CLAUDE_PLUGIN_OPTION_DEFAULT_SPACE: defaultSpace,
+    ...extraEnv
   });
   const r = spawnSync(
     'bash',
@@ -242,6 +260,173 @@ describe('session-start.sh offline notification delivery (slice #35)', () => {
 
       expect(startup.status).toBe(0);
       expect(startup.stdout).toBe(expectedBriefingPrompt());
+    } finally {
+      rmSync(work, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  it('activates from launcher intent before running briefing and session sync', () => {
+    const work = mkdtempSync(join(tmpdir(), 'teamem-sessstart-launch-'));
+    try {
+      const { sentinel } = stageFakePlugin(
+        work,
+        {
+          ok: true,
+          data: {
+            space_rules_snapshot: {
+              has_server_rules: false,
+              rendered_rules_body: '',
+              metadata: {
+                format_version: 1,
+                source: 'none',
+                managed_begin: '<!-- BEGIN TEAMEM SPACE RULES -->',
+                managed_end: '<!-- END TEAMEM SPACE RULES -->',
+                rules_version: 0,
+                rules_hash:
+                  'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+                generated_at: '2026-05-10T00:00:00.000Z',
+                space_id: 'space-B',
+                space_label: 'Beta',
+                source_event_id: null,
+                snapshot_updated_at: null,
+                snapshot_updated_by: null
+              }
+            },
+            decision_replays: [],
+            gotcha_notices: []
+          }
+        },
+        []
+      );
+      const sessionId = 'sess-start-launch-intent';
+
+      const startup = runSessionStart(
+        work,
+        sessionId,
+        work,
+        'startup',
+        undefined,
+        {
+          TEAMEM_CLAUDE_LAUNCH_INTENT: 'activate',
+          TEAMEM_CLAUDE_LAUNCH_SPACE: 'space-B'
+        }
+      );
+
+      expect(startup.status).toBe(0);
+      expect(startup.stdout).toBe(expectedBriefingPrompt('space-B'));
+      const sessionDir = join(work, 'plugin-data/sessions', sessionId);
+      expect(existsSync(join(sessionDir, 'active'))).toBe(true);
+      expect(readFileSync(join(sessionDir, 'space'), 'utf8')).toBe('space-B');
+
+      const argvLines = readFileSync(sentinel, 'utf8')
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line) as string[]);
+      expect(argvLines).toContainEqual([
+        'call',
+        'teamem.whoami',
+        '--space',
+        'space-B',
+        '--json',
+        '{}'
+      ]);
+      expect(argvLines).toContainEqual([
+        'call',
+        'teamem.session_sync',
+        '--space',
+        'space-B',
+        '--json',
+        '{}'
+      ]);
+    } finally {
+      rmSync(work, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  it('stops after warning when explicit launcher Space fails validation despite project auto-on', () => {
+    const work = mkdtempSync(join(tmpdir(), 'teamem-sessstart-invalid-launch-'));
+    try {
+      const { sentinel } = stageFakePlugin(
+        work,
+        {
+          ok: true,
+          data: {
+            space_rules_snapshot: {
+              has_server_rules: false,
+              rendered_rules_body: '',
+              metadata: {
+                format_version: 1,
+                source: 'none',
+                managed_begin: '<!-- BEGIN TEAMEM SPACE RULES -->',
+                managed_end: '<!-- END TEAMEM SPACE RULES -->',
+                rules_version: 0,
+                rules_hash:
+                  'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+                generated_at: '2026-05-10T00:00:00.000Z',
+                space_id: 'space-A',
+                space_label: 'Space A',
+                source_event_id: null,
+                snapshot_updated_at: null,
+                snapshot_updated_by: null
+              }
+            },
+            decision_replays: [],
+            gotcha_notices: []
+          }
+        },
+        [],
+        { whoamiOk: false }
+      );
+
+      const setupEnv = marketplaceEnv({
+        CLAUDE_PLUGIN_ROOT: join(work, 'plugin'),
+        CLAUDE_PLUGIN_DATA: join(work, 'plugin-data'),
+        CLAUDE_SESSION_ID: 'setup-session'
+      });
+      const persisted = spawnSync(
+        'bash',
+        [join(work, 'plugin/bin/teamem-flag'), 'enable', '--persist'],
+        { cwd: work, env: setupEnv, encoding: 'utf-8' }
+      );
+      expect(persisted.status).toBe(0);
+
+      const startup = runSessionStart(
+        work,
+        'sess-start-invalid-launch-intent',
+        work,
+        'startup',
+        'space-A',
+        {
+          TEAMEM_CLAUDE_LAUNCH_INTENT: 'activate',
+          TEAMEM_CLAUDE_LAUNCH_SPACE: 'missing-space'
+        }
+      );
+
+      expect(startup.status).toBe(0);
+      expect(startup.stdout).toBe('');
+      expect(startup.stderr).toContain('could not activate Teamem for Space');
+      expect(startup.stderr).toContain('missing-space');
+
+      const argvLines = readFileSync(sentinel, 'utf8')
+        .trim()
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => JSON.parse(line) as string[]);
+      expect(argvLines).toContainEqual([
+        'call',
+        'teamem.whoami',
+        '--space',
+        'missing-space',
+        '--json',
+        '{}'
+      ]);
+      expect(
+        argvLines.some(
+          (argv) =>
+            argv.includes('teamem.session_sync') ||
+            argv.includes('teamem.fetch_unread_notifications')
+        )
+      ).toBe(false);
     } finally {
       rmSync(work, { recursive: true, force: true });
     }

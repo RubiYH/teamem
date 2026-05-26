@@ -11,16 +11,38 @@ Install Bun first, because the Teamem bootstrapper runs on Bun:
 curl -fsSL https://bun.sh/install | bash
 ```
 
-Then install and launch Teamem:
+Then install Teamem and prepare the opt-in Claude launcher:
 
 ```bash
 npm install -g @rubiyh05/teamem
 teamem init
-teamem cc
+teamem claude install
 ```
 
 `teamem init` checks prerequisites, installs `teamem@teamem-alpha`, runs setup,
-and can install git hooks. `teamem cc` launches Claude Code with Teamem enabled.
+and can install git hooks. `teamem claude install` installs the Teamem-owned
+`claude` shim. It prints the PATH line to add, but does not edit shell startup
+files by default:
+
+```bash
+export PATH="$HOME/.teamem/bin:$PATH"
+```
+
+Once the shim directory is first on PATH, launch Claude Code as usual with
+`claude`. Interactive `claude` prompts on every launch. Use `claude --teamem` or
+`claude --pure` for explicit launch choices; non-interactive `claude` defaults
+pure. A Teamem launch blocks before opening Claude Code when setup,
+credentials, plugin install, or runtime Space readiness is missing, and prints
+the repair command to run next.
+
+When you choose Teamem in the launcher, or pass `claude --teamem`, the shim
+passes activation intent and the selected Space into Claude Code. On
+SessionStart, the Teamem plugin stores that activation in plugin-owned session
+state, so the current session starts active without a separate `/teamem-on`
+step.
+
+`teamem cc` is now a compatibility error only. It does not launch Claude Code;
+it points existing users toward the launcher migration.
 
 ## Activate in a repo
 
@@ -29,8 +51,10 @@ and can install git hooks. `teamem cc` launches Claude Code with Teamem enabled.
 /teamem-on --persist
 ```
 
-`/teamem-on` activates Teamem for the current session. `/teamem-on --persist`
-makes Teamem default to on for future Claude Code sessions in this repository.
+`/teamem-on` remains the manual fallback for sessions launched without the
+Teamem launcher path, or for repairing activation state in an already-open
+session. `/teamem-on --persist` makes Teamem default to on for future Claude
+Code sessions in this repository.
 
 Use `/teamem-off` to turn it off for the current session.
 

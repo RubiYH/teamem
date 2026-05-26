@@ -5,7 +5,7 @@
 
 ## Purpose
 
-The Claude Code plugin distribution for Teamem. This directory contains the marketplace plugin manifest, slash commands, git hooks, hook configuration, prebuilt JavaScript bundles (committed; built from src/), monitors, agents, and skills. The plugin is self-contained and installable via `claude plugin install ./plugin --scope project` on any machine with Bun.
+The Claude Code plugin distribution for Teamem. This directory contains the marketplace plugin manifest, slash commands, git hooks, hook configuration, prebuilt JavaScript bundles (committed; built from src/), monitors, agents, and skills. The plugin is self-contained as a marketplace artifact installed through `teamem init` / `teamem update`; source-checkout development loads it for one Claude Code session with `claude --plugin-dir /absolute/path/to/teamem/plugin`.
 
 ## Key Files
 

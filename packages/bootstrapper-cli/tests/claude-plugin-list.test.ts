@@ -14,7 +14,8 @@ describe('parseClaudePluginListJson', () => {
           {
             id: 'teamem@teamem-alpha',
             scope: 'user',
-            installPath: '/plugins/teamem-user'
+            installPath: '/plugins/teamem-user',
+            projectPath: '/repo'
           }
         ])
       )
@@ -24,7 +25,8 @@ describe('parseClaudePluginListJson', () => {
         name: undefined,
         plugin: undefined,
         scope: 'user',
-        installPath: '/plugins/teamem-user'
+        installPath: '/plugins/teamem-user',
+        projectPath: '/repo'
       }
     ]);
 
@@ -46,7 +48,8 @@ describe('parseClaudePluginListJson', () => {
         name: 'teamem',
         plugin: undefined,
         scope: 'local',
-        installPath: '/plugins/teamem-local'
+        installPath: '/plugins/teamem-local',
+        projectPath: undefined
       }
     ]);
   });
@@ -140,5 +143,54 @@ describe('detectInstalledTeamemScopeFromJson', () => {
         'project'
       )
     ).toBeUndefined();
+  });
+
+  it('filters project-scoped Teamem plugin entries by project path when provided', () => {
+    const stdout = JSON.stringify({
+      plugins: [
+        {
+          id: 'teamem@teamem-alpha',
+          scope: 'project',
+          installPath: '/plugins/wrong',
+          projectPath: '/repo/wrong'
+        },
+        {
+          id: 'teamem@teamem-alpha',
+          scope: 'project',
+          installPath: '/plugins/current',
+          projectPath: '/repo/current'
+        }
+      ]
+    });
+
+    expect(
+      findInstalledTeamemPlugin(stdout, 'teamem@teamem-alpha', 'project', {
+        projectPath: '/repo/current'
+      })?.installPath
+    ).toBe('/plugins/current');
+    expect(
+      findInstalledTeamemPlugin(stdout, 'teamem@teamem-alpha', 'project', {
+        projectPath: '/repo/missing'
+      })
+    ).toBeUndefined();
+  });
+
+  it('normalizes project-scoped plugin path comparisons', () => {
+    const stdout = JSON.stringify({
+      plugins: [
+        {
+          id: 'teamem@teamem-alpha',
+          scope: 'project',
+          installPath: '/plugins/current',
+          projectPath: '/repo/current/../current'
+        }
+      ]
+    });
+
+    expect(
+      findInstalledTeamemPlugin(stdout, 'teamem@teamem-alpha', 'project', {
+        projectPath: '/repo/current'
+      })?.installPath
+    ).toBe('/plugins/current');
   });
 });
