@@ -1,0 +1,15 @@
+{
+  "schema_version": "1.0",
+  "event_id": "01JSPRINTINVALID4",
+  "idempotency_key": "idem-sprint-invalid-4",
+  "space_id": "teamem-poc",
+  "timestamp": "2026-05-27T00:02:00.000Z",
+  "principal": "alice",
+  "actor": "codex-cli/session-1",
+  "delegation": "alice->codex",
+  "event_type": "sprint_left",
+  "scope": {},
+  "payload": {
+    "sprint_id": "01JSPRINTID001"
+  }
+}

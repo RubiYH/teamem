@@ -21,6 +21,10 @@ export function postMessage(
   message_id: string;
   thread_id: string;
   event_id: string;
+  delivery_scope: 'direct' | 'sprint' | 'space';
+  sprint_id: string | null;
+  recipient_principals: string[];
+  broadcast_hint?: string;
 }> {
   if (typeof input.body !== 'string' || input.body.length === 0) {
     return ctx.toolError('invalid_body', 'body must be a non-empty string');
@@ -51,6 +55,21 @@ export function postMessage(
     );
   }
 
+  let senderSprintId: string | null;
+  try {
+    senderSprintId = readCurrentSprintId(ctx, input.space_id, input.principal);
+  } catch (error) {
+    return ctx.toolError(
+      'sprint_context_unavailable',
+      'failed to read current Sprint membership',
+      { reason: error instanceof Error ? error.message : String(error) }
+    );
+  }
+  const requestedSpaceWideEscalation = input.recipient_principal === '**';
+  const requestedBroadcast =
+    input.recipient_principal === '*' ||
+    input.recipient_principal === '**' ||
+    input.recipient_principal == null;
   const messageId = ctx.ulid();
   const threadId = input.thread_id || messageId;
   const existingThread = input.thread_id
@@ -63,10 +82,13 @@ export function postMessage(
     );
   }
 
-  let visibilityMode: 'broadcast' | 'direct' =
-    input.recipient_principal == null ? 'broadcast' : 'direct';
+  let visibilityMode: 'broadcast' | 'direct' = requestedBroadcast
+    ? 'broadcast'
+    : 'direct';
   let participantPrincipals: string[] = [];
-  let recipientPrincipal: string | null = input.recipient_principal ?? null;
+  let recipientPrincipal: string | null = requestedBroadcast
+    ? null
+    : (input.recipient_principal ?? null);
 
   if (existingThread) {
     const authorization = ctx.authorizeDiscussionThreadAccess(
@@ -132,12 +154,27 @@ export function postMessage(
   const idempotencyKey = ctx.deterministicMessageIdempotencyKey(
     input.space_id,
     input.principal,
-    recipientPrincipal,
+    recipientPrincipal ??
+      (requestedSpaceWideEscalation
+        ? '**'
+        : senderSprintId
+          ? `sprint:${senderSprintId}`
+          : null),
     input.thread_id,
     input.in_reply_to,
     input.body,
     input.request_id
   );
+  const deliveryScope =
+    recipientPrincipal !== null
+      ? 'direct'
+      : senderSprintId && !requestedSpaceWideEscalation
+        ? 'sprint'
+        : 'space';
+  const eventSprintId =
+    deliveryScope === 'space' ? null : (senderSprintId ?? null);
+  const recipientPrincipals =
+    recipientPrincipal === null ? [] : [recipientPrincipal];
   const event: TeamemEvent = {
     schema_version: '1.0',
     event_id: ctx.newEventId(),
@@ -148,6 +185,11 @@ export function postMessage(
     actor: input.actor,
     delegation: input.delegation,
     event_type: 'discussion_posted',
+    sprint_id: eventSprintId,
+    delivery_scope: deliveryScope,
+    ...(recipientPrincipals.length > 0
+      ? { recipient_principals: recipientPrincipals }
+      : {}),
     scope: {},
     payload: {
       message_id: messageId,
@@ -157,6 +199,12 @@ export function postMessage(
       in_reply_to: input.in_reply_to ?? null,
       visibility_mode: visibilityMode,
       participant_principals: participantPrincipals,
+      sender_sprint_id: senderSprintId,
+      broadcast_marker: requestedSpaceWideEscalation
+        ? '**'
+        : requestedBroadcast
+          ? '*'
+          : null,
       ...ctx.readDiscussionHelperPolicy(input)
     }
   };
@@ -191,7 +239,10 @@ export function postMessage(
             data: {
               message_id: p.message_id,
               thread_id: p.thread_id,
-              event_id: existingRow.event_id
+              event_id: existingRow.event_id,
+              delivery_scope: storedEvent.delivery_scope ?? 'space',
+              sprint_id: storedEvent.sprint_id ?? null,
+              recipient_principals: storedEvent.recipient_principals ?? []
             }
           };
         }
@@ -206,9 +257,48 @@ export function postMessage(
     data: {
       message_id: messageId,
       thread_id: threadId,
-      event_id: event.event_id
+      event_id: event.event_id,
+      delivery_scope: deliveryScope,
+      sprint_id: eventSprintId,
+      recipient_principals: recipientPrincipals,
+      ...(deliveryScope === 'sprint'
+        ? { broadcast_hint: 'Sprint broadcast; use ** for Space-wide.' }
+        : {})
     }
   };
+}
+
+function readCurrentSprintId(
+  ctx: ToolContext,
+  spaceId: string,
+  principal: string
+): string | null {
+  try {
+    const row = ctx.db
+      .prepare(
+        `SELECT sm.sprint_id
+           FROM sprint_memberships sm
+           JOIN sprints s ON s.sprint_id = sm.sprint_id
+          WHERE sm.space_id = ?1
+            AND sm.principal = ?2
+            AND sm.sprint_id IS NOT NULL
+            AND s.status = 'active'
+          LIMIT 1`
+      )
+      .get(spaceId, principal) as { sprint_id: string } | null;
+    return row?.sprint_id ?? null;
+  } catch (error) {
+    if (isMissingSprintContextTableError(error)) return null;
+    throw error;
+  }
+}
+
+function isMissingSprintContextTableError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return (
+    error.message.includes('no such table: sprint_memberships') ||
+    error.message.includes('no such table: sprints')
+  );
 }
 
 export function readThread(

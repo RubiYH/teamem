@@ -37,6 +37,8 @@ const DecisionMutationResponseSchema = z.object({
   data: z.object({
     event_id: z.string(),
     decision_id: z.string(),
+    sprint_id: z.string().nullable(),
+    context: z.enum(['space', 'sprint']),
     lifecycle_event: z.enum([
       'decision_published',
       'decision_amended',
@@ -49,6 +51,272 @@ const DecisionMutationResponseSchema = z.object({
     affected_decision_ids: z.array(z.string()).optional()
   })
 });
+const BlockerMutationResponseSchema = z.discriminatedUnion('ok', [
+  z.object({
+    ok: z.literal(true),
+    data: z.object({
+      blocker_id: z.string(),
+      event_id: z.string(),
+      sprint_id: z.string().nullable(),
+      context: z.enum(['space', 'sprint']),
+      status: z.enum(['open', 'resolved'])
+    })
+  }),
+  z.object({
+    ok: z.literal(false),
+    error: z.object({
+      code: z.enum([
+        'invalid_summary',
+        'invalid_blocker_id',
+        'blocker_not_found',
+        'sprint_context_unavailable'
+      ]),
+      message: z.string(),
+      details: z.unknown().optional()
+    })
+  })
+]);
+const SprintSummarySchema = z.object({
+  sprint_id: z.string(),
+  slug: z.string(),
+  display_name: z.string(),
+  goal: z.string(),
+  status: z.enum(['active', 'archived'])
+});
+const SprintContextSchema = z.discriminatedUnion('mode', [
+  z.object({ mode: z.literal('space'), sprint: z.null() }),
+  z.object({ mode: z.literal('sprint'), sprint: SprintSummarySchema })
+]);
+const SprintLifecycleResponseSchema = z.object({
+  ok: z.literal(true),
+  data: z.object({
+    sprint: SprintSummarySchema.nullable(),
+    old_context: SprintContextSchema,
+    new_context: SprintContextSchema,
+    event_ids: z.array(z.string()),
+    idempotent: z.boolean(),
+    message: z.string(),
+    warnings: z.array(z.string())
+  })
+});
+const SprintInventoryItemSchema = SprintSummarySchema.extend({
+  current_members: z.array(z.string()),
+  last_activity_at: z.string().nullable()
+});
+const SprintArchiveResponseSchema = z.object({
+  ok: z.literal(true),
+  data: z.object({
+    sprint: SprintSummarySchema,
+    event_ids: z.array(z.string()),
+    idempotent: z.boolean(),
+    released_claims: z.array(
+      z.object({
+        claim_id: z.string(),
+        original_holder: z.string(),
+        event_id: z.string()
+      })
+    ),
+    message: z.string()
+  })
+});
+const SprintHistoryResponseSchema = z.object({
+  ok: z.literal(true),
+  data: z.object({
+    sprint: SprintSummarySchema,
+    events: z.array(
+      z.object({
+        event_id: z.string(),
+        event_type: z.string(),
+        timestamp: z.string(),
+        principal: z.string(),
+        sprint_id: z.string(),
+        summary: z.string(),
+        payload: z.record(z.unknown())
+      })
+    ),
+    limit: z.number().int().positive(),
+    truncated: z.boolean()
+  })
+});
+const ActiveClaimResponseSchema = z.object({
+  principal: z.string(),
+  scope: z.record(z.unknown()),
+  intent: z.string(),
+  claimed_at: z.string(),
+  expires_at: z.string().optional(),
+  blocking_principals: z
+    .array(
+      z.object({
+        principal: z.string(),
+        paths: z.array(z.string())
+      })
+    )
+    .optional()
+});
+const BriefingContextResponseSchema = z.discriminatedUnion('mode', [
+  z.object({
+    mode: z.literal('space'),
+    sprint: z.null(),
+    routing_reasons: z.array(z.string())
+  }),
+  z.object({
+    mode: z.literal('sprint'),
+    sprint: SprintSummarySchema.extend({
+      current_members: z.array(z.string())
+    }),
+    routing_reasons: z.array(z.string())
+  })
+]);
+const BriefingResponseSchema = z.object({
+  ok: z.literal(true),
+  data: z.object({
+    current_context: BriefingContextResponseSchema,
+    current_plan: z
+      .object({
+        title: z.string(),
+        summary: z.string(),
+        last_updated: z.string(),
+        source_decision_id: z.string()
+      })
+      .nullable(),
+    active_claims: z.array(ActiveClaimResponseSchema),
+    recent_decisions: z.array(
+      z.object({
+        id: z.string(),
+        title: z.string(),
+        summary: z.string(),
+        kind: z.string(),
+        status: z.string(),
+        version: z.number(),
+        latest_event_type: z.string(),
+        superseded_by_decision_id: z.string().nullable(),
+        decided_by: z.string(),
+        at: z.string()
+      })
+    ),
+    active_risks: z.object({
+      open_blockers: z.array(
+        z.object({
+          blocker_id: z.string(),
+          summary: z.string(),
+          owner_principal: z.string(),
+          updated_at: z.string()
+        })
+      ),
+      standing_conflicts: z.array(
+        z.object({
+          event_id: z.string(),
+          conflict_id: z.string().optional(),
+          summary: z.string().optional(),
+          at: z.string()
+        })
+      )
+    }),
+    recent_progress: z.array(
+      z.object({
+        principal: z.string(),
+        task_id: z.string(),
+        what: z.string(),
+        at: z.string()
+      })
+    ),
+    recent_notifications: z.array(
+      z.object({
+        event_id: z.string(),
+        event_type: z.string(),
+        principal: z.string(),
+        summary: z.string(),
+        created_at: z.string(),
+        sprint_id: z.string().nullable(),
+        delivery_scope: z.enum(['direct', 'sprint', 'space']),
+        routing_reason: z.enum([
+          'current_sprint',
+          'direct_to_me',
+          'space_wide_announcement',
+          'space_mode'
+        ])
+      })
+    ),
+    outside_current_context: z.object({
+      active_claims: z.array(ActiveClaimResponseSchema)
+    }),
+    recent_joins: z.array(
+      z.object({
+        member_name: z.string(),
+        joined_at: z.string(),
+        is_creator: z.boolean(),
+        coord_pref: z.enum(['auto-skip', 'auto-discuss'])
+      })
+    ),
+    recent_findings: z.array(
+      z.object({
+        finding_id: z.string(),
+        kind: z.enum(['finding', 'gotcha']),
+        lifecycle: z.enum(['ttl', 'persistent']),
+        status: z.enum(['active', 'resolved', 'archived']),
+        version: z.number().int().positive(),
+        principal: z.string(),
+        summary: z.string(),
+        body: z.string().optional(),
+        paths: z.array(z.string()),
+        tags: z.array(z.string()),
+        severity: z.enum(['info', 'warning', 'urgent']),
+        created_at: z.string(),
+        expires_at: z.string().nullable()
+      })
+    ),
+    recent_artifacts: z.array(
+      z.object({
+        artifact_id: z.string(),
+        principal: z.string(),
+        kind: z.enum(['spec', 'fixture', 'doc', 'snippet']),
+        uri: z.string(),
+        title: z.string(),
+        summary: z.string().optional(),
+        created_at: z.string()
+      })
+    ),
+    meta: z.object({
+      token_estimate: z.number(),
+      cursor: z.string().nullable(),
+      lag_seconds: z.number().nullable(),
+      heuristic_trust: z.enum(['unverified', 'observed']),
+      over_budget: z.boolean().optional(),
+      cross_context_overlap_awareness: z
+        .object({
+          overlapping_claims: z.number().int().nonnegative()
+        })
+        .optional()
+    })
+  })
+});
+const DeliveryScopeSchema = z.enum(['direct', 'sprint', 'space']);
+const EventEnvelopeResponseSchema = z
+  .object({
+    schema_version: z.literal('1.0'),
+    event_id: z.string(),
+    idempotency_key: z.string(),
+    space_id: z.string(),
+    timestamp: z.string(),
+    principal: z.string(),
+    actor: z.string(),
+    delegation: z.string(),
+    event_type: z.string(),
+    sprint_id: z.string().nullable(),
+    delivery_scope: DeliveryScopeSchema,
+    recipient_principals: z.array(z.string()).optional(),
+    scope: ScopeSchema,
+    payload: z.record(z.unknown()),
+    refs: z
+      .object({
+        branch: z.string().optional(),
+        commit: z.string().optional(),
+        pr: z.string().optional()
+      })
+      .optional(),
+    confidence: z.number().optional()
+  })
+  .passthrough();
 
 export type ToolBinding = {
   description: string;
@@ -67,6 +335,15 @@ export const TOOL_BINDINGS: Record<string, ToolBinding> = {
         limit: PositiveIntSchema.max(500).optional()
       })
       .passthrough(),
+    responseSchema: z.object({
+      ok: z.literal(true),
+      data: z
+        .object({
+          events: z.array(EventEnvelopeResponseSchema),
+          next_cursor: z.string().nullable()
+        })
+        .passthrough()
+    }),
     handler: async (input, client) =>
       callServer(client, '/tools/teamem.get_updates', input)
   },
@@ -167,7 +444,8 @@ export const TOOL_BINDINGS: Record<string, ToolBinding> = {
         kind: z
           .enum(['plan', 'architectural', 'product', 'process'])
           .optional(),
-        supersedes_decision_id: z.string().optional()
+        supersedes_decision_id: z.string().optional(),
+        scope: z.enum(['current', 'space']).optional()
       })
       .passthrough(),
     responseSchema: DecisionMutationResponseSchema,
@@ -184,7 +462,10 @@ export const TOOL_BINDINGS: Record<string, ToolBinding> = {
         title: z.string().optional(),
         summary: z.string().optional(),
         body: z.string().optional(),
-        kind: z.enum(['plan', 'architectural', 'product', 'process']).optional()
+        kind: z
+          .enum(['plan', 'architectural', 'product', 'process'])
+          .optional(),
+        scope: z.enum(['current', 'space']).optional()
       })
       .passthrough(),
     responseSchema: DecisionMutationResponseSchema,
@@ -198,7 +479,8 @@ export const TOOL_BINDINGS: Record<string, ToolBinding> = {
     inputSchema: z
       .object({
         decision_id: z.string(),
-        superseded_by_decision_id: z.string().optional()
+        superseded_by_decision_id: z.string().optional(),
+        scope: z.enum(['current', 'space']).optional()
       })
       .passthrough(),
     responseSchema: DecisionMutationResponseSchema,
@@ -241,6 +523,7 @@ export const TOOL_BINDINGS: Record<string, ToolBinding> = {
         token_budget: PositiveIntSchema.optional()
       })
       .passthrough(),
+    responseSchema: BriefingResponseSchema,
     handler: async (input, client) =>
       callServer(client, '/tools/teamem.get_briefing', input)
   },
@@ -340,9 +623,116 @@ export const TOOL_BINDINGS: Record<string, ToolBinding> = {
       callServer(client, '/tools/teamem.whoami', input)
   },
 
+  'teamem.create_sprint': {
+    description:
+      'Create a Sprint in the current Space and join it. Display names and goals are trimmed; the immutable slug is derived from the display name. Duplicate names/slugs return a typed error with join/reopen hint.',
+    inputSchema: z
+      .object({
+        display_name: z.string().min(1).max(80).optional(),
+        name: z.string().min(1).max(80).optional(),
+        goal: z.string().min(1).max(500)
+      })
+      .passthrough(),
+    responseSchema: SprintLifecycleResponseSchema,
+    handler: async (input, client) =>
+      callServer(client, '/tools/teamem.create_sprint', input)
+  },
+
+  'teamem.join_sprint': {
+    description:
+      'Join an active Sprint by slug or sprint_id. Switching Sprints reports old and new context; joining the current Sprint is idempotent and emits no lifecycle event.',
+    inputSchema: z
+      .object({
+        sprint: z.string().min(1)
+      })
+      .passthrough(),
+    responseSchema: SprintLifecycleResponseSchema,
+    handler: async (input, client) =>
+      callServer(client, '/tools/teamem.join_sprint', input)
+  },
+
+  'teamem.leave_sprint': {
+    description:
+      'Leave the current Sprint and return to Space mode. Leaving while already in Space mode is idempotent and emits no lifecycle event.',
+    inputSchema: z.object({}).passthrough(),
+    responseSchema: SprintLifecycleResponseSchema,
+    handler: async (input, client) =>
+      callServer(client, '/tools/teamem.leave_sprint', input)
+  },
+
+  'teamem.get_current_sprint': {
+    description:
+      'Inspect the server-authoritative current Sprint for this principal in the current Space. Space mode means no Sprint.',
+    inputSchema: z.object({}).passthrough(),
+    responseSchema: z.object({
+      ok: z.literal(true),
+      data: z.object({
+        context: SprintContextSchema,
+        sprint: SprintSummarySchema.nullable(),
+        current_members: z.array(z.string())
+      })
+    }),
+    handler: async (input, client) =>
+      callServer(client, '/tools/teamem.get_current_sprint', input)
+  },
+
+  'teamem.list_sprints': {
+    description:
+      'List active and archived Sprints in the current Space as compact inventory: slug, display name, state, goal, current members, and last activity.',
+    inputSchema: z.object({}).passthrough(),
+    responseSchema: z.object({
+      ok: z.literal(true),
+      data: z.object({
+        sprints: z.array(SprintInventoryItemSchema)
+      })
+    }),
+    handler: async (input, client) =>
+      callServer(client, '/tools/teamem.list_sprints', input)
+  },
+
+  'teamem.archive_sprint': {
+    description:
+      'Archive an active Sprint after every member has left. Remaining active claims tied to that Sprint are force-released with direct owner notices only.',
+    inputSchema: z
+      .object({
+        sprint: z.string().min(1)
+      })
+      .passthrough(),
+    responseSchema: SprintArchiveResponseSchema,
+    handler: async (input, client) =>
+      callServer(client, '/tools/teamem.archive_sprint', input)
+  },
+
+  'teamem.reopen_sprint': {
+    description:
+      'Explicitly reopen an archived Sprint, auto-join the actor, and leave their previous Sprint if any. Active Sprints should be joined, not reopened.',
+    inputSchema: z
+      .object({
+        sprint: z.string().min(1)
+      })
+      .passthrough(),
+    responseSchema: SprintLifecycleResponseSchema,
+    handler: async (input, client) =>
+      callServer(client, '/tools/teamem.reopen_sprint', input)
+  },
+
+  'teamem.get_sprint_history': {
+    description:
+      'Read bounded lifecycle-focused history for a Sprint by slug or id. This is explicit, read-only, and non-live.',
+    inputSchema: z
+      .object({
+        sprint: z.string().min(1),
+        limit: PositiveIntSchema.max(100).optional()
+      })
+      .passthrough(),
+    responseSchema: SprintHistoryResponseSchema,
+    handler: async (input, client) =>
+      callServer(client, '/tools/teamem.get_sprint_history', input)
+  },
+
   'teamem.post_message': {
     description:
-      'Post a discussion message to a teammate or broadcast to the space. Use to coordinate on claim conflicts, handoff requests, or share context. Omit recipient_principal to broadcast. Omit thread_id to start a new thread.',
+      'Post a discussion message to a teammate or broadcast. Null/omitted recipient_principal broadcasts to the current Sprint in Sprint mode and the Space in Space mode; "*" broadcasts to the current Sprint in Sprint mode and remains Space-wide in Space mode; "**" explicitly escalates Space-wide. Use to coordinate on claim conflicts, handoff requests, or share context. Omit thread_id to start a new thread.',
     inputSchema: z
       .object({
         body: z.string().min(1).max(65536),
@@ -357,7 +747,11 @@ export const TOOL_BINDINGS: Record<string, ToolBinding> = {
       data: z.object({
         message_id: z.string(),
         thread_id: z.string(),
-        event_id: z.string()
+        event_id: z.string(),
+        delivery_scope: DeliveryScopeSchema,
+        sprint_id: z.string().nullable(),
+        recipient_principals: z.array(z.string()),
+        broadcast_hint: z.string().optional()
       })
     }),
     handler: async (input, client) =>
@@ -394,6 +788,35 @@ export const TOOL_BINDINGS: Record<string, ToolBinding> = {
       callServer(client, '/tools/teamem.read_thread', input)
   },
 
+  'teamem.raise_blocker': {
+    description:
+      'Raise an open blocker in your current context. In Sprint mode this defaults to the current Sprint; pass scope="space" only for an explicit Space-wide escalation.',
+    inputSchema: z
+      .object({
+        summary: z.string().min(1).max(1000),
+        scope: z.enum(['current', 'space']).optional()
+      })
+      .passthrough(),
+    responseSchema: BlockerMutationResponseSchema,
+    handler: async (input, client) =>
+      callServer(client, '/tools/teamem.raise_blocker', input)
+  },
+
+  'teamem.resolve_blocker': {
+    description:
+      'Resolve an open blocker in your current context. In Sprint mode this will not resolve Space blockers unless scope="space" is passed explicitly.',
+    inputSchema: z
+      .object({
+        blocker_id: z.string().min(1),
+        resolution: z.string().optional(),
+        scope: z.enum(['current', 'space']).optional()
+      })
+      .passthrough(),
+    responseSchema: BlockerMutationResponseSchema,
+    handler: async (input, client) =>
+      callServer(client, '/tools/teamem.resolve_blocker', input)
+  },
+
   'teamem.update_coord_pref': {
     description:
       'Set your coordination preference for scope conflicts. The active plugin mode is `auto-skip` (queue and remind). `auto-discuss` remains accepted only for legacy/server compatibility while negotiator automation is postponed. Updates only your own member row.',
@@ -425,6 +848,7 @@ export const TOOL_BINDINGS: Record<string, ToolBinding> = {
         tags: z.array(z.string()).max(32).optional(),
         recipient_principals: z.array(z.string()).optional(),
         severity: z.enum(['info', 'warning', 'urgent']).optional(),
+        scope: z.enum(['current', 'space']).optional(),
         refs: z
           .object({
             paths: z.array(z.string()).optional(),
@@ -442,7 +866,9 @@ export const TOOL_BINDINGS: Record<string, ToolBinding> = {
         lifecycle: z.enum(['ttl', 'persistent']),
         status: z.enum(['active', 'resolved', 'archived']),
         version: z.number().int().positive(),
-        expires_at: z.string().nullable()
+        expires_at: z.string().nullable(),
+        sprint_id: z.string().nullable(),
+        context: z.enum(['space', 'sprint'])
       })
     }),
     handler: async (input, client) =>
@@ -912,7 +1338,10 @@ export const TOOL_BINDINGS: Record<string, ToolBinding> = {
       'List active and paused claims in the space. scope="self" returns only your claims; scope="space" returns every member\'s claims. Released claims are excluded.',
     inputSchema: z
       .object({
-        scope: z.enum(['self', 'space']).default('self')
+        scope: z.enum(['self', 'space']).default('self'),
+        view: z
+          .enum(['current', 'space', 'outside_current_context'])
+          .default('current')
       })
       .passthrough(),
     responseSchema: z.object({
@@ -931,7 +1360,9 @@ export const TOOL_BINDINGS: Record<string, ToolBinding> = {
             paused_reason: z.string().nullable(),
             created_at: z.string(),
             last_edit_at: z.string().nullable(),
-            expires_at: z.string().nullable()
+            expires_at: z.string().nullable(),
+            sprint_id: z.string().nullable(),
+            context: z.enum(['space', 'sprint'])
           })
         )
       })
@@ -942,7 +1373,7 @@ export const TOOL_BINDINGS: Record<string, ToolBinding> = {
 
   'teamem.force_release': {
     description:
-      "Force-release a peer's active or paused claim by claim_id, or by repo+branch+path+target_principal. Coordination escape hatch for stuck `manual_only` claims, abandoned claims from crashed agents, and legacy claims with incomplete identity fields. Emits `claim_force_released` visible to all space members; the original holder receives an unread_notifications row and may also see live channel delivery if online. Any space member can force-release any other member's claim — there is no privilege gate.",
+      "Force-release a peer's active or paused claim by claim_id, or by repo+branch+path+target_principal. Path targeting is scoped to your current context; exact claim_id can cross context and returns the claim context before release. The original holder receives a direct unread notification and may also see live channel delivery if online. Any space member can force-release any other member's claim — there is no privilege gate.",
     inputSchema: z
       .object({
         claim_id: z.string().min(1).optional(),
@@ -975,6 +1406,8 @@ export const TOOL_BINDINGS: Record<string, ToolBinding> = {
         released: z.boolean(),
         claim_id: z.string(),
         original_holder: z.string(),
+        sprint_id: z.string().nullable(),
+        context: z.enum(['space', 'sprint']),
         idempotent: z.boolean().optional()
       })
     }),

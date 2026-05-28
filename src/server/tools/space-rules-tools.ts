@@ -239,6 +239,9 @@ export function updateSpaceRules(
           actor: input.actor,
           delegation: input.delegation,
           event_type: eventType,
+          ...ctx.routingMetadataForPrincipal(ctx.db, input, {
+            delivery: 'space'
+          }),
           scope: {},
           payload: {
             rules_markdown: nextBody,

@@ -2,6 +2,25 @@ import type { ToolContext } from './context.js';
 import type { DecisionKind, DecisionMutationData } from './context.js';
 import type { ToolResponse } from '../types.js';
 
+function decisionContextData(event: { sprint_id?: string | null }): {
+  sprint_id: string | null;
+  context: 'space' | 'sprint';
+} {
+  return {
+    sprint_id: event.sprint_id ?? null,
+    context: event.sprint_id == null ? 'space' : 'sprint'
+  };
+}
+
+function targetDecisionSprintId(
+  ctx: ToolContext,
+  input: { space_id: string; principal: string; scope?: 'current' | 'space' }
+): string | null {
+  return input.scope === 'space'
+    ? null
+    : ctx.readCurrentSprintId(ctx.db, input.space_id, input.principal);
+}
+
 export function publishDecision(
   ctx: ToolContext,
   input: {
@@ -15,21 +34,36 @@ export function publishDecision(
     body?: string;
     kind?: DecisionKind;
     supersedes_decision_id?: string;
+    scope?: 'current' | 'space';
   }
 ): ToolResponse<DecisionMutationData> {
   try {
     return ctx.db
       .transaction(() => {
-        if (ctx.readCurrentDecision(input.space_id, input.decision_id)) {
+        const targetSprintId = targetDecisionSprintId(ctx, input);
+        if (
+          ctx.readCurrentDecision(
+            input.space_id,
+            input.decision_id,
+            targetSprintId
+          )
+        ) {
           return ctx.toolError(
             'decision_exists',
             `Decision ${input.decision_id} already exists; amend it instead`
           );
         }
+        if (ctx.readCurrentDecision(input.space_id, input.decision_id)) {
+          return ctx.toolError(
+            'decision_exists',
+            `Decision ${input.decision_id} exists outside the target context; use the matching scope to amend it`
+          );
+        }
         if (input.supersedes_decision_id) {
           const predecessor = ctx.readCurrentDecision(
             input.space_id,
-            input.supersedes_decision_id
+            input.supersedes_decision_id,
+            targetSprintId
           );
           if (!predecessor) {
             return ctx.toolError(
@@ -69,11 +103,20 @@ export function publishDecision(
                FROM decisions
               WHERE space_id = ?1
                 AND kind = 'plan'
+                AND ${
+                  event.sprint_id == null
+                    ? 'sprint_id IS NULL'
+                    : 'sprint_id = ?3'
+                }
                 AND status != 'superseded'
                 AND decision_id != ?2
                 AND tombstoned_at IS NULL`
             )
-            .all(input.space_id, input.decision_id) as Array<{
+            .all(
+              ...(event.sprint_id == null
+                ? [input.space_id, input.decision_id]
+                : [input.space_id, input.decision_id, event.sprint_id])
+            ) as Array<{
             decision_id: string;
           }>;
           for (const row of priorPlans) {
@@ -98,6 +141,7 @@ export function publishDecision(
           data: {
             event_id: event.event_id,
             decision_id: input.decision_id,
+            ...decisionContextData(event),
             lifecycle_event: 'decision_published',
             version: 1,
             kind,
@@ -131,6 +175,7 @@ export function amendDecision(
     summary?: string;
     body?: string;
     kind?: DecisionKind;
+    scope?: 'current' | 'space';
   }
 ): ToolResponse<DecisionMutationData> {
   try {
@@ -138,7 +183,8 @@ export function amendDecision(
       .transaction(() => {
         const current = ctx.readCurrentDecision(
           input.space_id,
-          input.decision_id
+          input.decision_id,
+          targetDecisionSprintId(ctx, input)
         );
         if (!current) {
           return ctx.toolError(
@@ -168,6 +214,7 @@ export function amendDecision(
           data: {
             event_id: event.event_id,
             decision_id: input.decision_id,
+            ...decisionContextData(event),
             lifecycle_event: 'decision_amended',
             version: nextVersion,
             kind: String(event.payload.kind),
@@ -195,6 +242,7 @@ export function supersedeDecision(
     delegation: string;
     decision_id: string;
     superseded_by_decision_id?: string;
+    scope?: 'current' | 'space';
   }
 ): ToolResponse<DecisionMutationData> {
   try {
@@ -228,10 +276,22 @@ export function recordDecision(
     summary?: string;
     body?: string;
     kind?: DecisionKind;
+    scope?: 'current' | 'space';
   }
 ): ToolResponse<DecisionMutationData> {
-  const current = ctx.readCurrentDecision(input.space_id, input.decision_id);
+  const targetSprintId = targetDecisionSprintId(ctx, input);
+  const current = ctx.readCurrentDecision(
+    input.space_id,
+    input.decision_id,
+    targetSprintId
+  );
   if (!current) {
+    if (ctx.readCurrentDecision(input.space_id, input.decision_id)) {
+      return ctx.toolError(
+        'decision_exists',
+        `Decision ${input.decision_id} exists outside the target context; use the matching scope to amend it`
+      );
+    }
     try {
       return ctx.db
         .transaction(() => {
@@ -255,11 +315,20 @@ export function recordDecision(
                  FROM decisions
                 WHERE space_id = ?1
                   AND kind = 'plan'
+                  AND ${
+                    event.sprint_id == null
+                      ? 'sprint_id IS NULL'
+                      : 'sprint_id = ?3'
+                  }
                   AND status != 'superseded'
                   AND decision_id != ?2
                   AND tombstoned_at IS NULL`
               )
-              .all(input.space_id, input.decision_id) as Array<{
+              .all(
+                ...(event.sprint_id == null
+                  ? [input.space_id, input.decision_id]
+                  : [input.space_id, input.decision_id, event.sprint_id])
+              ) as Array<{
               decision_id: string;
             }>;
             for (const row of priorPlans) {
@@ -280,6 +349,7 @@ export function recordDecision(
             data: {
               event_id: event.event_id,
               decision_id: input.decision_id,
+              ...decisionContextData(event),
               lifecycle_event: 'decision_published' as const,
               version: 1,
               kind,
@@ -324,6 +394,7 @@ export function recordDecision(
           data: {
             event_id: event.event_id,
             decision_id: input.decision_id,
+            ...decisionContextData(event),
             lifecycle_event: 'decision_amended' as const,
             version: nextVersion,
             kind: String(event.payload.kind),

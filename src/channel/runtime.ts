@@ -12,14 +12,25 @@ export type ChannelEmitDecisionOptions = {
   allowedSenders?: ReadonlySet<string>;
 };
 
-function discussionRecipient(
+function discussionRecipients(
   ev: TeamemChannelEvent
-): string | null | undefined {
+): string[] | null | undefined {
   if (ev.event_type !== 'discussion_posted') return undefined;
+  const topLevel = topLevelDirectRecipients(ev);
+  if (topLevel.length > 0) return topLevel;
   const raw = ev.payload?.recipient_principal;
   if (raw === null) return null;
-  if (typeof raw === 'string') return raw;
+  if (typeof raw === 'string') return [raw];
   return undefined;
+}
+
+function topLevelDirectRecipients(ev: TeamemChannelEvent): string[] {
+  if (ev.delivery_scope !== 'direct') return [];
+  return Array.isArray(ev.recipient_principals)
+    ? ev.recipient_principals.filter(
+        (recipient): recipient is string => typeof recipient === 'string'
+      )
+    : [];
 }
 
 function permissionRequestRecipient(
@@ -42,6 +53,8 @@ function gotchaRecipients(ev: TeamemChannelEvent): string[] {
   if (ev.event_type !== 'finding_shared' || ev.payload?.kind !== 'gotcha') {
     return [];
   }
+  const topLevel = topLevelDirectRecipients(ev);
+  if (topLevel.length > 0) return topLevel;
   const raw = ev.payload.recipient_principals;
   return Array.isArray(raw)
     ? raw.filter(
@@ -61,8 +74,10 @@ export function shouldEmitTeamemChannelEvent(
   if (isNoiseTeamemChannelEvent(ev)) return false;
   if (classifyTeamemChannelRoute(ev) !== 'peer') return false;
   if (ev.event_type === 'discussion_posted') {
-    const recipient = discussionRecipient(ev);
-    return recipient === null || recipient === opts.myPrincipal;
+    const recipients = discussionRecipients(ev);
+    return (
+      recipients === null || recipients?.includes(opts.myPrincipal) === true
+    );
   }
   if (isDecisionBroadcast(ev)) return true;
   if (ev.event_type === 'finding_shared' && ev.payload?.kind === 'gotcha') {

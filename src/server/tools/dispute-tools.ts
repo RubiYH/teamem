@@ -83,6 +83,10 @@ export function openDispute(
           actor: input.actor,
           delegation: input.delegation,
           event_type: 'dispute_opened',
+          ...ctx.routingMetadataForPrincipal(ctx.db, input, {
+            delivery: 'direct',
+            recipient_principals: [target]
+          }),
           scope: { paths },
           payload: {
             thread_id: threadId,
@@ -138,6 +142,10 @@ export function openDispute(
           actor: input.actor,
           delegation: input.delegation,
           event_type: 'discussion_posted',
+          ...ctx.routingMetadataForPrincipal(ctx.db, input, {
+            delivery: 'direct',
+            recipient_principals: [target]
+          }),
           scope: { paths },
           payload: {
             message_id: seedMessageId,
@@ -293,6 +301,14 @@ export function disputePostMove(
           actor: input.actor,
           delegation: input.delegation,
           event_type: 'discussion_posted',
+          ...ctx.routingMetadataForPrincipal(ctx.db, input, {
+            delivery: 'direct',
+            recipient_principals: [
+              side === 'opener'
+                ? dispute.row.target_principal
+                : dispute.row.opened_by
+            ]
+          }),
           scope: {},
           payload: {
             message_id: moveId,

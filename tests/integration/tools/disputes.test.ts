@@ -66,6 +66,30 @@ function openDispute(
   return { thread_id: r.data.thread_id };
 }
 
+function latestEvent(
+  db: ReturnType<typeof createSqliteClient>,
+  eventType: string
+): {
+  sprint_id?: string | null;
+  delivery_scope?: string;
+  payload?: Record<string, unknown>;
+} {
+  const row = db
+    .query(
+      `SELECT raw_json FROM events
+        WHERE event_type = ?1
+        ORDER BY timestamp DESC
+        LIMIT 1`
+    )
+    .get(eventType) as { raw_json: string } | null;
+  if (!row) throw new Error(`missing ${eventType} event`);
+  return JSON.parse(row.raw_json) as {
+    sprint_id?: string | null;
+    delivery_scope?: string;
+    payload?: Record<string, unknown>;
+  };
+}
+
 describe('Mode 6.C — dispute round-trips', () => {
   it('propose_release_subset → accept narrows incumbent and grants opener', () => {
     const { db, tools } = setup();
@@ -216,6 +240,14 @@ describe('Mode 6.C — dispute round-trips', () => {
     expect(JSON.parse(aliceRow.scope_json).paths).toEqual([
       'src/auth/login.ts'
     ]);
+
+    const resolvedEvent = latestEvent(db, 'dispute_resolved');
+    expect(resolvedEvent.sprint_id).toBeNull();
+    expect(resolvedEvent.delivery_scope).toBe('space');
+    expect(resolvedEvent.payload).toMatchObject({
+      thread_id,
+      outcome: 'wait'
+    });
   });
 
   it('propose_swap → accept narrows incumbent and grants opener', () => {
@@ -294,6 +326,15 @@ describe('Mode 6.C — termination conditions', () => {
       )
       .get(thread_id) as { status: string; termination_reason: string };
     expect(dispute.status).toBe('terminated');
+
+    const terminatedEvent = latestEvent(db, 'dispute_terminated');
+    expect(terminatedEvent.sprint_id).toBeNull();
+    expect(terminatedEvent.delivery_scope).toBe('space');
+    expect(terminatedEvent.payload).toMatchObject({
+      thread_id,
+      reason: 'explicit',
+      outcome: 'skip'
+    });
   });
 
   it('user_override via end_dispute(deny)', () => {

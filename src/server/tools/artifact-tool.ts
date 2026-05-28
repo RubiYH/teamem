@@ -64,6 +64,9 @@ export function shareArtifact(
     actor: input.actor,
     delegation: input.delegation,
     event_type: 'artifact_shared',
+    ...ctx.routingMetadataForPrincipal(ctx.db, input, {
+      delivery: 'broadcast'
+    }),
     scope: {},
     payload: {
       artifact_id: artifactId,

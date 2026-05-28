@@ -22296,6 +22296,8 @@ var DecisionMutationResponseSchema = exports_external.object({
   data: exports_external.object({
     event_id: exports_external.string(),
     decision_id: exports_external.string(),
+    sprint_id: exports_external.string().nullable(),
+    context: exports_external.enum(["space", "sprint"]),
     lifecycle_event: exports_external.enum([
       "decision_published",
       "decision_amended",
@@ -22308,6 +22310,240 @@ var DecisionMutationResponseSchema = exports_external.object({
     affected_decision_ids: exports_external.array(exports_external.string()).optional()
   })
 });
+var BlockerMutationResponseSchema = exports_external.discriminatedUnion("ok", [
+  exports_external.object({
+    ok: exports_external.literal(true),
+    data: exports_external.object({
+      blocker_id: exports_external.string(),
+      event_id: exports_external.string(),
+      sprint_id: exports_external.string().nullable(),
+      context: exports_external.enum(["space", "sprint"]),
+      status: exports_external.enum(["open", "resolved"])
+    })
+  }),
+  exports_external.object({
+    ok: exports_external.literal(false),
+    error: exports_external.object({
+      code: exports_external.enum([
+        "invalid_summary",
+        "invalid_blocker_id",
+        "blocker_not_found",
+        "sprint_context_unavailable"
+      ]),
+      message: exports_external.string(),
+      details: exports_external.unknown().optional()
+    })
+  })
+]);
+var SprintSummarySchema = exports_external.object({
+  sprint_id: exports_external.string(),
+  slug: exports_external.string(),
+  display_name: exports_external.string(),
+  goal: exports_external.string(),
+  status: exports_external.enum(["active", "archived"])
+});
+var SprintContextSchema = exports_external.discriminatedUnion("mode", [
+  exports_external.object({ mode: exports_external.literal("space"), sprint: exports_external.null() }),
+  exports_external.object({ mode: exports_external.literal("sprint"), sprint: SprintSummarySchema })
+]);
+var SprintLifecycleResponseSchema = exports_external.object({
+  ok: exports_external.literal(true),
+  data: exports_external.object({
+    sprint: SprintSummarySchema.nullable(),
+    old_context: SprintContextSchema,
+    new_context: SprintContextSchema,
+    event_ids: exports_external.array(exports_external.string()),
+    idempotent: exports_external.boolean(),
+    message: exports_external.string(),
+    warnings: exports_external.array(exports_external.string())
+  })
+});
+var SprintInventoryItemSchema = SprintSummarySchema.extend({
+  current_members: exports_external.array(exports_external.string()),
+  last_activity_at: exports_external.string().nullable()
+});
+var SprintArchiveResponseSchema = exports_external.object({
+  ok: exports_external.literal(true),
+  data: exports_external.object({
+    sprint: SprintSummarySchema,
+    event_ids: exports_external.array(exports_external.string()),
+    idempotent: exports_external.boolean(),
+    released_claims: exports_external.array(exports_external.object({
+      claim_id: exports_external.string(),
+      original_holder: exports_external.string(),
+      event_id: exports_external.string()
+    })),
+    message: exports_external.string()
+  })
+});
+var SprintHistoryResponseSchema = exports_external.object({
+  ok: exports_external.literal(true),
+  data: exports_external.object({
+    sprint: SprintSummarySchema,
+    events: exports_external.array(exports_external.object({
+      event_id: exports_external.string(),
+      event_type: exports_external.string(),
+      timestamp: exports_external.string(),
+      principal: exports_external.string(),
+      sprint_id: exports_external.string(),
+      summary: exports_external.string(),
+      payload: exports_external.record(exports_external.unknown())
+    })),
+    limit: exports_external.number().int().positive(),
+    truncated: exports_external.boolean()
+  })
+});
+var ActiveClaimResponseSchema = exports_external.object({
+  principal: exports_external.string(),
+  scope: exports_external.record(exports_external.unknown()),
+  intent: exports_external.string(),
+  claimed_at: exports_external.string(),
+  expires_at: exports_external.string().optional(),
+  blocking_principals: exports_external.array(exports_external.object({
+    principal: exports_external.string(),
+    paths: exports_external.array(exports_external.string())
+  })).optional()
+});
+var BriefingContextResponseSchema = exports_external.discriminatedUnion("mode", [
+  exports_external.object({
+    mode: exports_external.literal("space"),
+    sprint: exports_external.null(),
+    routing_reasons: exports_external.array(exports_external.string())
+  }),
+  exports_external.object({
+    mode: exports_external.literal("sprint"),
+    sprint: SprintSummarySchema.extend({
+      current_members: exports_external.array(exports_external.string())
+    }),
+    routing_reasons: exports_external.array(exports_external.string())
+  })
+]);
+var BriefingResponseSchema = exports_external.object({
+  ok: exports_external.literal(true),
+  data: exports_external.object({
+    current_context: BriefingContextResponseSchema,
+    current_plan: exports_external.object({
+      title: exports_external.string(),
+      summary: exports_external.string(),
+      last_updated: exports_external.string(),
+      source_decision_id: exports_external.string()
+    }).nullable(),
+    active_claims: exports_external.array(ActiveClaimResponseSchema),
+    recent_decisions: exports_external.array(exports_external.object({
+      id: exports_external.string(),
+      title: exports_external.string(),
+      summary: exports_external.string(),
+      kind: exports_external.string(),
+      status: exports_external.string(),
+      version: exports_external.number(),
+      latest_event_type: exports_external.string(),
+      superseded_by_decision_id: exports_external.string().nullable(),
+      decided_by: exports_external.string(),
+      at: exports_external.string()
+    })),
+    active_risks: exports_external.object({
+      open_blockers: exports_external.array(exports_external.object({
+        blocker_id: exports_external.string(),
+        summary: exports_external.string(),
+        owner_principal: exports_external.string(),
+        updated_at: exports_external.string()
+      })),
+      standing_conflicts: exports_external.array(exports_external.object({
+        event_id: exports_external.string(),
+        conflict_id: exports_external.string().optional(),
+        summary: exports_external.string().optional(),
+        at: exports_external.string()
+      }))
+    }),
+    recent_progress: exports_external.array(exports_external.object({
+      principal: exports_external.string(),
+      task_id: exports_external.string(),
+      what: exports_external.string(),
+      at: exports_external.string()
+    })),
+    recent_notifications: exports_external.array(exports_external.object({
+      event_id: exports_external.string(),
+      event_type: exports_external.string(),
+      principal: exports_external.string(),
+      summary: exports_external.string(),
+      created_at: exports_external.string(),
+      sprint_id: exports_external.string().nullable(),
+      delivery_scope: exports_external.enum(["direct", "sprint", "space"]),
+      routing_reason: exports_external.enum([
+        "current_sprint",
+        "direct_to_me",
+        "space_wide_announcement",
+        "space_mode"
+      ])
+    })),
+    outside_current_context: exports_external.object({
+      active_claims: exports_external.array(ActiveClaimResponseSchema)
+    }),
+    recent_joins: exports_external.array(exports_external.object({
+      member_name: exports_external.string(),
+      joined_at: exports_external.string(),
+      is_creator: exports_external.boolean(),
+      coord_pref: exports_external.enum(["auto-skip", "auto-discuss"])
+    })),
+    recent_findings: exports_external.array(exports_external.object({
+      finding_id: exports_external.string(),
+      kind: exports_external.enum(["finding", "gotcha"]),
+      lifecycle: exports_external.enum(["ttl", "persistent"]),
+      status: exports_external.enum(["active", "resolved", "archived"]),
+      version: exports_external.number().int().positive(),
+      principal: exports_external.string(),
+      summary: exports_external.string(),
+      body: exports_external.string().optional(),
+      paths: exports_external.array(exports_external.string()),
+      tags: exports_external.array(exports_external.string()),
+      severity: exports_external.enum(["info", "warning", "urgent"]),
+      created_at: exports_external.string(),
+      expires_at: exports_external.string().nullable()
+    })),
+    recent_artifacts: exports_external.array(exports_external.object({
+      artifact_id: exports_external.string(),
+      principal: exports_external.string(),
+      kind: exports_external.enum(["spec", "fixture", "doc", "snippet"]),
+      uri: exports_external.string(),
+      title: exports_external.string(),
+      summary: exports_external.string().optional(),
+      created_at: exports_external.string()
+    })),
+    meta: exports_external.object({
+      token_estimate: exports_external.number(),
+      cursor: exports_external.string().nullable(),
+      lag_seconds: exports_external.number().nullable(),
+      heuristic_trust: exports_external.enum(["unverified", "observed"]),
+      over_budget: exports_external.boolean().optional(),
+      cross_context_overlap_awareness: exports_external.object({
+        overlapping_claims: exports_external.number().int().nonnegative()
+      }).optional()
+    })
+  })
+});
+var DeliveryScopeSchema = exports_external.enum(["direct", "sprint", "space"]);
+var EventEnvelopeResponseSchema = exports_external.object({
+  schema_version: exports_external.literal("1.0"),
+  event_id: exports_external.string(),
+  idempotency_key: exports_external.string(),
+  space_id: exports_external.string(),
+  timestamp: exports_external.string(),
+  principal: exports_external.string(),
+  actor: exports_external.string(),
+  delegation: exports_external.string(),
+  event_type: exports_external.string(),
+  sprint_id: exports_external.string().nullable(),
+  delivery_scope: DeliveryScopeSchema,
+  recipient_principals: exports_external.array(exports_external.string()).optional(),
+  scope: ScopeSchema,
+  payload: exports_external.record(exports_external.unknown()),
+  refs: exports_external.object({
+    branch: exports_external.string().optional(),
+    commit: exports_external.string().optional(),
+    pr: exports_external.string().optional()
+  }).optional(),
+  confidence: exports_external.number().optional()
+}).passthrough();
 var TOOL_BINDINGS = {
   "teamem.get_updates": {
     description: "Fetch recent events from the team event log. Pass a cursor to get only events since your last call.",
@@ -22315,6 +22551,13 @@ var TOOL_BINDINGS = {
       since: exports_external.string().optional(),
       limit: PositiveIntSchema.max(500).optional()
     }).passthrough(),
+    responseSchema: exports_external.object({
+      ok: exports_external.literal(true),
+      data: exports_external.object({
+        events: exports_external.array(EventEnvelopeResponseSchema),
+        next_cursor: exports_external.string().nullable()
+      }).passthrough()
+    }),
     handler: async (input, client) => callServer(client, "/tools/teamem.get_updates", input)
   },
   "teamem.claim_scope": {
@@ -22382,7 +22625,8 @@ var TOOL_BINDINGS = {
       summary: exports_external.string().optional(),
       body: exports_external.string().optional(),
       kind: exports_external.enum(["plan", "architectural", "product", "process"]).optional(),
-      supersedes_decision_id: exports_external.string().optional()
+      supersedes_decision_id: exports_external.string().optional(),
+      scope: exports_external.enum(["current", "space"]).optional()
     }).passthrough(),
     responseSchema: DecisionMutationResponseSchema,
     handler: async (input, client) => callServer(client, "/tools/teamem.publish_decision", input)
@@ -22394,7 +22638,8 @@ var TOOL_BINDINGS = {
       title: exports_external.string().optional(),
       summary: exports_external.string().optional(),
       body: exports_external.string().optional(),
-      kind: exports_external.enum(["plan", "architectural", "product", "process"]).optional()
+      kind: exports_external.enum(["plan", "architectural", "product", "process"]).optional(),
+      scope: exports_external.enum(["current", "space"]).optional()
     }).passthrough(),
     responseSchema: DecisionMutationResponseSchema,
     handler: async (input, client) => callServer(client, "/tools/teamem.amend_decision", input)
@@ -22403,7 +22648,8 @@ var TOOL_BINDINGS = {
     description: "Mark an existing decision as superseded without deleting its prior rationale. Optionally reference the successor decision id.",
     inputSchema: exports_external.object({
       decision_id: exports_external.string(),
-      superseded_by_decision_id: exports_external.string().optional()
+      superseded_by_decision_id: exports_external.string().optional(),
+      scope: exports_external.enum(["current", "space"]).optional()
     }).passthrough(),
     responseSchema: DecisionMutationResponseSchema,
     handler: async (input, client) => callServer(client, "/tools/teamem.supersede_decision", input)
@@ -22432,6 +22678,7 @@ var TOOL_BINDINGS = {
       space: exports_external.string().optional(),
       token_budget: PositiveIntSchema.optional()
     }).passthrough(),
+    responseSchema: BriefingResponseSchema,
     handler: async (input, client) => callServer(client, "/tools/teamem.get_briefing", input)
   },
   "teamem.export_space_rules_snapshot": {
@@ -22518,8 +22765,81 @@ var TOOL_BINDINGS = {
     }),
     handler: async (input, client) => callServer(client, "/tools/teamem.whoami", input)
   },
+  "teamem.create_sprint": {
+    description: "Create a Sprint in the current Space and join it. Display names and goals are trimmed; the immutable slug is derived from the display name. Duplicate names/slugs return a typed error with join/reopen hint.",
+    inputSchema: exports_external.object({
+      display_name: exports_external.string().min(1).max(80).optional(),
+      name: exports_external.string().min(1).max(80).optional(),
+      goal: exports_external.string().min(1).max(500)
+    }).passthrough(),
+    responseSchema: SprintLifecycleResponseSchema,
+    handler: async (input, client) => callServer(client, "/tools/teamem.create_sprint", input)
+  },
+  "teamem.join_sprint": {
+    description: "Join an active Sprint by slug or sprint_id. Switching Sprints reports old and new context; joining the current Sprint is idempotent and emits no lifecycle event.",
+    inputSchema: exports_external.object({
+      sprint: exports_external.string().min(1)
+    }).passthrough(),
+    responseSchema: SprintLifecycleResponseSchema,
+    handler: async (input, client) => callServer(client, "/tools/teamem.join_sprint", input)
+  },
+  "teamem.leave_sprint": {
+    description: "Leave the current Sprint and return to Space mode. Leaving while already in Space mode is idempotent and emits no lifecycle event.",
+    inputSchema: exports_external.object({}).passthrough(),
+    responseSchema: SprintLifecycleResponseSchema,
+    handler: async (input, client) => callServer(client, "/tools/teamem.leave_sprint", input)
+  },
+  "teamem.get_current_sprint": {
+    description: "Inspect the server-authoritative current Sprint for this principal in the current Space. Space mode means no Sprint.",
+    inputSchema: exports_external.object({}).passthrough(),
+    responseSchema: exports_external.object({
+      ok: exports_external.literal(true),
+      data: exports_external.object({
+        context: SprintContextSchema,
+        sprint: SprintSummarySchema.nullable(),
+        current_members: exports_external.array(exports_external.string())
+      })
+    }),
+    handler: async (input, client) => callServer(client, "/tools/teamem.get_current_sprint", input)
+  },
+  "teamem.list_sprints": {
+    description: "List active and archived Sprints in the current Space as compact inventory: slug, display name, state, goal, current members, and last activity.",
+    inputSchema: exports_external.object({}).passthrough(),
+    responseSchema: exports_external.object({
+      ok: exports_external.literal(true),
+      data: exports_external.object({
+        sprints: exports_external.array(SprintInventoryItemSchema)
+      })
+    }),
+    handler: async (input, client) => callServer(client, "/tools/teamem.list_sprints", input)
+  },
+  "teamem.archive_sprint": {
+    description: "Archive an active Sprint after every member has left. Remaining active claims tied to that Sprint are force-released with direct owner notices only.",
+    inputSchema: exports_external.object({
+      sprint: exports_external.string().min(1)
+    }).passthrough(),
+    responseSchema: SprintArchiveResponseSchema,
+    handler: async (input, client) => callServer(client, "/tools/teamem.archive_sprint", input)
+  },
+  "teamem.reopen_sprint": {
+    description: "Explicitly reopen an archived Sprint, auto-join the actor, and leave their previous Sprint if any. Active Sprints should be joined, not reopened.",
+    inputSchema: exports_external.object({
+      sprint: exports_external.string().min(1)
+    }).passthrough(),
+    responseSchema: SprintLifecycleResponseSchema,
+    handler: async (input, client) => callServer(client, "/tools/teamem.reopen_sprint", input)
+  },
+  "teamem.get_sprint_history": {
+    description: "Read bounded lifecycle-focused history for a Sprint by slug or id. This is explicit, read-only, and non-live.",
+    inputSchema: exports_external.object({
+      sprint: exports_external.string().min(1),
+      limit: PositiveIntSchema.max(100).optional()
+    }).passthrough(),
+    responseSchema: SprintHistoryResponseSchema,
+    handler: async (input, client) => callServer(client, "/tools/teamem.get_sprint_history", input)
+  },
   "teamem.post_message": {
-    description: "Post a discussion message to a teammate or broadcast to the space. Use to coordinate on claim conflicts, handoff requests, or share context. Omit recipient_principal to broadcast. Omit thread_id to start a new thread.",
+    description: 'Post a discussion message to a teammate or broadcast. Null/omitted recipient_principal broadcasts to the current Sprint in Sprint mode and the Space in Space mode; "*" broadcasts to the current Sprint in Sprint mode and remains Space-wide in Space mode; "**" explicitly escalates Space-wide. Use to coordinate on claim conflicts, handoff requests, or share context. Omit thread_id to start a new thread.',
     inputSchema: exports_external.object({
       body: exports_external.string().min(1).max(65536),
       recipient_principal: exports_external.string().nullable().optional(),
@@ -22532,7 +22852,11 @@ var TOOL_BINDINGS = {
       data: exports_external.object({
         message_id: exports_external.string(),
         thread_id: exports_external.string(),
-        event_id: exports_external.string()
+        event_id: exports_external.string(),
+        delivery_scope: DeliveryScopeSchema,
+        sprint_id: exports_external.string().nullable(),
+        recipient_principals: exports_external.array(exports_external.string()),
+        broadcast_hint: exports_external.string().optional()
       })
     }),
     handler: async (input, client) => callServer(client, "/tools/teamem.post_message", input)
@@ -22560,6 +22884,25 @@ var TOOL_BINDINGS = {
     }),
     handler: async (input, client) => callServer(client, "/tools/teamem.read_thread", input)
   },
+  "teamem.raise_blocker": {
+    description: 'Raise an open blocker in your current context. In Sprint mode this defaults to the current Sprint; pass scope="space" only for an explicit Space-wide escalation.',
+    inputSchema: exports_external.object({
+      summary: exports_external.string().min(1).max(1000),
+      scope: exports_external.enum(["current", "space"]).optional()
+    }).passthrough(),
+    responseSchema: BlockerMutationResponseSchema,
+    handler: async (input, client) => callServer(client, "/tools/teamem.raise_blocker", input)
+  },
+  "teamem.resolve_blocker": {
+    description: 'Resolve an open blocker in your current context. In Sprint mode this will not resolve Space blockers unless scope="space" is passed explicitly.',
+    inputSchema: exports_external.object({
+      blocker_id: exports_external.string().min(1),
+      resolution: exports_external.string().optional(),
+      scope: exports_external.enum(["current", "space"]).optional()
+    }).passthrough(),
+    responseSchema: BlockerMutationResponseSchema,
+    handler: async (input, client) => callServer(client, "/tools/teamem.resolve_blocker", input)
+  },
   "teamem.update_coord_pref": {
     description: "Set your coordination preference for scope conflicts. The active plugin mode is `auto-skip` (queue and remind). `auto-discuss` remains accepted only for legacy/server compatibility while negotiator automation is postponed. Updates only your own member row.",
     inputSchema: exports_external.object({
@@ -22584,6 +22927,7 @@ var TOOL_BINDINGS = {
       tags: exports_external.array(exports_external.string()).max(32).optional(),
       recipient_principals: exports_external.array(exports_external.string()).optional(),
       severity: exports_external.enum(["info", "warning", "urgent"]).optional(),
+      scope: exports_external.enum(["current", "space"]).optional(),
       refs: exports_external.object({
         paths: exports_external.array(exports_external.string()).optional(),
         modules: exports_external.array(exports_external.string()).optional()
@@ -22598,7 +22942,9 @@ var TOOL_BINDINGS = {
         lifecycle: exports_external.enum(["ttl", "persistent"]),
         status: exports_external.enum(["active", "resolved", "archived"]),
         version: exports_external.number().int().positive(),
-        expires_at: exports_external.string().nullable()
+        expires_at: exports_external.string().nullable(),
+        sprint_id: exports_external.string().nullable(),
+        context: exports_external.enum(["space", "sprint"])
       })
     }),
     handler: async (input, client) => callServer(client, "/tools/teamem.share_finding", input)
@@ -22968,7 +23314,8 @@ var TOOL_BINDINGS = {
   "teamem.list_claims": {
     description: `List active and paused claims in the space. scope="self" returns only your claims; scope="space" returns every member's claims. Released claims are excluded.`,
     inputSchema: exports_external.object({
-      scope: exports_external.enum(["self", "space"]).default("self")
+      scope: exports_external.enum(["self", "space"]).default("self"),
+      view: exports_external.enum(["current", "space", "outside_current_context"]).default("current")
     }).passthrough(),
     responseSchema: exports_external.object({
       ok: exports_external.literal(true),
@@ -22985,14 +23332,16 @@ var TOOL_BINDINGS = {
           paused_reason: exports_external.string().nullable(),
           created_at: exports_external.string(),
           last_edit_at: exports_external.string().nullable(),
-          expires_at: exports_external.string().nullable()
+          expires_at: exports_external.string().nullable(),
+          sprint_id: exports_external.string().nullable(),
+          context: exports_external.enum(["space", "sprint"])
         }))
       })
     }),
     handler: async (input, client) => callServer(client, "/tools/teamem.list_claims", input)
   },
   "teamem.force_release": {
-    description: "Force-release a peer's active or paused claim by claim_id, or by repo+branch+path+target_principal. Coordination escape hatch for stuck `manual_only` claims, abandoned claims from crashed agents, and legacy claims with incomplete identity fields. Emits `claim_force_released` visible to all space members; the original holder receives an unread_notifications row and may also see live channel delivery if online. Any space member can force-release any other member's claim \u2014 there is no privilege gate.",
+    description: "Force-release a peer's active or paused claim by claim_id, or by repo+branch+path+target_principal. Path targeting is scoped to your current context; exact claim_id can cross context and returns the claim context before release. The original holder receives a direct unread notification and may also see live channel delivery if online. Any space member can force-release any other member's claim \u2014 there is no privilege gate.",
     inputSchema: exports_external.object({
       claim_id: exports_external.string().min(1).optional(),
       repo_id: exports_external.string().min(1).optional(),
@@ -23023,6 +23372,8 @@ var TOOL_BINDINGS = {
         released: exports_external.boolean(),
         claim_id: exports_external.string(),
         original_holder: exports_external.string(),
+        sprint_id: exports_external.string().nullable(),
+        context: exports_external.enum(["space", "sprint"]),
         idempotent: exports_external.boolean().optional()
       })
     }),

@@ -51,12 +51,13 @@ function insertDecisionHistory(
 ): void {
   db.prepare(
     `INSERT OR REPLACE INTO decision_history
-     (source_event_id, decision_id, space_id, version, lifecycle_event, title, summary, body, kind, status, decided_by, created_at, predecessor_decision_id, superseded_by_decision_id, tombstoned_at)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, NULL)`
+     (source_event_id, decision_id, space_id, sprint_id, version, lifecycle_event, title, summary, body, kind, status, decided_by, created_at, predecessor_decision_id, superseded_by_decision_id, tombstoned_at)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, NULL)`
   ).run(
     event.event_id,
     payload.decisionId,
     event.space_id,
+    event.sprint_id ?? null,
     payload.version,
     lifecycleEvent,
     payload.title,
@@ -97,6 +98,93 @@ function insertLegacyDecisionRow(
 }
 
 export function applyProjectionUpdate(db: Database, event: TeamemEvent): void {
+  if (event.event_type === 'sprint_created') {
+    const sprintId = String(
+      (event.payload.sprint_id as string | undefined) ?? event.event_id
+    );
+    db.prepare(
+      `INSERT OR REPLACE INTO sprints
+       (sprint_id, space_id, slug, display_name, goal, status, created_at, created_by, archived_at, archived_by, source_event_id)
+       VALUES (?1, ?2, ?3, ?4, ?5, 'active', ?6, ?7, NULL, NULL, ?8)`
+    ).run(
+      sprintId,
+      event.space_id,
+      String((event.payload.slug as string | undefined) ?? ''),
+      String((event.payload.display_name as string | undefined) ?? ''),
+      String((event.payload.goal as string | undefined) ?? ''),
+      event.timestamp,
+      event.principal,
+      event.event_id
+    );
+  }
+
+  if (event.event_type === 'sprint_joined') {
+    const sprintId = String(
+      (event.payload.sprint_id as string | undefined) ?? ''
+    );
+    if (sprintId.length > 0) {
+      db.prepare(
+        `INSERT OR REPLACE INTO sprint_memberships
+         (space_id, principal, sprint_id, joined_at, updated_at, source_event_id)
+         VALUES (?1, ?2, ?3, ?4, ?4, ?5)`
+      ).run(
+        event.space_id,
+        event.principal,
+        sprintId,
+        event.timestamp,
+        event.event_id
+      );
+    }
+  }
+
+  if (event.event_type === 'sprint_left') {
+    db.prepare(
+      `INSERT OR REPLACE INTO sprint_memberships
+       (space_id, principal, sprint_id, joined_at, updated_at, source_event_id)
+       VALUES (?1, ?2, NULL, NULL, ?3, ?4)`
+    ).run(event.space_id, event.principal, event.timestamp, event.event_id);
+  }
+
+  if (event.event_type === 'sprint_archived') {
+    const sprintId = String(
+      (event.payload.sprint_id as string | undefined) ?? ''
+    );
+    if (sprintId.length > 0) {
+      db.prepare(
+        `UPDATE sprints
+            SET status = 'archived',
+                archived_at = ?1,
+                archived_by = ?2,
+                source_event_id = ?3
+          WHERE space_id = ?4 AND sprint_id = ?5`
+      ).run(
+        event.timestamp,
+        String(
+          (event.payload.archived_by as string | undefined) ?? event.principal
+        ),
+        event.event_id,
+        event.space_id,
+        sprintId
+      );
+    }
+  }
+
+  if (event.event_type === 'sprint_reopened') {
+    const sprintId = String(
+      (event.payload.sprint_id as string | undefined) ?? ''
+    );
+    if (sprintId.length > 0) {
+      db.prepare(
+        `UPDATE sprints
+            SET status = 'active',
+                archived_at = NULL,
+                archived_by = NULL,
+                source_event_id = ?1
+          WHERE space_id = ?2 AND sprint_id = ?3`
+      ).run(event.event_id, event.space_id, sprintId);
+    }
+  }
+
   if (event.event_type === 'scope_claimed') {
     const claimId = String(
       (event.payload.claim_id as string | undefined) ?? event.event_id
@@ -104,8 +192,8 @@ export function applyProjectionUpdate(db: Database, event: TeamemEvent): void {
     db.prepare(
       `INSERT OR REPLACE INTO claims
       (claim_id, space_id, principal, actor, scope_json, intent, status, created_at, expires_at, released_at,
-       repo_id, branch, head_sha_at_acquire, last_edit_at, auto_release_mode, path)
-      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)`
+       repo_id, branch, head_sha_at_acquire, last_edit_at, auto_release_mode, path, sprint_id)
+      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)`
     ).run(
       claimId,
       event.space_id,
@@ -124,7 +212,8 @@ export function applyProjectionUpdate(db: Database, event: TeamemEvent): void {
       String(
         (event.payload.auto_release_mode as string | undefined) ?? 'on_commit'
       ),
-      String((event.payload.path as string | undefined) ?? '')
+      String((event.payload.path as string | undefined) ?? ''),
+      event.sprint_id ?? null
     );
   }
 
@@ -259,11 +348,12 @@ export function applyProjectionUpdate(db: Database, event: TeamemEvent): void {
     );
     const status = event.event_type === 'blocker_raised' ? 'open' : 'resolved';
     db.prepare(
-      `INSERT OR REPLACE INTO blockers (blocker_id, space_id, status, owner_principal, summary, updated_at, source_event_id)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)`
+      `INSERT OR REPLACE INTO blockers (blocker_id, space_id, sprint_id, status, owner_principal, summary, updated_at, source_event_id)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`
     ).run(
       blockerId,
       event.space_id,
+      event.sprint_id ?? null,
       status,
       event.principal,
       String((event.payload.summary as string | undefined) ?? ''),
@@ -309,6 +399,7 @@ export function applyProjectionUpdate(db: Database, event: TeamemEvent): void {
           db.prepare(
             `UPDATE decisions
              SET status = 'superseded',
+                 sprint_id = ?9,
                  updated_at = ?1,
                  source_event_id = ?2,
                  decided_by = ?3,
@@ -325,14 +416,16 @@ export function applyProjectionUpdate(db: Database, event: TeamemEvent): void {
             event.event_type,
             payload.supersededByDecisionId,
             event.space_id,
-            payload.decisionId
+            payload.decisionId,
+            event.sprint_id ?? null
           );
         } else {
           db.prepare(
             `INSERT INTO decisions
-             (decision_id, space_id, title, status, summary, updated_at, source_event_id, kind, decided_by, version, latest_event_type, superseded_by_decision_id, superseded_at, body)
-             VALUES (?1, ?2, ?3, 'open', ?4, ?5, ?6, ?7, ?8, ?9, ?10, NULL, NULL, ?11)
+             (decision_id, space_id, sprint_id, title, status, summary, updated_at, source_event_id, kind, decided_by, version, latest_event_type, superseded_by_decision_id, superseded_at, body)
+             VALUES (?1, ?2, ?3, ?4, 'open', ?5, ?6, ?7, ?8, ?9, ?10, ?11, NULL, NULL, ?12)
              ON CONFLICT(decision_id) DO UPDATE SET
+               sprint_id = excluded.sprint_id,
                title = excluded.title,
                status = 'open',
                summary = excluded.summary,
@@ -348,6 +441,7 @@ export function applyProjectionUpdate(db: Database, event: TeamemEvent): void {
           ).run(
             payload.decisionId,
             event.space_id,
+            event.sprint_id ?? null,
             payload.title,
             payload.summary,
             event.timestamp,
@@ -546,13 +640,14 @@ export function applyProjectionUpdate(db: Database, event: TeamemEvent): void {
     try {
       db.prepare(
         `INSERT OR REPLACE INTO findings
-         (finding_id, space_id, principal, summary, body, tags_json, severity,
+         (finding_id, space_id, sprint_id, principal, summary, body, tags_json, severity,
           paths_json, refs_json, recipient_principals_json, kind, lifecycle, status, version,
           created_at, expires_at, source_event_id, tombstoned_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, NULL)`
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, NULL)`
       ).run(
         findingId,
         event.space_id,
+        event.sprint_id ?? null,
         event.principal,
         summary,
         body,
@@ -642,14 +737,15 @@ export function applyProjectionUpdate(db: Database, event: TeamemEvent): void {
       db.prepare(
         `INSERT OR REPLACE INTO pending_edits
          (pending_id, space_id, blocked_principal, blocking_claim_id,
-          paths_json, intent, created_at, expires_at, resolved_at,
+          sprint_id, paths_json, intent, created_at, expires_at, resolved_at,
           source_event_id, tombstoned_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, NULL, ?9, NULL)`
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, NULL, ?10, NULL)`
       ).run(
         pendingId,
         event.space_id,
         event.principal,
         blockingClaimId,
+        event.sprint_id ?? null,
         JSON.stringify(paths),
         intent,
         event.timestamp,
@@ -825,14 +921,19 @@ export function applyProjectionUpdate(db: Database, event: TeamemEvent): void {
               WHERE space_id = ?1
                 AND principal = ?2
                 AND scope_hash = ?3
+                AND sprint_id IS ?4
                 AND tombstoned_at IS NULL
-                AND started_at >= ?4
+                AND started_at >= ?5
               ORDER BY started_at DESC
               LIMIT 1`
           )
-          .get(event.space_id, event.principal, scopeHash, windowStart) as {
-          focus_id: string;
-        } | null;
+          .get(
+            event.space_id,
+            event.principal,
+            scopeHash,
+            event.sprint_id ?? null,
+            windowStart
+          ) as { focus_id: string } | null;
         if (existing) {
           // Dedup hit — projection collapses (no insert). Audit trail in
           // the events table still records this event for traceability.
@@ -841,12 +942,13 @@ export function applyProjectionUpdate(db: Database, event: TeamemEvent): void {
       }
       db.prepare(
         `INSERT OR REPLACE INTO focus
-         (focus_id, space_id, principal, scope_paths_json, scope_hash,
+         (focus_id, space_id, sprint_id, principal, scope_paths_json, scope_hash,
           intent, started_at, source_event_id, tombstoned_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, NULL)`
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, NULL)`
       ).run(
         focusId,
         event.space_id,
+        event.sprint_id ?? null,
         event.principal,
         JSON.stringify(scopePaths),
         scopeHash,

@@ -367,6 +367,81 @@ function getSpaceMembershipStatus(
   }
 }
 
+export class SprintContextLookupError extends Error {
+  readonly reason: string;
+
+  constructor(error: unknown) {
+    const reason = error instanceof Error ? error.message : String(error);
+    super('failed to read current Sprint membership');
+    this.name = 'SprintContextLookupError';
+    this.reason = reason;
+  }
+}
+
+function isMissingSprintContextTableError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return (
+    error.message.includes('no such table: sprint_memberships') ||
+    error.message.includes('no such table: sprints')
+  );
+}
+
+function readCurrentSprintId(
+  db: Database,
+  spaceId: string,
+  principal: string
+): string | null {
+  try {
+    const row = db
+      .prepare(
+        `SELECT sm.sprint_id
+           FROM sprint_memberships sm
+           JOIN sprints s ON s.sprint_id = sm.sprint_id
+          WHERE sm.space_id = ?1
+            AND sm.principal = ?2
+            AND sm.sprint_id IS NOT NULL
+            AND s.status = 'active'
+          LIMIT 1`
+      )
+      .get(spaceId, principal) as { sprint_id: string } | null;
+    return row?.sprint_id ?? null;
+  } catch (error) {
+    if (isMissingSprintContextTableError(error)) return null;
+    throw error;
+  }
+}
+
+function routingMetadataForPrincipal(
+  db: Database,
+  input: { space_id: string; principal: string },
+  options:
+    | { delivery: 'direct'; recipient_principals: string[] }
+    | { delivery: 'broadcast' }
+    | { delivery: 'space' }
+): Pick<TeamemEvent, 'sprint_id' | 'delivery_scope' | 'recipient_principals'> {
+  if (options.delivery === 'space') {
+    return { sprint_id: null, delivery_scope: 'space' };
+  }
+
+  let sprintId: string | null;
+  try {
+    sprintId = readCurrentSprintId(db, input.space_id, input.principal);
+  } catch (error) {
+    throw new SprintContextLookupError(error);
+  }
+  if (options.delivery === 'direct') {
+    return {
+      sprint_id: sprintId,
+      delivery_scope: 'direct',
+      recipient_principals: dedupeSorted(options.recipient_principals)
+    };
+  }
+
+  return sprintId
+    ? { sprint_id: sprintId, delivery_scope: 'sprint' }
+    : { sprint_id: null, delivery_scope: 'space' };
+}
+
 function authorizeDiscussionThreadAccess(
   db: Database,
   space_id: string,
@@ -426,6 +501,7 @@ function resolveDirectReplyRecipient(
 function selectActiveClaimsForOverlap(
   db: Database,
   spaceId: string,
+  sprintId: string | null,
   repoId?: string,
   branch?: string
 ): ActiveClaimRow[] {
@@ -434,28 +510,26 @@ function selectActiveClaimsForOverlap(
     branch !== undefined &&
     repoId !== '' &&
     branch !== '';
-  const sql = useBranchFilter
-    ? `SELECT claim_id, principal, scope_json, expires_at
-         FROM claims
-        WHERE space_id = ?1
-          AND status = 'active'
-          AND tombstoned_at IS NULL
-          AND (released_at IS NULL OR released_at > strftime('%Y-%m-%dT%H:%M:%fZ','now'))
-          AND (expires_at IS NULL OR expires_at > strftime('%Y-%m-%dT%H:%M:%fZ','now'))
-          AND (repo_id = '' OR repo_id = ?2)
-          AND (branch = '' OR branch = ?3)`
-    : `SELECT claim_id, principal, scope_json, expires_at
+  let sql = `SELECT claim_id, principal, scope_json, expires_at
          FROM claims
         WHERE space_id = ?1
           AND status = 'active'
           AND tombstoned_at IS NULL
           AND (released_at IS NULL OR released_at > strftime('%Y-%m-%dT%H:%M:%fZ','now'))
           AND (expires_at IS NULL OR expires_at > strftime('%Y-%m-%dT%H:%M:%fZ','now'))`;
-  const rows = (
-    useBranchFilter
-      ? db.query(sql).all(spaceId, repoId!, branch!)
-      : db.query(sql).all(spaceId)
-  ) as Array<{
+  const params: Array<string> = [spaceId];
+  if (sprintId === null) {
+    sql += ' AND sprint_id IS NULL';
+  } else {
+    sql += ` AND sprint_id = ?${params.length + 1}`;
+    params.push(sprintId);
+  }
+  if (useBranchFilter) {
+    sql += ` AND (repo_id = '' OR repo_id = ?${params.length + 1})
+             AND (branch = '' OR branch = ?${params.length + 2})`;
+    params.push(repoId!, branch!);
+  }
+  const rows = db.query(sql).all(...params) as Array<{
     claim_id: string;
     principal: string;
     scope_json: string;
@@ -766,6 +840,8 @@ export type DecisionCurrentRow = {
 export type DecisionMutationData = {
   event_id: string;
   decision_id: string;
+  sprint_id: string | null;
+  context: 'space' | 'sprint';
   lifecycle_event:
     | 'decision_published'
     | 'decision_amended'
@@ -782,8 +858,15 @@ export type { MoveType, Side, TerminationCondition };
 export function createToolContext({ store, db }: ToolDeps) {
   function readCurrentDecision(
     spaceId: string,
-    decisionId: string
+    decisionId: string,
+    sprintId?: string | null
   ): DecisionCurrentRow | null {
+    const contextPredicate =
+      sprintId === undefined
+        ? ''
+        : sprintId === null
+          ? 'AND sprint_id IS NULL'
+          : 'AND sprint_id = ?3';
     try {
       return db
         .prepare(
@@ -791,18 +874,32 @@ export function createToolContext({ store, db }: ToolDeps) {
            FROM decisions
           WHERE space_id = ?1
             AND decision_id = ?2
+            ${contextPredicate}
             AND tombstoned_at IS NULL`
         )
-        .get(spaceId, decisionId) as DecisionCurrentRow | null;
+        .get(
+          ...(sprintId === undefined
+            ? [spaceId, decisionId]
+            : sprintId === null
+              ? [spaceId, decisionId]
+              : [spaceId, decisionId, sprintId])
+        ) as DecisionCurrentRow | null;
     } catch {
       const legacy = db
         .prepare(
           `SELECT decision_id, title, summary, kind, status
            FROM decisions
           WHERE space_id = ?1
-            AND decision_id = ?2`
+            AND decision_id = ?2
+            ${contextPredicate}`
         )
-        .get(spaceId, decisionId) as {
+        .get(
+          ...(sprintId === undefined
+            ? [spaceId, decisionId]
+            : sprintId === null
+              ? [spaceId, decisionId]
+              : [spaceId, decisionId, sprintId])
+        ) as {
         decision_id: string;
         title: string;
         summary: string | null;
@@ -976,6 +1073,7 @@ export function createToolContext({ store, db }: ToolDeps) {
 
   function activePrincipalPaths(spaceId: string, principal: string): string[] {
     const paths = new Set<string>();
+    const currentSprintId = readCurrentSprintId(db, spaceId, principal);
     try {
       const rows = db
         .prepare(
@@ -984,9 +1082,16 @@ export function createToolContext({ store, db }: ToolDeps) {
           WHERE space_id = ?1
             AND principal = ?2
             AND status = 'active'
+            AND ${
+              currentSprintId === null ? 'sprint_id IS NULL' : 'sprint_id = ?3'
+            }
             AND released_at IS NULL`
         )
-        .all(spaceId, principal) as Array<{ scope_json: string }>;
+        .all(
+          ...(currentSprintId === null
+            ? [spaceId, principal]
+            : [spaceId, principal, currentSprintId])
+        ) as Array<{ scope_json: string }>;
       for (const row of rows) {
         try {
           const parsed = JSON.parse(row.scope_json) as { paths?: unknown };
@@ -1053,6 +1158,7 @@ export function createToolContext({ store, db }: ToolDeps) {
     spaceId: string,
     principal: string
   ): GotchaNotice[] {
+    const currentSprintId = readCurrentSprintId(db, spaceId, principal);
     try {
       const rows = db
         .prepare(
@@ -1060,6 +1166,9 @@ export function createToolContext({ store, db }: ToolDeps) {
                 recipient_principals_json, severity, created_at, source_event_id
            FROM findings
           WHERE space_id = ?1
+            AND ${
+              currentSprintId === null ? 'sprint_id IS NULL' : 'sprint_id = ?3'
+            }
             AND kind = 'gotcha'
             AND status = 'active'
             AND tombstoned_at IS NULL
@@ -1073,7 +1182,11 @@ export function createToolContext({ store, db }: ToolDeps) {
             )
           ORDER BY created_at ASC`
         )
-        .all(spaceId, principal) as Array<{
+        .all(
+          ...(currentSprintId === null
+            ? [spaceId, principal]
+            : [spaceId, principal, currentSprintId])
+        ) as Array<{
         finding_id: string;
         version: number;
         principal: string;
@@ -1146,6 +1259,7 @@ export function createToolContext({ store, db }: ToolDeps) {
       principal: string;
       actor: string;
       delegation: string;
+      scope?: 'current' | 'space';
     },
     eventType:
       | 'decision_published'
@@ -1163,6 +1277,13 @@ export function createToolContext({ store, db }: ToolDeps) {
       actor: input.actor,
       delegation: input.delegation,
       event_type: eventType,
+      ...routingMetadataForPrincipal(
+        db,
+        input,
+        input.scope === 'space'
+          ? { delivery: 'space' }
+          : { delivery: 'broadcast' }
+      ),
       scope: {},
       payload
     };
@@ -1174,11 +1295,16 @@ export function createToolContext({ store, db }: ToolDeps) {
       principal: string;
       actor: string;
       delegation: string;
+      scope?: 'current' | 'space';
     },
     decisionId: string,
     supersededByDecisionId: string | null
   ): ToolResponse<DecisionMutationData> {
-    const current = readCurrentDecision(input.space_id, decisionId);
+    const sprintId =
+      input.scope === 'space'
+        ? null
+        : readCurrentSprintId(db, input.space_id, input.principal);
+    const current = readCurrentDecision(input.space_id, decisionId, sprintId);
     if (!current) {
       return toolError(
         'decision_not_found',
@@ -1207,6 +1333,8 @@ export function createToolContext({ store, db }: ToolDeps) {
       data: {
         event_id: event.event_id,
         decision_id: current.decision_id,
+        sprint_id: event.sprint_id ?? null,
+        context: event.sprint_id == null ? 'space' : 'sprint',
         lifecycle_event: 'decision_superseded',
         version: current.version + 1,
         kind: current.kind,
@@ -1268,6 +1396,8 @@ export function createToolContext({ store, db }: ToolDeps) {
     deriveLegacyDiscussionThreadMetadata,
     readDiscussionHelperPolicy,
     getSpaceMembershipStatus,
+    readCurrentSprintId,
+    routingMetadataForPrincipal,
     authorizeDiscussionThreadAccess,
     resolveDirectReplyRecipient,
     selectActiveClaimsForOverlap,
@@ -1480,6 +1610,14 @@ function finalizeTermination(
     actor: args.actor,
     delegation: args.delegation,
     event_type: 'dispute_terminated',
+    ...routingMetadataForPrincipal(
+      db,
+      {
+        space_id: args.space_id,
+        principal: args.principal
+      },
+      { delivery: 'broadcast' }
+    ),
     scope: {},
     payload: {
       thread_id: args.thread_id,
@@ -1545,6 +1683,14 @@ function applyAcceptOutcome(
       actor: args.actor,
       delegation: args.delegation,
       event_type: 'dispute_resolved',
+      ...routingMetadataForPrincipal(
+        db,
+        {
+          space_id: args.space_id,
+          principal: args.acceptor
+        },
+        { delivery: 'broadcast' }
+      ),
       scope: {},
       payload: {
         thread_id: args.thread_id,
@@ -1645,6 +1791,14 @@ function applyAcceptOutcome(
           actor: opener,
           delegation: `${opener}->${opener}`,
           event_type: 'scope_released',
+          ...routingMetadataForPrincipal(
+            db,
+            {
+              space_id: args.space_id,
+              principal: opener
+            },
+            { delivery: 'broadcast' }
+          ),
           scope: { paths: sub.released },
           payload: {
             claim_id: oc.claim_id,
@@ -1685,6 +1839,14 @@ function applyAcceptOutcome(
       actor: target,
       delegation: `${target}->${target}`,
       event_type: 'scope_released',
+      ...routingMetadataForPrincipal(
+        db,
+        {
+          space_id: args.space_id,
+          principal: target
+        },
+        { delivery: 'broadcast' }
+      ),
       scope: { paths: releasedPaths },
       payload: {
         claim_id: args.dispute.blocking_claim_id,
@@ -1727,6 +1889,14 @@ function applyAcceptOutcome(
       actor: opener,
       delegation: `${opener}->${opener}`,
       event_type: 'scope_claimed',
+      ...routingMetadataForPrincipal(
+        db,
+        {
+          space_id: args.space_id,
+          principal: opener
+        },
+        { delivery: 'broadcast' }
+      ),
       scope: { paths: claimedPaths },
       payload: {
         claim_id: grantedClaimId,
@@ -1749,6 +1919,14 @@ function applyAcceptOutcome(
     actor: args.actor,
     delegation: args.delegation,
     event_type: 'dispute_resolved',
+    ...routingMetadataForPrincipal(
+      db,
+      {
+        space_id: args.space_id,
+        principal: args.acceptor
+      },
+      { delivery: 'broadcast' }
+    ),
     scope: { paths: claimedPaths },
     payload: {
       thread_id: args.thread_id,

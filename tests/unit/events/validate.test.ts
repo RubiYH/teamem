@@ -193,6 +193,65 @@ describe('validateEvent — invalid fixtures (AC12)', () => {
     }
   });
 
+  it('rejects sprint-created-missing-slug with $.payload.slug missing issue', () => {
+    const evt = readFixture('invalid', 'sprint-created-missing-slug');
+    expect(() => validateEvent(evt)).toThrowError(EventValidationError);
+    try {
+      validateEvent(evt);
+    } catch (error) {
+      const typed = error as EventValidationError;
+      expect(typed.issues.some((i) => i.path === '$.payload.slug')).toBe(true);
+    }
+  });
+
+  it('rejects sprint-joined-missing-sprint-id with $.payload.sprint_id missing issue', () => {
+    const evt = readFixture('invalid', 'sprint-joined-missing-sprint-id');
+    expect(() => validateEvent(evt)).toThrowError(EventValidationError);
+    try {
+      validateEvent(evt);
+    } catch (error) {
+      const typed = error as EventValidationError;
+      expect(typed.issues.some((i) => i.path === '$.payload.sprint_id')).toBe(
+        true
+      );
+    }
+  });
+
+  it('rejects sprint-left-missing-slug with $.payload.slug missing issue', () => {
+    const evt = readFixture('invalid', 'sprint-left-missing-slug');
+    expect(() => validateEvent(evt)).toThrowError(EventValidationError);
+    try {
+      validateEvent(evt);
+    } catch (error) {
+      const typed = error as EventValidationError;
+      expect(typed.issues.some((i) => i.path === '$.payload.slug')).toBe(true);
+    }
+  });
+
+  it('rejects sprint-archived-missing-sprint-id with $.payload.sprint_id missing issue', () => {
+    const evt = readFixture('invalid', 'sprint-archived-missing-sprint-id');
+    expect(() => validateEvent(evt)).toThrowError(EventValidationError);
+    try {
+      validateEvent(evt);
+    } catch (error) {
+      const typed = error as EventValidationError;
+      expect(typed.issues.some((i) => i.path === '$.payload.sprint_id')).toBe(
+        true
+      );
+    }
+  });
+
+  it('rejects sprint-reopened-missing-slug with $.payload.slug missing issue', () => {
+    const evt = readFixture('invalid', 'sprint-reopened-missing-slug');
+    expect(() => validateEvent(evt)).toThrowError(EventValidationError);
+    try {
+      validateEvent(evt);
+    } catch (error) {
+      const typed = error as EventValidationError;
+      expect(typed.issues.some((i) => i.path === '$.payload.slug')).toBe(true);
+    }
+  });
+
   it('rejects contract-changed-missing-repo-id with $.space_id missing issue', () => {
     const evt = readFixture('invalid', 'contract-changed-missing-repo-id');
     expect(() => validateEvent(evt)).toThrowError(EventValidationError);

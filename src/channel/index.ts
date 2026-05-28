@@ -147,7 +147,7 @@ const PRIME_PAGE_SIZE = 100;
 
 type ChannelUpdateResult = {
   ok?: boolean;
-  data?: { events?: TeamemChannelEvent[] };
+  data?: { events?: TeamemChannelEvent[]; next_cursor?: string | null };
 };
 
 type GetUpdatesArgs = {
@@ -193,10 +193,10 @@ async function primeCursorToLatest(
       return options.cursor;
     }
     const events = result.data?.events ?? [];
-    const last = events.at(-1);
-    if (!last?.event_id) return cursor ?? EMPTY_CHANNEL_CURSOR;
-    if (last.event_id === cursor) return cursor;
-    cursor = last.event_id;
+    const nextCursor = result.data?.next_cursor ?? events.at(-1)?.event_id;
+    if (!nextCursor) return cursor ?? EMPTY_CHANNEL_CURSOR;
+    if (nextCursor === cursor) return cursor;
+    cursor = nextCursor;
     if (events.length < PRIME_PAGE_SIZE) return cursor;
   }
 }
@@ -306,6 +306,7 @@ export async function pollChannelOnce(
 
   const rateOk = options.rateOk ?? (() => true);
   const events = result.data?.events ?? [];
+  const nextCursor = result.data?.next_cursor ?? events.at(-1)?.event_id;
   for (const ev of events) {
     if (
       !shouldEmitTeamemChannelEvent(ev, {
@@ -322,11 +323,10 @@ export async function pollChannelOnce(
     options.onNotification?.(notification);
   }
 
-  const last = events.at(-1);
-  if (!last?.event_id) return options.cursor;
+  if (!nextCursor) return options.cursor;
 
-  options.onPersistCursor?.(last.event_id);
-  return last.event_id;
+  options.onPersistCursor?.(nextCursor);
+  return nextCursor;
 }
 
 async function startPolling(

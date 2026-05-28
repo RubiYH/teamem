@@ -1,0 +1,17 @@
+{
+  "schema_version": "1.0",
+  "event_id": "01JSPRINTJOINED",
+  "idempotency_key": "idem-sprint-joined",
+  "space_id": "teamem-poc",
+  "timestamp": "2026-05-27T00:01:00.000Z",
+  "principal": "alice",
+  "actor": "codex-cli/session-1",
+  "delegation": "alice->codex",
+  "event_type": "sprint_joined",
+  "scope": {},
+  "payload": {
+    "sprint_id": "01JSPRINTID001",
+    "slug": "mvp-lifecycle",
+    "previous_sprint_id": null
+  }
+}

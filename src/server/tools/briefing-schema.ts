@@ -68,12 +68,59 @@ export const RecentProgressSchema = z.object({
   at: z.string()
 });
 
+export const BriefingSprintSchema = z.object({
+  sprint_id: z.string(),
+  slug: z.string(),
+  display_name: z.string(),
+  goal: z.string(),
+  status: z.enum(['active', 'archived']),
+  current_members: z.array(z.string())
+});
+
+export const BriefingContextSchema = z.discriminatedUnion('mode', [
+  z.object({
+    mode: z.literal('space'),
+    sprint: z.null(),
+    routing_reasons: z.array(z.string())
+  }),
+  z.object({
+    mode: z.literal('sprint'),
+    sprint: BriefingSprintSchema,
+    routing_reasons: z.array(z.string())
+  })
+]);
+
+export const RecentNotificationSchema = z.object({
+  event_id: z.string(),
+  event_type: z.string(),
+  principal: z.string(),
+  summary: z.string(),
+  created_at: z.string(),
+  sprint_id: z.string().nullable(),
+  delivery_scope: z.enum(['direct', 'sprint', 'space']),
+  routing_reason: z.enum([
+    'current_sprint',
+    'direct_to_me',
+    'space_wide_announcement',
+    'space_mode'
+  ])
+});
+
+export const OutsideCurrentContextSchema = z.object({
+  active_claims: z.array(ActiveClaimSchema)
+});
+
 export const BriefingMetaSchema = z.object({
   token_estimate: z.number(),
   cursor: z.string().nullable(),
   lag_seconds: z.number().nullable(),
   heuristic_trust: z.enum(['unverified', 'observed']),
-  over_budget: z.boolean().optional()
+  over_budget: z.boolean().optional(),
+  cross_context_overlap_awareness: z
+    .object({
+      overlapping_claims: z.number().int().nonnegative()
+    })
+    .optional()
 });
 
 export const RecentJoinSchema = z.object({
@@ -113,11 +160,14 @@ export const RecentArtifactSchema = z.object({
 });
 
 export const BriefingResponseSchema = z.object({
+  current_context: BriefingContextSchema,
   current_plan: CurrentPlanSchema,
   active_claims: z.array(ActiveClaimSchema),
   recent_decisions: z.array(RecentDecisionSchema),
   active_risks: ActiveRisksSchema,
   recent_progress: z.array(RecentProgressSchema),
+  recent_notifications: z.array(RecentNotificationSchema),
+  outside_current_context: OutsideCurrentContextSchema,
   recent_joins: z.array(RecentJoinSchema),
   recent_findings: z.array(RecentFindingSchema),
   recent_artifacts: z.array(RecentArtifactSchema),

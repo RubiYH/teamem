@@ -1,11 +1,15 @@
 import { EventValidationError, type ValidationIssue } from './errors.js';
+import { validateRoutingMetadata } from './routing.js';
 import { EVENT_TYPES, type TeamemEvent } from './types.js';
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-export function validateEvent(input: unknown): TeamemEvent {
+export function validateEvent(
+  input: unknown,
+  options: { requireRoutingMetadata?: boolean } = {}
+): TeamemEvent {
   const issues: ValidationIssue[] = [];
 
   if (!isObject(input)) {
@@ -84,6 +88,12 @@ export function validateEvent(input: unknown): TeamemEvent {
     });
   }
 
+  issues.push(
+    ...validateRoutingMetadata(input, {
+      requireExplicit: options.requireRoutingMetadata === true
+    })
+  );
+
   // Codex F25 — dispute payload tightening. Both the `dispute_opened`
   // event AND any `discussion_posted` event with `payload.dispute_move`
   // set MUST carry server-authoritative `opened_by` and
@@ -106,6 +116,54 @@ export function validateEvent(input: unknown): TeamemEvent {
             path: `$.payload.${field}`,
             code: 'missing',
             message: `${field} is required for decision lifecycle events`
+          });
+        } else if (typeof v !== 'string' || v.length === 0) {
+          issues.push({
+            path: `$.payload.${field}`,
+            code: 'invalid_type',
+            message: `${field} must be a non-empty string`
+          });
+        }
+      }
+    }
+
+    if (input.event_type === 'sprint_created') {
+      for (const field of [
+        'sprint_id',
+        'slug',
+        'display_name',
+        'goal'
+      ] as const) {
+        const v = input.payload[field];
+        if (v === undefined) {
+          issues.push({
+            path: `$.payload.${field}`,
+            code: 'missing',
+            message: `${field} is required for sprint_created events`
+          });
+        } else if (typeof v !== 'string' || v.length === 0) {
+          issues.push({
+            path: `$.payload.${field}`,
+            code: 'invalid_type',
+            message: `${field} must be a non-empty string`
+          });
+        }
+      }
+    }
+
+    if (
+      input.event_type === 'sprint_joined' ||
+      input.event_type === 'sprint_left' ||
+      input.event_type === 'sprint_archived' ||
+      input.event_type === 'sprint_reopened'
+    ) {
+      for (const field of ['sprint_id', 'slug'] as const) {
+        const v = input.payload[field];
+        if (v === undefined) {
+          issues.push({
+            path: `$.payload.${field}`,
+            code: 'missing',
+            message: `${field} is required for ${String(input.event_type)} events`
           });
         } else if (typeof v !== 'string' || v.length === 0) {
           issues.push({

@@ -34,6 +34,9 @@ export function agentFocusChanged(
     actor: input.actor,
     delegation: input.delegation,
     event_type: 'agent_focus_changed',
+    ...ctx.routingMetadataForPrincipal(ctx.db, input, {
+      delivery: 'broadcast'
+    }),
     scope: { paths },
     payload: {
       focus_id: focusId,

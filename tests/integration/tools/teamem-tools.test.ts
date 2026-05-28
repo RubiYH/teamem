@@ -27,6 +27,8 @@ describe('teamem tool registry', () => {
     expect(names).toContain('teamem.update_space_rules');
     expect(names).toContain('teamem.get_finding');
     expect(names).toContain('teamem.acknowledge_finding');
+    expect(names).toContain('teamem.raise_blocker');
+    expect(names).toContain('teamem.resolve_blocker');
     expect(names).not.toContain('teamem.publish_event');
     expect(names).not.toContain('teamem.detect_conflicts');
   });
@@ -45,6 +47,8 @@ describe('teamem tools', () => {
       actor: 'claude/session-1',
       delegation: 'alice->claude',
       event_type: 'task_started',
+      sprint_id: null,
+      delivery_scope: 'space',
       scope: { paths: ['src/index.ts'] },
       payload: { task_id: 'TASK-1' }
     });

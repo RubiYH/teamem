@@ -3,6 +3,8 @@ export type TeamemChannelEvent = {
   event_type: string;
   principal: string;
   space_id?: string;
+  delivery_scope?: 'direct' | 'sprint' | 'space';
+  recipient_principals?: readonly string[];
   scope?: { paths?: string[] };
   payload?: Record<string, unknown>;
 };

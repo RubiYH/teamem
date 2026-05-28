@@ -209,14 +209,15 @@ describe('release → conflict_resolved emission', () => {
   it('resolves by path overlap even when blocking_claim_id differs', async () => {
     const { app, db, aliceJwt, bobJwt } = await bootstrapTwo();
     const claimId = await aliceClaims(app, aliceJwt, ['src/auth/login.ts']);
+    const otherClaimId = await aliceClaims(app, aliceJwt, ['docs/blocker.md']);
 
-    // Bob queues against a DIFFERENT claim id — but the paths overlap
+    // Bob queues against a real, DIFFERENT claim id — but the paths overlap
     // alice's released scope, so the resolve-on-release should still fire.
     const queue = await post(
       app,
       '/tools/teamem.queue_pending_edit',
       {
-        blocking_claim_id: 'some-other-claim-id',
+        blocking_claim_id: otherClaimId,
         paths: ['src/auth/login.ts']
       },
       bobJwt
@@ -241,12 +242,13 @@ describe('release → conflict_resolved emission', () => {
   it('does NOT resolve unrelated queue rows', async () => {
     const { app, db, aliceJwt, bobJwt } = await bootstrapTwo();
     const claimId = await aliceClaims(app, aliceJwt, ['src/auth/login.ts']);
+    const otherClaimId = await aliceClaims(app, aliceJwt, ['docs/blocker.md']);
 
     const queue = await post(
       app,
       '/tools/teamem.queue_pending_edit',
       {
-        blocking_claim_id: 'unrelated-claim',
+        blocking_claim_id: otherClaimId,
         paths: ['docs/UNRELATED.md']
       },
       bobJwt
@@ -266,6 +268,26 @@ describe('release → conflict_resolved emission', () => {
       .prepare(`SELECT resolved_at FROM pending_edits WHERE pending_id = ?1`)
       .get(queueData.pending_id) as { resolved_at: string | null };
     expect(row.resolved_at).toBeNull();
+  });
+
+  it('rejects queue requests for missing blocking claims', async () => {
+    const { app, bobJwt } = await bootstrapTwo();
+    const res = await post(
+      app,
+      '/tools/teamem.queue_pending_edit',
+      {
+        blocking_claim_id: 'missing-claim',
+        paths: ['src/auth/login.ts']
+      },
+      bobJwt
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      ok: boolean;
+      error?: { code: string };
+    };
+    expect(body.ok).toBe(false);
+    expect(body.error?.code).toBe('blocking_claim_not_found');
   });
 });
 

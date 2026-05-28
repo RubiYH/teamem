@@ -38,3 +38,12 @@ invokes Teamem's `post-commit` hook.
 
 Claude Code Channels are experimental. If live delivery is unavailable, use
 `/teamem-briefing`, `/teamem-status`, and unread notifications.
+
+## Sprint notifications look incomplete
+
+Check the current mode with `/teamem-status`. Space mode is not an all-Sprints
+feed: it includes Space-mode updates, direct-to-me messages, and explicit
+Space-wide `**` broadcasts. Sprint mode includes the current Sprint,
+direct-to-me messages, and explicit Space-wide `**` broadcasts. Other Sprint
+activity and archived Sprint history are available through `/teamem-sprint list`
+and `/teamem-sprint history <slug-or-id>`, not through the live monitor stream.

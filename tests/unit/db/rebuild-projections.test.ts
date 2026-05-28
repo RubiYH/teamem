@@ -17,6 +17,8 @@ function event(overrides: Partial<TeamemEvent>): TeamemEvent {
     actor: 'codex/session-1',
     delegation: 'alice->codex',
     event_type: 'task_started',
+    sprint_id: null,
+    delivery_scope: 'space',
     scope: { paths: ['src/index.ts'] },
     payload: {},
     ...overrides
@@ -24,6 +26,237 @@ function event(overrides: Partial<TeamemEvent>): TeamemEvent {
 }
 
 describe('rebuildProjections', () => {
+  it('rebuilds Sprint membership projection from lifecycle events', () => {
+    const db = createSqliteClient(':memory:');
+    runAllMigrations(db);
+    const store = new SqliteEventStore(db);
+
+    const created = event({
+      event_id: 'evt-sprint-created-1',
+      idempotency_key: 'idem-sprint-created-1',
+      event_type: 'sprint_created',
+      scope: {},
+      payload: {
+        sprint_id: 'sprint-1',
+        slug: 'mvp-lifecycle',
+        display_name: 'MVP Lifecycle',
+        goal: 'Build the lifecycle path.'
+      }
+    });
+    const joined = event({
+      event_id: 'evt-sprint-joined-1',
+      idempotency_key: 'idem-sprint-joined-1',
+      timestamp: '2026-04-30T00:01:00.000Z',
+      event_type: 'sprint_joined',
+      scope: {},
+      payload: {
+        sprint_id: 'sprint-1',
+        slug: 'mvp-lifecycle',
+        previous_sprint_id: null
+      }
+    });
+    const left = event({
+      event_id: 'evt-sprint-left-1',
+      idempotency_key: 'idem-sprint-left-1',
+      timestamp: '2026-04-30T00:02:00.000Z',
+      event_type: 'sprint_left',
+      scope: {},
+      payload: {
+        sprint_id: 'sprint-1',
+        slug: 'mvp-lifecycle',
+        reason: 'leave'
+      }
+    });
+
+    for (const evt of [created, joined, left]) {
+      store.append(evt);
+      applyProjectionUpdate(db, evt);
+    }
+
+    db.prepare('DELETE FROM sprint_memberships WHERE space_id = ?1').run(
+      'teamem-poc'
+    );
+    db.prepare('DELETE FROM sprints WHERE space_id = ?1').run('teamem-poc');
+
+    const result = rebuildProjections(db, 'teamem-poc');
+    expect(result.replayed).toBe(3);
+
+    const sprint = db
+      .query('SELECT slug, status FROM sprints WHERE sprint_id = ?1')
+      .get('sprint-1') as { slug: string; status: string } | undefined;
+    const membership = db
+      .query(
+        `SELECT sprint_id
+           FROM sprint_memberships
+          WHERE space_id = ?1 AND principal = ?2`
+      )
+      .get('teamem-poc', 'alice') as { sprint_id: string | null } | undefined;
+
+    expect(sprint).toEqual({ slug: 'mvp-lifecycle', status: 'active' });
+    expect(membership?.sprint_id).toBeNull();
+  });
+
+  it('replays same-timestamp Sprint switch events in insertion order', () => {
+    const db = createSqliteClient(':memory:');
+    runAllMigrations(db);
+    const store = new SqliteEventStore(db);
+
+    db.exec(`
+      DROP INDEX IF EXISTS idx_events_space_timestamp;
+      DROP INDEX IF EXISTS idx_events_space_type_ts;
+      CREATE INDEX idx_events_space_timestamp_event_type
+        ON events(space_id, timestamp, event_type);
+    `);
+
+    const timestamp = '2026-04-30T00:01:00.000Z';
+    const events = [
+      event({
+        event_id: 'evt-sprint-created-1',
+        idempotency_key: 'idem-sprint-created-1',
+        timestamp,
+        event_type: 'sprint_created',
+        payload: {
+          sprint_id: 'sprint-1',
+          slug: 'first-sprint',
+          display_name: 'First Sprint',
+          goal: 'First goal'
+        }
+      }),
+      event({
+        event_id: 'evt-sprint-joined-1',
+        idempotency_key: 'idem-sprint-joined-1',
+        timestamp,
+        event_type: 'sprint_joined',
+        payload: {
+          sprint_id: 'sprint-1',
+          slug: 'first-sprint',
+          previous_sprint_id: null
+        }
+      }),
+      event({
+        event_id: 'evt-sprint-created-2',
+        idempotency_key: 'idem-sprint-created-2',
+        timestamp,
+        event_type: 'sprint_created',
+        payload: {
+          sprint_id: 'sprint-2',
+          slug: 'second-sprint',
+          display_name: 'Second Sprint',
+          goal: 'Second goal'
+        }
+      }),
+      event({
+        event_id: 'evt-sprint-left-1',
+        idempotency_key: 'idem-sprint-left-1',
+        timestamp,
+        event_type: 'sprint_left',
+        payload: {
+          sprint_id: 'sprint-1',
+          slug: 'first-sprint',
+          reason: 'switch'
+        }
+      }),
+      event({
+        event_id: 'evt-sprint-joined-2',
+        idempotency_key: 'idem-sprint-joined-2',
+        timestamp,
+        event_type: 'sprint_joined',
+        payload: {
+          sprint_id: 'sprint-2',
+          slug: 'second-sprint',
+          previous_sprint_id: 'sprint-1'
+        }
+      })
+    ];
+
+    for (const evt of events) {
+      store.append(evt);
+    }
+
+    const result = rebuildProjections(db, 'teamem-poc');
+    expect(result.replayed).toBe(5);
+
+    const membership = db
+      .query(
+        `SELECT sprint_id
+           FROM sprint_memberships
+          WHERE space_id = ?1 AND principal = ?2`
+      )
+      .get('teamem-poc', 'alice') as { sprint_id: string | null } | undefined;
+
+    expect(membership?.sprint_id).toBe('sprint-2');
+  });
+
+  it('rebuilds Sprint archive and reopen status transitions', () => {
+    const db = createSqliteClient(':memory:');
+    runAllMigrations(db);
+    const store = new SqliteEventStore(db);
+
+    const events = [
+      event({
+        event_id: 'evt-sprint-created-archive',
+        idempotency_key: 'idem-sprint-created-archive',
+        event_type: 'sprint_created',
+        payload: {
+          sprint_id: 'sprint-archive',
+          slug: 'archive-sprint',
+          display_name: 'Archive Sprint',
+          goal: 'Archive and reopen'
+        }
+      }),
+      event({
+        event_id: 'evt-sprint-archived',
+        idempotency_key: 'idem-sprint-archived',
+        timestamp: '2026-04-30T00:03:00.000Z',
+        event_type: 'sprint_archived',
+        delivery_scope: 'direct',
+        recipient_principals: ['alice'],
+        payload: {
+          sprint_id: 'sprint-archive',
+          slug: 'archive-sprint',
+          archived_by: 'alice'
+        }
+      }),
+      event({
+        event_id: 'evt-sprint-reopened',
+        idempotency_key: 'idem-sprint-reopened',
+        timestamp: '2026-04-30T00:04:00.000Z',
+        event_type: 'sprint_reopened',
+        delivery_scope: 'direct',
+        recipient_principals: ['alice'],
+        payload: {
+          sprint_id: 'sprint-archive',
+          slug: 'archive-sprint',
+          reopened_by: 'alice'
+        }
+      })
+    ];
+
+    for (const evt of events) {
+      store.append(evt);
+    }
+
+    const result = rebuildProjections(db, 'teamem-poc');
+    expect(result.replayed).toBe(3);
+
+    const sprint = db
+      .query(
+        `SELECT status, archived_at, archived_by
+         FROM sprints WHERE sprint_id = ?1`
+      )
+      .get('sprint-archive') as {
+      status: string;
+      archived_at: string | null;
+      archived_by: string | null;
+    };
+
+    expect(sprint).toEqual({
+      status: 'active',
+      archived_at: null,
+      archived_by: null
+    });
+  });
+
   it('rebuilds claims projection from event log', () => {
     const db = createSqliteClient(':memory:');
     runAllMigrations(db);
@@ -115,6 +348,52 @@ describe('rebuildProjections', () => {
     expect(row?.expires_at).toBeNull();
   });
 
+  it('rebuilds focus projection with Sprint context from event log', () => {
+    const db = createSqliteClient(':memory:');
+    runAllMigrations(db);
+    const store = new SqliteEventStore(db);
+
+    const focus = event({
+      event_id: 'evt-focus-1',
+      idempotency_key: 'idem-focus-1',
+      event_type: 'agent_focus_changed',
+      sprint_id: 'sprint-current',
+      delivery_scope: 'sprint',
+      scope: { paths: ['src/server/tools/briefing.ts'] },
+      payload: {
+        focus_id: 'focus-1',
+        intent: 'current Sprint progress'
+      }
+    });
+
+    store.append(focus);
+    applyProjectionUpdate(db, focus);
+    db.prepare('UPDATE focus SET sprint_id = NULL WHERE focus_id = ?1').run(
+      'focus-1'
+    );
+
+    const result = rebuildProjections(db, 'teamem-poc');
+    expect(result.replayed).toBe(1);
+
+    const row = db
+      .query(
+        `SELECT sprint_id, intent
+           FROM focus
+          WHERE focus_id = ?1`
+      )
+      .get('focus-1') as
+      | {
+          sprint_id: string | null;
+          intent: string | null;
+        }
+      | undefined;
+
+    expect(row).toEqual({
+      sprint_id: 'sprint-current',
+      intent: 'current Sprint progress'
+    });
+  });
+
   it('rebuilds finding acknowledgements from acknowledgment_recorded events', () => {
     const db = createSqliteClient(':memory:');
     runAllMigrations(db);
@@ -124,6 +403,8 @@ describe('rebuildProjections', () => {
       event_id: 'evt-finding-ack-1',
       idempotency_key: 'idem-finding-ack-1',
       event_type: 'finding_shared',
+      delivery_scope: 'direct',
+      recipient_principals: ['bob'],
       payload: {
         finding_id: 'finding-ack-1',
         kind: 'gotcha',

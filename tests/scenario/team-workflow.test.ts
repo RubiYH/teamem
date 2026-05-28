@@ -31,6 +31,8 @@ function publishTaskStarted(
     actor: `${principal}/agent`,
     delegation: `${principal}->agent`,
     event_type: 'task_started',
+    sprint_id: null,
+    delivery_scope: 'space',
     scope: { paths: [path] },
     payload: { task_id: id }
   });

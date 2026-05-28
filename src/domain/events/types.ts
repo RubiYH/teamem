@@ -40,7 +40,12 @@ export const EVENT_TYPES = [
   'claim_expired',
   'space_rule_added',
   'space_rule_amended',
-  'space_rule_disabled'
+  'space_rule_disabled',
+  'sprint_created',
+  'sprint_joined',
+  'sprint_left',
+  'sprint_archived',
+  'sprint_reopened'
 ] as const;
 
 export type EventType = (typeof EVENT_TYPES)[number];
@@ -59,6 +64,8 @@ export type EventRefs = {
 
 export type BaseEventPayload = Record<string, unknown>;
 
+export type DeliveryScope = 'direct' | 'sprint' | 'space';
+
 export type TeamemEvent = {
   schema_version: '1.0';
   event_id: string;
@@ -69,6 +76,9 @@ export type TeamemEvent = {
   actor: string;
   delegation: string;
   event_type: EventType;
+  sprint_id?: string | null;
+  delivery_scope?: DeliveryScope;
+  recipient_principals?: string[];
   scope: EventScope;
   payload: BaseEventPayload;
   refs?: EventRefs;

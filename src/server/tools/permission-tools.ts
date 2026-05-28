@@ -95,6 +95,10 @@ export async function requestEditPermission(
               actor: input.actor,
               delegation: input.delegation,
               event_type: 'permission_expired',
+              ...ctx.routingMetadataForPrincipal(ctx.db, input, {
+                delivery: 'direct',
+                recipient_principals: [input.principal]
+              }),
               scope: {},
               payload: { req_id: reqId }
             };
@@ -228,6 +232,10 @@ export async function requestEditPermission(
     actor: input.actor,
     delegation: input.delegation,
     event_type: 'permission_requested',
+    ...ctx.routingMetadataForPrincipal(ctx.db, input, {
+      delivery: 'direct',
+      recipient_principals: [claimRow.principal]
+    }),
     scope: { paths: requestedPaths },
     payload: {
       req_id: reqId,
@@ -288,6 +296,10 @@ export async function requestEditPermission(
           actor: input.actor,
           delegation: input.delegation,
           event_type: 'permission_expired',
+          ...ctx.routingMetadataForPrincipal(ctx.db, input, {
+            delivery: 'direct',
+            recipient_principals: [input.principal]
+          }),
           scope: {},
           payload: { req_id: reqId }
         };
@@ -401,6 +413,10 @@ export function respondPermissionRequest(
             actor: input.actor,
             delegation: input.delegation,
             event_type: 'permission_denied',
+            ...ctx.routingMetadataForPrincipal(ctx.db, input, {
+              delivery: 'direct',
+              recipient_principals: [reqRow.requester_principal]
+            }),
             scope: {},
             payload: { req_id: reqId }
           };
@@ -461,6 +477,9 @@ export function respondPermissionRequest(
           actor: input.actor,
           delegation: input.delegation,
           event_type: 'scope_released',
+          ...ctx.routingMetadataForPrincipal(ctx.db, input, {
+            delivery: 'broadcast'
+          }),
           scope: { paths: released },
           payload: {
             claim_id: reqRow.blocking_claim_id,
@@ -507,6 +526,14 @@ export function respondPermissionRequest(
           actor: reqRow.requester_principal,
           delegation: `${reqRow.requester_principal}->${reqRow.requester_principal}`,
           event_type: 'scope_claimed',
+          ...ctx.routingMetadataForPrincipal(
+            ctx.db,
+            {
+              space_id: input.space_id,
+              principal: reqRow.requester_principal
+            },
+            { delivery: 'broadcast' }
+          ),
           scope: { paths: requestedPaths },
           payload: {
             claim_id: grantedClaimId,
@@ -529,6 +556,10 @@ export function respondPermissionRequest(
           actor: input.actor,
           delegation: input.delegation,
           event_type: 'permission_granted',
+          ...ctx.routingMetadataForPrincipal(ctx.db, input, {
+            delivery: 'direct',
+            recipient_principals: [reqRow.requester_principal]
+          }),
           scope: { paths: requestedPaths },
           payload: {
             req_id: reqId,
@@ -558,6 +589,14 @@ export function respondPermissionRequest(
           actor: reqRow.requester_principal,
           delegation: `${reqRow.requester_principal}->${reqRow.requester_principal}`,
           event_type: 'agent_focus_changed',
+          ...ctx.routingMetadataForPrincipal(
+            ctx.db,
+            {
+              space_id: input.space_id,
+              principal: reqRow.requester_principal
+            },
+            { delivery: 'broadcast' }
+          ),
           scope: { paths: grantedPaths },
           payload: {
             focus_id: grantedFocusId,

@@ -66,7 +66,45 @@ Use `/teamem-off` to turn it off for the current session.
 | `/teamem-decide` | Record a durable decision. |
 | `/teamem-gotcha` | Share a persistent lesson or warning. |
 | `/teamem-discuss` | Send a direct or broadcast team message. |
+| `/teamem-sprint` | Create, join, leave, list, inspect history, archive, or reopen a Sprint. |
 | `/teamem-space` | Manage membership actions. |
+
+## Space mode, Sprint mode, and messages
+
+Space mode is the default operating mode when you are not joined to a Sprint.
+Sprint mode starts when you join a Sprint with `/teamem-sprint join` or create
+one with `/teamem-sprint create <name> -- <goal>`. A Sprint narrows live
+monitoring, briefing/status context, and claim conflicts to a work goal inside
+the Space. It is not a privacy boundary: Space membership remains the trust
+boundary, and Space members can explicitly use `/teamem-sprint list` and
+`/teamem-sprint history <slug-or-id>` to inspect Sprint metadata and non-private
+Sprint lifecycle history.
+
+The Sprint command surface is:
+
+```text
+/teamem-sprint create <name> -- <goal>
+/teamem-sprint join <slug-or-id>
+/teamem-sprint leave
+/teamem-sprint list
+/teamem-sprint history <slug-or-id> [--limit N]
+/teamem-sprint archive <slug-or-id>
+/teamem-sprint reopen <slug-or-id>
+```
+
+Direct `/teamem-discuss <principal> -- <message>` messages reach the named
+teammate regardless of their current Sprint. The `*` marker in
+`/teamem-discuss * -- <message>` broadcasts to the current Sprint in Sprint mode
+and to the Space in Space mode. The `**` marker in
+`/teamem-discuss ** -- <message>` is an explicit Space-wide escalation,
+including teammates currently working in Sprints.
+
+`teamem.get_updates`, `/teamem-status`, and SessionStart briefings follow the
+same boundary. In Space mode they show Space-mode updates, direct-to-me
+messages, and explicit Space-wide messages; Space mode is not an all-Sprints
+feed. In Sprint mode they show the current Sprint, direct-to-me messages, and
+explicit Space-wide messages; ordinary other-Sprint and ordinary Space-mode
+activity is left out of the live/current surface.
 
 ## Experimental Channels
 

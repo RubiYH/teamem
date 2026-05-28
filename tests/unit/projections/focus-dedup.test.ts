@@ -39,6 +39,7 @@ function buildFocusEvent(opts: {
   principal: string;
   paths: string[];
   timestamp: string;
+  sprint_id?: string | null;
   bypass_dedup?: boolean;
   intent?: string;
 }): TeamemEvent {
@@ -53,6 +54,8 @@ function buildFocusEvent(opts: {
     actor: opts.principal,
     delegation: `${opts.principal}->agent`,
     event_type: 'agent_focus_changed',
+    sprint_id: opts.sprint_id ?? null,
+    delivery_scope: opts.sprint_id ? 'sprint' : 'space',
     scope: { paths: canonical },
     payload: {
       focus_id: opts.focus_id,
@@ -143,6 +146,47 @@ describe('agent_focus_changed projection — same-scope collapse', () => {
     );
 
     expect(focusCount(db)).toBe(2);
+  });
+
+  it('same principal and scope can appear once per Sprint context', () => {
+    const db = buildDb();
+    seedSpace(db);
+
+    applyProjectionUpdate(
+      db,
+      buildFocusEvent({
+        event_id: 'e-space',
+        focus_id: 'f-space',
+        principal: 'alice',
+        paths: ['src/context.ts'],
+        timestamp: '2026-05-03T10:00:00.000Z',
+        sprint_id: null
+      })
+    );
+    applyProjectionUpdate(
+      db,
+      buildFocusEvent({
+        event_id: 'e-sprint-1',
+        focus_id: 'f-sprint-1',
+        principal: 'alice',
+        paths: ['src/context.ts'],
+        timestamp: '2026-05-03T10:00:10.000Z',
+        sprint_id: 'sprint-1'
+      })
+    );
+    applyProjectionUpdate(
+      db,
+      buildFocusEvent({
+        event_id: 'e-sprint-2',
+        focus_id: 'f-sprint-2',
+        principal: 'alice',
+        paths: ['src/context.ts'],
+        timestamp: '2026-05-03T10:00:20.000Z',
+        sprint_id: 'sprint-2'
+      })
+    );
+
+    expect(focusCount(db)).toBe(3);
   });
 });
 
@@ -297,12 +341,63 @@ describe('loadRecentFocus — dedup-by-scope-hash on read side', () => {
       })
     );
 
-    const recent = loadRecentFocus(db, 'sp-test', 10);
+    const recent = loadRecentFocus(db, 'sp-test', null, 10);
     // Alice: f2 wins over f1 (most-recent same scope_hash). Bob: f3.
     const byPrincipal = new Map(recent.map((r) => [r.principal, r.focus_id]));
     expect(byPrincipal.get('alice')).toBe('f2');
     expect(byPrincipal.get('bob')).toBe('f3');
     expect(recent.length).toBe(2);
+  });
+
+  it('filters to the current Sprint context', () => {
+    const db = buildDb();
+    seedSpace(db);
+
+    applyProjectionUpdate(
+      db,
+      buildFocusEvent({
+        event_id: 'e-space',
+        focus_id: 'f-space',
+        principal: 'dana',
+        paths: ['src/space.ts'],
+        timestamp: '2026-05-03T10:00:00.000Z',
+        sprint_id: null,
+        intent: 'Space-mode progress'
+      })
+    );
+    applyProjectionUpdate(
+      db,
+      buildFocusEvent({
+        event_id: 'e-current',
+        focus_id: 'f-current',
+        principal: 'alice',
+        paths: ['src/current.ts'],
+        timestamp: '2026-05-03T10:00:10.000Z',
+        sprint_id: 'sprint-current',
+        intent: 'current Sprint progress'
+      })
+    );
+    applyProjectionUpdate(
+      db,
+      buildFocusEvent({
+        event_id: 'e-other',
+        focus_id: 'f-other',
+        principal: 'carol',
+        paths: ['src/other.ts'],
+        timestamp: '2026-05-03T10:00:20.000Z',
+        sprint_id: 'sprint-other',
+        intent: 'other Sprint progress'
+      })
+    );
+
+    expect(
+      loadRecentFocus(db, 'sp-test', 'sprint-current', 10).map(
+        (row) => row.focus_id
+      )
+    ).toEqual(['f-current']);
+    expect(
+      loadRecentFocus(db, 'sp-test', null, 10).map((row) => row.focus_id)
+    ).toEqual(['f-space']);
   });
 });
 
