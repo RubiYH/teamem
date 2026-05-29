@@ -35,8 +35,13 @@ export type GitHookPrompter = (context: GitHookPromptContext) => boolean;
 export type GitHookPromptEnvironment = RuntimePromptEnvironment;
 
 export interface GitHookInstaller {
-  install(options: { readonly scope: PluginScope }): GitHookInstallResult;
+  install(options: GitHookInstallOptions): GitHookInstallResult;
   uninstall(): GitHookInstallResult;
+}
+
+export interface GitHookInstallOptions {
+  readonly scope: PluginScope;
+  readonly pluginRoot?: string;
 }
 
 export interface GitHookInstallerEnvironment {
@@ -100,12 +105,17 @@ export function createGitHookInstaller(
   const fileSystem = environment.fileSystem ?? createNodeGitHookFileSystem();
 
   return {
-    install(options: { readonly scope: PluginScope }): GitHookInstallResult {
-      const pluginRoot = resolveInstalledPluginRoot({
-        commandRunner,
-        fileSystem,
-        scope: options.scope
-      });
+    install(options: GitHookInstallOptions): GitHookInstallResult {
+      const pluginRoot = options.pluginRoot
+        ? resolveProvidedPluginRoot({
+            fileSystem,
+            pluginRoot: options.pluginRoot
+          })
+        : resolveInstalledPluginRoot({
+            commandRunner,
+            fileSystem,
+            scope: options.scope
+          });
       if (!pluginRoot.ok) {
         return pluginRoot;
       }
@@ -183,6 +193,29 @@ export function createGitHookInstaller(
         message: `Removed Teamem git hooks from ${hooksDir.path}.`
       };
     }
+  };
+}
+
+function resolveProvidedPluginRoot(options: {
+  readonly fileSystem: Pick<GitHookFileSystem, 'exists'>;
+  readonly pluginRoot: string;
+}):
+  | { readonly ok: true; readonly pluginRoot: string }
+  | { readonly ok: false; readonly exitCode: 1; readonly message: string } {
+  for (const hookName of HOOK_NAMES) {
+    const templatePath = join(options.pluginRoot, 'git-hooks', hookName);
+    if (!options.fileSystem.exists(templatePath)) {
+      return {
+        ok: false,
+        exitCode: 1,
+        message: `Teamem git hook template ${join('git-hooks', hookName)} is missing at ${options.pluginRoot}. Run bun run build:plugin from the selected Teamem source checkout.`
+      };
+    }
+  }
+
+  return {
+    ok: true,
+    pluginRoot: options.pluginRoot
   };
 }
 

@@ -1,0 +1,4 @@
+interface:
+  display_name: "RDD"
+  short_description: "Run a review-driven development loop"
+  default_prompt: "Use $rdd to work through issues with executor, reviewer, and debugger passes."

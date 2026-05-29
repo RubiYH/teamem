@@ -124,6 +124,10 @@ function bail(msg: string): never {
   process.exit(1);
 }
 
+function credentialsOutputPath(credPath?: string): string {
+  return credPath ?? defaultCredentialsPath();
+}
+
 // F5: `enforceBridgeDir` was removed. The pre-v1 standalone hook installer
 // (`bun run hook-install`) is gone (slice #2); the plugin owns the hook
 // lifecycle now. A fresh marketplace install has no source-tree path to
@@ -212,7 +216,9 @@ async function runNonInteractive(opts: NonInteractiveArgs) {
     process.stdout.write(
       `Your room code: ${data.room_code}\n${AC24_WARNING}\n`
     );
-    process.stdout.write(`Space created. Credentials saved.\n`);
+    process.stdout.write(
+      `Space created. Credentials saved to ${credentialsOutputPath(opts.credPath)}.\n`
+    );
     // F5: no bridge_dir gate. The plugin owns the hook lifecycle in v1; a
     // fresh marketplace install has no source-tree path to resolve and that
     // is the supported shape (ADR-0003, ADR-0006).
@@ -285,7 +291,9 @@ async function runNonInteractive(opts: NonInteractiveArgs) {
 
     await appendEntry(entry, opts.credPath, { makeDefault: true });
     process.stdout.write(`Joined space ${data.space_id}\n`);
-    process.stdout.write('Credentials saved.\n');
+    process.stdout.write(
+      `Credentials saved to ${credentialsOutputPath(opts.credPath)}.\n`
+    );
     // F5: no bridge_dir gate. The plugin owns the hook lifecycle in v1; a
     // fresh marketplace install has no source-tree path to resolve and that
     // is the supported shape (ADR-0003, ADR-0006).
@@ -398,7 +406,7 @@ async function runInteractive() {
     await applyCoordPref(baseUrl, data.jwt, coordPref);
     printRoomCode(data.room_code);
     outro(
-      `Space created (coord pref: ${coordPref}). Credentials saved to ~/.teamem/credentials.json`
+      `Space created (coord pref: ${coordPref}). Credentials saved to ${credentialsOutputPath()}`
     );
     // F5: no bridge_dir gate. See note above.
   } else {
@@ -472,7 +480,7 @@ async function runInteractive() {
     const coordPref = await promptCoordPref();
     await applyCoordPref(baseUrl, data.jwt, coordPref);
     outro(
-      `Credentials saved to ~/.teamem/credentials.json (coord pref: ${coordPref})`
+      `Credentials saved to ${credentialsOutputPath()} (coord pref: ${coordPref})`
     );
     // F5: no bridge_dir gate. See note above.
   }

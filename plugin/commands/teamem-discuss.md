@@ -14,15 +14,35 @@ Fail closed on malformed input:
 - If the topic after `--` is empty or whitespace-only, stop and ask for a non-empty message body.
 
 Recipient mapping:
-- If the recipient token is `*`, send `recipient_principal: null`. In Sprint mode this broadcasts to the current Sprint; in Space mode it remains Space-wide.
+- If the recipient token is `*`, this is a broadcast. Omit `recipient_principal` from the tool input. In Sprint mode this broadcasts to the current Sprint; in Space mode it remains Space-wide.
 - If the recipient token is `**`, send `recipient_principal: "**"` for explicit Space-wide escalation.
-- Otherwise treat the token as the exact `recipient_principal`.
+- Never pass `"null"` as a string. `"null"` is a literal teammate name, not broadcast routing.
+- Otherwise treat the token as the exact direct `recipient_principal`.
 
-Call `mcp__teamem__post_message` exactly once with:
+For broadcasts, call the matching form exactly once.
+
+For `*` broadcasts, call `mcp__teamem__post_message` with:
 
 ```json
 {
-  "recipient_principal": "<principal, null, or **>",
+  "body": "<trimmed topic>"
+}
+```
+
+For `**` Space-wide escalation broadcasts, call `mcp__teamem__post_message` with:
+
+```json
+{
+  "recipient_principal": "**",
+  "body": "<trimmed topic>"
+}
+```
+
+For direct sends, call `mcp__teamem__post_message` exactly once with:
+
+```json
+{
+  "recipient_principal": "<exact principal>",
   "body": "<trimmed topic>"
 }
 ```

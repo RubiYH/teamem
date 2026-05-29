@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os';
 import { delimiter, join, resolve } from 'node:path';
 
 import { parseCliArgs, renderHelp, runCli } from '../src/cli.js';
+import type { CliEnvironment } from '../src/cli.js';
 import type {
   GitHookInstaller,
   GitHookInstallResult,
@@ -20,14 +21,24 @@ import type {
   CommandProbeResult,
   CommandRunner
 } from '../src/prerequisites.js';
+import type { DevProfileFileSystem } from '../src/dev-profiles.js';
+import type { DevSourceFileSystem } from '../src/dev-source.js';
 import type { BootstrapperFileSystem } from '../src/plugin-installer.js';
 import type {
   ScopePrompter,
   ClaudeLaunchProcessRunner,
+  DevClaudeProcessRunner,
   ClaudeLauncherFileSystem,
   LocalStateFileSystem,
   SetupCommandRunner,
-  SetupInvocation
+  SetupInvocation,
+  DevSetupRunner,
+  DevBundleFreshnessChecker,
+  DevBundleFreshnessReport,
+  DevCredentialsReader,
+  DevPluginBuilder,
+  DevServerHealthChecker,
+  DevProfileActiveSessionDetector
 } from '../src/index.js';
 
 const PACKAGE_ROOT = resolve(import.meta.dir, '..');
@@ -273,6 +284,20 @@ describe('parseCliArgs', () => {
       error:
         'Choose only one git hook mode: --install-git-hooks or --skip-git-hooks'
     });
+    expect(
+      parseCliArgs([
+        'dev',
+        'claude',
+        '--profile',
+        'alice',
+        '--install-git-hooks',
+        '--skip-git-hooks'
+      ])
+    ).toEqual({
+      ok: false,
+      error:
+        'Choose only one git hook mode: --install-git-hooks or --skip-git-hooks'
+    });
   });
 
   it('parses and rejects init Claude launcher install modes', () => {
@@ -300,6 +325,158 @@ describe('parseCliArgs', () => {
       ok: false,
       error:
         'Choose only one Claude launcher mode: --install-claude-launcher or --skip-claude-launcher'
+    });
+  });
+
+  it('parses Teamem dev command namespace and profile flags', () => {
+    expect(parseCliArgs(['dev', 'claude', '--profile', 'alice'])).toEqual({
+      ok: true,
+      value: {
+        command: 'dev',
+        dryRun: false,
+        help: false,
+        scope: undefined,
+        gitHooks: undefined,
+        claudeLauncher: undefined,
+        cc: undefined,
+        claude: undefined,
+        dev: {
+          subcommand: 'claude',
+          profile: 'alice',
+          teamemRoot: undefined,
+          cwd: undefined,
+          buildPlugin: false,
+          claudeArgs: []
+        },
+        uninstall: undefined,
+        setup: {
+          flow: undefined,
+          serverUrl: undefined,
+          memberName: undefined,
+          spaceLabel: undefined,
+          roomCode: undefined
+        }
+      }
+    });
+    expect(parseCliArgs(['dev', 'status'])).toMatchObject({
+      ok: true,
+      value: {
+        command: 'dev',
+        dev: {
+          subcommand: 'status',
+          profile: undefined
+        }
+      }
+    });
+    expect(parseCliArgs(['dev', 'delete', '--profile', 'bob_2'])).toMatchObject(
+      {
+        ok: true,
+        value: {
+          command: 'dev',
+          dev: {
+            subcommand: 'delete',
+            profile: 'bob_2'
+          }
+        }
+      }
+    );
+    expect(
+      parseCliArgs(['dev', 'delete', '--profile', 'bob_2', '--yes', '--force'])
+    ).toMatchObject({
+      ok: true,
+      value: {
+        dev: {
+          subcommand: 'delete',
+          profile: 'bob_2',
+          yes: true,
+          force: true
+        }
+      }
+    });
+    expect(
+      parseCliArgs([
+        'dev',
+        'claude',
+        '--profile',
+        'alice',
+        '--build-plugin',
+        '--',
+        '--model',
+        'opus',
+        '--name',
+        'kept'
+      ])
+    ).toMatchObject({
+      ok: true,
+      value: {
+        dev: {
+          subcommand: 'claude',
+          profile: 'alice',
+          buildPlugin: true,
+          claudeArgs: ['--model', 'opus', '--name', 'kept']
+        }
+      }
+    });
+  });
+
+  it('parses Teamem dev source root and launch cwd flags', () => {
+    expect(
+      parseCliArgs([
+        'dev',
+        'claude',
+        '--profile',
+        'alice',
+        '--teamem-root',
+        '/src/teamem',
+        '--cwd',
+        '/work/project'
+      ])
+    ).toMatchObject({
+      ok: true,
+      value: {
+        command: 'dev',
+        dev: {
+          subcommand: 'claude',
+          profile: 'alice',
+          teamemRoot: '/src/teamem',
+          cwd: '/work/project'
+        }
+      }
+    });
+  });
+
+  it('rejects invalid Teamem dev profile names during parsing', () => {
+    expect(parseCliArgs(['dev', 'claude'])).toMatchObject({
+      ok: true,
+      value: {
+        command: 'dev',
+        dev: {
+          subcommand: 'claude',
+          profile: undefined,
+          teamemRoot: undefined,
+          cwd: undefined,
+          buildPlugin: false
+        }
+      }
+    });
+    expect(parseCliArgs(['dev', 'claude', '--profile', '../alice'])).toEqual({
+      ok: false,
+      error:
+        'Invalid value for --profile. Use a lowercase slug with letters, numbers, hyphens, or underscores, up to 64 characters.'
+    });
+    expect(parseCliArgs(['dev', 'repair'])).toEqual({
+      ok: false,
+      error:
+        'Unknown teamem dev subcommand: repair. Expected one of: claude, status, delete'
+    });
+    expect(parseCliArgs(['dev', 'reset'])).toEqual({
+      ok: false,
+      error:
+        'Unknown teamem dev subcommand: reset. Expected one of: claude, status, delete'
+    });
+    expect(parseCliArgs(['dev', 'claude', '--yes'])).toEqual({
+      ok: false,
+      error: 'Unknown option for dev claude: --yes'
     });
   });
 });
@@ -349,6 +526,1773 @@ describe('runCli', () => {
     expect(help).toContain('claude uninstall');
     expect(help).toContain('Teamem-aware Claude launcher');
     expect(help).toContain('opt-in `claude` shim');
+  });
+
+  it('lists dev profiles when status has no profile', () => {
+    const writes: string[] = [];
+    const exitCode = runCli(
+      ['dev', 'status'],
+      {
+        stdout: {
+          write(text: string) {
+            writes.push(text);
+          }
+        },
+        stderr: { write() {} }
+      },
+      createDevCliEnvironment({
+        devProfileFileSystem: createDevProfileFileSystem({
+          directories: [
+            '/tmp/home/.teamem/dev-profiles/alice',
+            '/tmp/home/.teamem/dev-profiles/bob_2'
+          ]
+        }),
+        homeDir: '/tmp/home'
+      })
+    );
+
+    expect(exitCode).toBe(0);
+    expect(writes.join('')).toContain('Teamem dev profiles');
+    expect(writes.join('')).toContain('alice');
+    expect(writes.join('')).toContain('bob_2');
+  });
+
+  it('reports profile-owned paths for status with a profile', () => {
+    const writes: string[] = [];
+    const fileSystem = createDevProfileFileSystem({
+      directories: ['/tmp/home/.teamem/dev-profiles/alice'],
+      files: [
+        '/tmp/home/.teamem/dev-profiles/alice/credentials.json',
+        '/tmp/home/.teamem/dev-profiles/alice/mcp.json'
+      ]
+    });
+    const exitCode = runCli(
+      ['dev', 'status', '--profile', 'alice'],
+      {
+        stdout: {
+          write(text: string) {
+            writes.push(text);
+          }
+        },
+        stderr: { write() {} }
+      },
+      createDevCliEnvironment({
+        devProfileFileSystem: fileSystem,
+        homeDir: '/tmp/home'
+      })
+    );
+
+    expect(exitCode).toBe(0);
+    expect(writes.join('')).toContain('Profile: alice');
+    expect(writes.join('')).toContain(
+      'Profile path: /tmp/home/.teamem/dev-profiles/alice'
+    );
+    expect(writes.join('')).toContain(
+      'Claude config root: /tmp/home/.teamem/dev-profiles/alice/claude'
+    );
+    expect(writes.join('')).toContain(
+      'Plugin cache root: /tmp/home/.teamem/dev-profiles/alice/claude/plugins'
+    );
+    expect(writes.join('')).toContain(
+      'Plugin data root: /tmp/home/.teamem/dev-profiles/alice/plugin-data/teamem'
+    );
+    expect(writes.join('')).toContain(
+      'Teamem credentials path: /tmp/home/.teamem/dev-profiles/alice/credentials.json'
+    );
+    expect(writes.join('')).toContain(
+      'Generated MCP config: /tmp/home/.teamem/dev-profiles/alice/mcp.json'
+    );
+    expect(writes.join('')).toContain('Generated MCP config status: present');
+    expect(writes.join('')).toContain(
+      'MCP isolation mode: strict profile MCP config (--strict-mcp-config)'
+    );
+    expect(writes.join('')).toContain('Channel source: server:teamem-channel');
+    expect(writes.join('')).toContain('Marketplace plugin ignored: yes');
+    expect(writes.join('')).toContain('Source checkout: /src/teamem');
+    expect(writes.join('')).toContain('Launch cwd: /src/teamem');
+    expect(writes.join('')).toContain(
+      'Logs: /tmp/home/.teamem/dev-profiles/alice/logs'
+    );
+  });
+
+  it('fails status for a missing requested profile without creating state', () => {
+    const stderr: string[] = [];
+    const fileSystem = createDevProfileFileSystem({
+      directories: ['/tmp/home/.teamem/dev-profiles/alice']
+    });
+    const exitCode = runCli(
+      ['dev', 'status', '--profile', 'missing'],
+      {
+        stdout: { write() {} },
+        stderr: {
+          write(text: string) {
+            stderr.push(text);
+          }
+        }
+      },
+      createDevCliEnvironment({
+        devProfileFileSystem: fileSystem,
+        homeDir: '/tmp/home'
+      })
+    );
+
+    expect(exitCode).toBe(1);
+    expect(fileSystem.mkdirCalls).toEqual([]);
+    expect(fileSystem.writeFileCalls).toEqual([]);
+    expect(fileSystem.directories).not.toContain(
+      '/tmp/home/.teamem/dev-profiles/missing'
+    );
+    expect(stderr.join('')).toContain('Dev profile does not exist: missing');
+    expect(stderr.join('')).toContain(
+      'Create the profile with `teamem dev claude --profile missing`'
+    );
+  });
+
+  it('reports profile status preflight summaries when source checkout resolves', () => {
+    const writes: string[] = [];
+    const dirtyStatus = ' M src/bridge/index.ts\n?? scratch.txt\n';
+    const bundleChecker = createDevBundleFreshnessCheckerStub();
+    const healthChecker = createDevServerHealthCheckerStub(true);
+    const fileSystem = createDevProfileFileSystem({
+      directories: ['/tmp/home/.teamem/dev-profiles/alice'],
+      files: [
+        '/tmp/home/.teamem/dev-profiles/alice/credentials.json',
+        '/tmp/home/.teamem/dev-profiles/alice/mcp.json'
+      ]
+    });
+    const exitCode = runCli(
+      ['dev', 'status', '--profile', 'alice'],
+      {
+        stdout: {
+          write(text: string) {
+            writes.push(text);
+          }
+        },
+        stderr: { write() {} }
+      },
+      createDevCliEnvironment({
+        commandRunner: createDevSourceCommandRunner({
+          sourceRoot: '/src/teamem',
+          dirtyStatus
+        }),
+        devProfileFileSystem: fileSystem,
+        devBundleFreshnessChecker: bundleChecker,
+        devServerHealthChecker: healthChecker,
+        homeDir: '/tmp/home'
+      })
+    );
+
+    expect(exitCode).toBe(0);
+    expect(writes.join('')).toContain('Profile: alice');
+    expect(writes.join('')).toContain('Source checkout: /src/teamem');
+    expect(writes.join('')).toContain('Source checkout has 2 dirty path(s)');
+    expect(writes.join('')).toContain('Plugin bundle freshness');
+    expect(writes.join('')).toContain(
+      'Server health: reachable (https://teamem.example/health)'
+    );
+    expect(bundleChecker.checks).toEqual(['/src/teamem']);
+    expect(healthChecker.checkedUrls).toEqual([
+      'https://teamem.example/health'
+    ]);
+  });
+
+  it('keeps dev status read-only for existing profiles', () => {
+    const fileSystem = createDevProfileFileSystem({
+      directories: ['/tmp/home/.teamem/dev-profiles/alice'],
+      files: [
+        '/tmp/home/.teamem/dev-profiles/alice/credentials.json',
+        '/tmp/home/.teamem/dev-profiles/alice/mcp.json'
+      ]
+    });
+    const setupRunner = createDevSetupRunnerStub();
+    const launcher = createDevClaudeLaunchRecorder();
+
+    const exitCode = runCli(
+      ['dev', 'status', '--profile', 'alice'],
+      { stdout: { write() {} }, stderr: { write() {} } },
+      createDevCliEnvironment({
+        devProfileFileSystem: fileSystem,
+        devSetupRunner: setupRunner,
+        devClaudeProcessRunner: launcher,
+        homeDir: '/tmp/home'
+      })
+    );
+
+    expect(exitCode).toBe(0);
+    expect(fileSystem.mkdirCalls).toEqual([]);
+    expect(fileSystem.writeFileCalls).toEqual([]);
+    expect(setupRunner.invocations).toEqual([]);
+    expect(launcher.invocations).toEqual([]);
+  });
+
+  it('reports partial dev profile status without mutating state', () => {
+    const writes: string[] = [];
+    const fileSystem = createDevProfileFileSystem({
+      directories: ['/tmp/home/.teamem/dev-profiles/alice']
+    });
+    const bundleChecker = createDevBundleFreshnessCheckerStub();
+    const healthChecker = createDevServerHealthCheckerStub(true);
+
+    const exitCode = runCli(
+      [
+        'dev',
+        'status',
+        '--profile',
+        'alice',
+        '--teamem-root',
+        '/missing/teamem'
+      ],
+      {
+        stdout: {
+          write(text: string) {
+            writes.push(text);
+          }
+        },
+        stderr: { write() {} }
+      },
+      createDevCliEnvironment({
+        devProfileFileSystem: fileSystem,
+        devSourceFileSystem: createDevSourceFileSystem({
+          roots: [],
+          executableFiles: ['/opt/claude/bin/claude']
+        }),
+        devCredentialsReader: createDevCredentialsReaderStub(null),
+        devBundleFreshnessChecker: bundleChecker,
+        devServerHealthChecker: healthChecker,
+        homeDir: '/tmp/home'
+      })
+    );
+
+    expect(exitCode).toBe(0);
+    expect(fileSystem.mkdirCalls).toEqual([]);
+    expect(fileSystem.writeFileCalls).toEqual([]);
+    expect(bundleChecker.checks).toEqual([]);
+    expect(healthChecker.checkedUrls).toEqual([]);
+    expect(writes.join('')).toContain(
+      'Teamem credentials status: missing or unusable'
+    );
+    expect(writes.join('')).toContain('Generated MCP config status: missing');
+    expect(writes.join('')).toContain('Source checkout: missing');
+    expect(writes.join('')).toContain(
+      'Explicit --teamem-root is not a Teamem source checkout'
+    );
+    expect(writes.join('')).toContain(
+      'Server health: not checked (Profile credentials are missing'
+    );
+  });
+
+  it('requires --profile for non-interactive dev claude', () => {
+    const stderr: string[] = [];
+    const exitCode = runCli(
+      ['dev', 'claude'],
+      {
+        stdout: { write() {} },
+        stderr: {
+          write(text: string) {
+            stderr.push(text);
+          }
+        }
+      },
+      createDevCliEnvironment({
+        homeDir: '/tmp/home',
+        promptEnvironment: {
+          isInteractive: () => false,
+          prompt: () => {
+            throw new Error('should not prompt');
+          }
+        }
+      })
+    );
+
+    expect(exitCode).toBe(1);
+    expect(stderr.join('')).toContain(
+      'Non-interactive `teamem dev claude` requires --profile.'
+    );
+  });
+
+  it('reports missing source checkout before non-interactive dev claude profile requirements', () => {
+    const writes: string[] = [];
+    const stderr: string[] = [];
+    const fileSystem = createDevProfileFileSystem();
+    const exitCode = runCli(
+      ['dev', 'claude', '--dry-run'],
+      {
+        stdout: {
+          write(text: string) {
+            writes.push(text);
+          }
+        },
+        stderr: {
+          write(text: string) {
+            stderr.push(text);
+          }
+        }
+      },
+      createDevCliEnvironment({
+        cwd: '/work/consumer',
+        devSourceFileSystem: createDevSourceFileSystem({
+          roots: [],
+          executableFiles: ['/opt/claude/bin/claude']
+        }),
+        devProfileFileSystem: fileSystem,
+        homeDir: '/tmp/home',
+        promptEnvironment: {
+          isInteractive: () => false
+        }
+      })
+    );
+
+    expect(exitCode).toBe(1);
+    expect(fileSystem.mkdirCalls).toEqual([]);
+    expect(writes.join('')).toContain('source-checkout-required');
+    expect(writes.join('')).toContain('No Teamem source checkout');
+    expect(stderr.join('')).not.toContain('requires --profile');
+  });
+
+  it('creates a named dev profile skeleton for non-interactive dev claude', () => {
+    const writes: string[] = [];
+    const fileSystem = createDevProfileFileSystem();
+    const devSetupRunner = createDevSetupRunnerStub();
+    const gitHookInstaller = createGitHookInstallerStub();
+    const gitHookPrompter: GitHookPrompter = () => true;
+    const exitCode = runCli(
+      ['dev', 'claude', '--profile', 'alice', '--teamem-root', '/src/teamem'],
+      {
+        stdout: {
+          write(text: string) {
+            writes.push(text);
+          }
+        },
+        stderr: { write() {} }
+      },
+      createDevCliEnvironment({
+        devProfileFileSystem: fileSystem,
+        devSetupRunner,
+        gitHookInstaller,
+        gitHookPrompter,
+        cwd: '/work/project',
+        homeDir: '/tmp/home',
+        now: () => new Date('2026-05-29T00:00:00.000Z'),
+        promptEnvironment: {
+          isInteractive: () => false
+        }
+      })
+    );
+
+    expect(exitCode).toBe(0);
+    expect(devSetupRunner.invocations).toHaveLength(1);
+    expect(devSetupRunner.invocations[0]?.profile.credentialsPath).toBe(
+      '/tmp/home/.teamem/dev-profiles/alice/credentials.json'
+    );
+    expect(fileSystem.directories).toContain(
+      '/tmp/home/.teamem/dev-profiles/alice'
+    );
+    const generatedMcp = fileSystem.files.get(
+      '/tmp/home/.teamem/dev-profiles/alice/mcp.json'
+    );
+    expect(generatedMcp).toContain('/src/teamem/plugin/lib/bridge.js');
+    expect(generatedMcp).toContain('/src/teamem/plugin/lib/channel.js');
+    expect(generatedMcp).toContain(
+      '"TEAMEM_CREDENTIALS": "/tmp/home/.teamem/dev-profiles/alice/credentials.json"'
+    );
+    expect(generatedMcp).toContain(
+      '"CLAUDE_PLUGIN_DATA": "/tmp/home/.teamem/dev-profiles/alice/plugin-data/teamem"'
+    );
+    expect(generatedMcp).toContain('"CLAUDE_PLUGIN_ROOT": "/src/teamem/plugin"');
+    expect(generatedMcp).not.toContain('${CLAUDE_PLUGIN_ROOT}');
+    expect(generatedMcp).not.toContain('/cache/teamem');
+    expect(gitHookInstaller.invocations).toEqual([
+      { scope: 'local', pluginRoot: '/src/teamem/plugin' }
+    ]);
+    expect(writes.join('')).toContain('Profile skeleton created.');
+    expect(writes.join('')).toContain('Profile-scoped Teamem setup completed.');
+    expect(writes.join('')).toContain(
+      'Generated profile MCP config: /tmp/home/.teamem/dev-profiles/alice/mcp.json'
+    );
+    expect(writes.join('')).toContain('Installed Teamem git hooks');
+    expect(writes.join('')).toContain('Source checkout: /src/teamem');
+  });
+
+  it('forces git hook install after first-launch dev claude setup', () => {
+    const gitHookInstaller = createGitHookInstallerStub();
+    const gitHookPrompter: GitHookPrompter = () => false;
+    const exitCode = runCli(
+      [
+        'dev',
+        'claude',
+        '--profile',
+        'alice',
+        '--teamem-root',
+        '/src/teamem',
+        '--install-git-hooks'
+      ],
+      {
+        stdout: { write() {} },
+        stderr: { write() {} }
+      },
+      createDevCliEnvironment({
+        gitHookInstaller,
+        gitHookPrompter,
+        cwd: '/work/project',
+        homeDir: '/tmp/home',
+        promptEnvironment: {
+          isInteractive: () => false
+        }
+      })
+    );
+
+    expect(exitCode).toBe(0);
+    expect(gitHookInstaller.invocations).toEqual([
+      { scope: 'local', pluginRoot: '/src/teamem/plugin' }
+    ]);
+  });
+
+  it('forces git hook skip after first-launch dev claude setup', () => {
+    const writes: string[] = [];
+    const gitHookInstaller = createGitHookInstallerStub();
+    const gitHookPrompter: GitHookPrompter = () => true;
+    const exitCode = runCli(
+      ['dev', 'claude', '--profile', 'alice', '--skip-git-hooks'],
+      {
+        stdout: {
+          write(text: string) {
+            writes.push(text);
+          }
+        },
+        stderr: { write() {} }
+      },
+      createDevCliEnvironment({
+        gitHookInstaller,
+        gitHookPrompter,
+        homeDir: '/tmp/home',
+        promptEnvironment: {
+          isInteractive: () => false
+        }
+      })
+    );
+
+    expect(exitCode).toBe(0);
+    expect(gitHookInstaller.invocations).toEqual([]);
+    expect(writes.join('')).toContain('Git hooks skipped by --skip-git-hooks.');
+  });
+
+  it('runs first-launch dev claude git hook setup before server health can fail', () => {
+    const events: string[] = [];
+    const gitHookInstaller = createGitHookInstallerStub();
+    const healthChecker = createDevServerHealthCheckerStub(false);
+    const devSetupRunner = createDevSetupRunnerStub();
+    const exitCode = runCli(
+      ['dev', 'claude', '--profile', 'alice'],
+      {
+        stdout: { write() {} },
+        stderr: { write() {} }
+      },
+      createDevCliEnvironment({
+        devSetupRunner: {
+          run(invocation) {
+            events.push('setup');
+            return devSetupRunner.run(invocation);
+          }
+        },
+        gitHookInstaller: {
+          install(invocation) {
+            events.push('git-hooks');
+            return gitHookInstaller.install(invocation);
+          },
+          uninstall() {
+            return gitHookInstaller.uninstall();
+          }
+        },
+        gitHookPrompter() {
+          events.push('prompt');
+          return true;
+        },
+        devServerHealthChecker: {
+          check(url) {
+            events.push('health');
+            return healthChecker.check(url);
+          }
+        },
+        homeDir: '/tmp/home',
+        promptEnvironment: {
+          isInteractive: () => false
+        }
+      })
+    );
+
+    expect(exitCode).toBe(1);
+    expect(events).toEqual(['setup', 'prompt', 'git-hooks', 'health']);
+    expect(gitHookInstaller.invocations).toEqual([
+      { scope: 'local', pluginRoot: '/src/teamem/plugin' }
+    ]);
+  });
+
+  it('skips profile setup when selected dev profile credentials already exist', () => {
+    const writes: string[] = [];
+    const fileSystem = createDevProfileFileSystem({
+      directories: ['/tmp/home/.teamem/dev-profiles/alice'],
+      files: ['/tmp/home/.teamem/dev-profiles/alice/credentials.json']
+    });
+    const devSetupRunner = createDevSetupRunnerStub();
+    const gitHookInstaller = createGitHookInstallerStub();
+    const exitCode = runCli(
+      ['dev', 'claude', '--profile', 'alice'],
+      {
+        stdout: {
+          write(text: string) {
+            writes.push(text);
+          }
+        },
+        stderr: { write() {} }
+      },
+      createDevCliEnvironment({
+        devProfileFileSystem: fileSystem,
+        devSetupRunner,
+        gitHookInstaller,
+        homeDir: '/tmp/home',
+        promptEnvironment: {
+          isInteractive: () => false
+        }
+      })
+    );
+
+    expect(exitCode).toBe(0);
+    expect(devSetupRunner.invocations).toEqual([]);
+    expect(gitHookInstaller.invocations).toEqual([]);
+    expect(
+      fileSystem.files.get('/tmp/home/.teamem/dev-profiles/alice/mcp.json')
+    ).toContain('/src/teamem/plugin/lib/bridge.js');
+    expect(writes.join('')).toContain(
+      'Profile credentials already exist; setup skipped.'
+    );
+    expect(writes.join('')).toContain('Teamem dev Claude launch');
+    expect(writes.join('')).toContain('Real Claude: /opt/claude/bin/claude');
+  });
+
+  it('stops dev claude before launch planning when profile setup fails', () => {
+    const writes: string[] = [];
+    const stderr: string[] = [];
+    const devSetupRunner = createDevSetupRunnerStub(130);
+    const gitHookInstaller = createGitHookInstallerStub();
+    const gitHookPrompter: GitHookPrompter = () => true;
+    const exitCode = runCli(
+      ['dev', 'claude', '--profile', 'alice'],
+      {
+        stdout: {
+          write(text: string) {
+            writes.push(text);
+          }
+        },
+        stderr: {
+          write(text: string) {
+            stderr.push(text);
+          }
+        }
+      },
+      createDevCliEnvironment({
+        devSetupRunner,
+        gitHookInstaller,
+        gitHookPrompter,
+        homeDir: '/tmp/home',
+        promptEnvironment: {
+          isInteractive: () => false
+        }
+      })
+    );
+
+    expect(exitCode).toBe(130);
+    expect(devSetupRunner.invocations).toHaveLength(1);
+    expect(gitHookInstaller.invocations).toEqual([]);
+    expect(stderr.join('')).toContain(
+      'Profile-scoped Teamem setup exited with code 130.'
+    );
+    expect(writes.join('')).not.toContain('Launch planning is not implemented');
+  });
+
+  it('keeps Teamem source root and Claude launch cwd separate for dev claude', () => {
+    const writes: string[] = [];
+    const exitCode = runCli(
+      [
+        'dev',
+        'claude',
+        '--profile',
+        'alice',
+        '--teamem-root',
+        '/src/teamem',
+        '--cwd',
+        '/work/launch-repo',
+        '--dry-run'
+      ],
+      {
+        stdout: {
+          write(text: string) {
+            writes.push(text);
+          }
+        },
+        stderr: { write() {} }
+      },
+      createDevCliEnvironment({
+        homeDir: '/tmp/home',
+        promptEnvironment: {
+          isInteractive: () => false
+        }
+      })
+    );
+
+    expect(exitCode).toBe(0);
+    expect(writes.join('')).toContain('Source checkout: /src/teamem');
+    expect(writes.join('')).toContain('Plugin source: /src/teamem/plugin');
+    expect(writes.join('')).toContain('Launch cwd: /work/launch-repo');
+  });
+
+  it('fails dev claude without falling back to marketplace when source checkout is missing', () => {
+    const writes: string[] = [];
+    const fileSystem = createDevProfileFileSystem();
+    const exitCode = runCli(
+      ['dev', 'claude', '--profile', 'alice', '--dry-run'],
+      {
+        stdout: {
+          write(text: string) {
+            writes.push(text);
+          }
+        },
+        stderr: { write() {} }
+      },
+      createDevCliEnvironment({
+        cwd: '/work/consumer',
+        devSourceFileSystem: createDevSourceFileSystem({
+          roots: [],
+          executableFiles: ['/opt/claude/bin/claude']
+        }),
+        devProfileFileSystem: fileSystem,
+        homeDir: '/tmp/home',
+        promptEnvironment: {
+          isInteractive: () => false
+        }
+      })
+    );
+
+    expect(exitCode).toBe(1);
+    expect(fileSystem.mkdirCalls).toEqual([]);
+    expect(writes.join('')).toContain('source-checkout-required');
+    expect(writes.join('')).toContain(
+      'did not fall back to marketplace plugin behavior'
+    );
+  });
+
+  it('dry-runs named dev claude profile creation without writing profile state', () => {
+    const writes: string[] = [];
+    const fileSystem = createDevProfileFileSystem();
+    const runner = createDevClaudeLaunchRecorder();
+    const exitCode = runCli(
+      [
+        'dev',
+        'claude',
+        '--profile',
+        'alice',
+        '--dry-run',
+        '--',
+        '--model',
+        'opus'
+      ],
+      {
+        stdout: {
+          write(text: string) {
+            writes.push(text);
+          }
+        },
+        stderr: { write() {} }
+      },
+      createDevCliEnvironment({
+        devProfileFileSystem: fileSystem,
+        devClaudeProcessRunner: runner,
+        homeDir: '/tmp/home',
+        promptEnvironment: {
+          isInteractive: () => false
+        }
+      })
+    );
+
+    expect(exitCode).toBe(0);
+    expect(fileSystem.mkdirCalls).toEqual([]);
+    expect(fileSystem.writeFileCalls).toEqual([]);
+    expect(fileSystem.directories).not.toContain(
+      '/tmp/home/.teamem/dev-profiles/alice'
+    );
+    expect(
+      fileSystem.files.has('/tmp/home/.teamem/dev-profiles/alice/metadata.json')
+    ).toBe(false);
+    expect(writes.join('')).toContain('teamem dev');
+    expect(writes.join('')).toContain(
+      'dry-run: profile skeleton would be created if the command runs without --dry-run.'
+    );
+    expect(writes.join('')).toContain(
+      'dry-run: profile-scoped Teamem setup would run with TEAMEM_CREDENTIALS=/tmp/home/.teamem/dev-profiles/alice/credentials.json.'
+    );
+    expect(writes.join('')).toContain(
+      'dry-run: profile MCP config would be written to /tmp/home/.teamem/dev-profiles/alice/mcp.json from /src/teamem/plugin/.mcp.json.'
+    );
+    expect(writes.join('')).toContain('Teamem dev Claude launch plan');
+    expect(writes.join('')).toContain('Command: /opt/claude/bin/claude');
+    expect(writes.join('')).toContain(
+      '--dangerously-load-development-channels server:teamem-channel'
+    );
+    expect(writes.join('')).toContain('--model opus');
+    expect(writes.join('')).toContain(
+      'Env keys: CLAUDE_CONFIG_DIR, CLAUDE_CODE_PLUGIN_CACHE_DIR, CLAUDE_CODE_MCP_ALLOWLIST_ENV, CLAUDE_PLUGIN_DATA, CLAUDE_PLUGIN_ROOT, TEAMEM_CREDENTIALS, TEAMEM_CLAUDE_LAUNCH_INTENT'
+    );
+    expect(writes.join('')).toContain(
+      'Marketplace plugin ignored: teamem@teamem-alpha is not loaded for dev launch.'
+    );
+    expect(writes.join('')).not.toContain('plugin:teamem@teamem-alpha');
+    expect(runner.invocations).toEqual([]);
+  });
+
+  it('does not run bundle or server probes during dev claude dry-run', () => {
+    const writes: string[] = [];
+    const bundleChecker = createDevBundleFreshnessCheckerStub();
+    const healthChecker = createDevServerHealthCheckerStub(true);
+    const exitCode = runCli(
+      ['dev', 'claude', '--profile', 'alice', '--dry-run'],
+      {
+        stdout: {
+          write(text: string) {
+            writes.push(text);
+          }
+        },
+        stderr: { write() {} }
+      },
+      createDevCliEnvironment({
+        devBundleFreshnessChecker: bundleChecker,
+        devServerHealthChecker: healthChecker,
+        homeDir: '/tmp/home',
+        promptEnvironment: { isInteractive: () => false }
+      })
+    );
+
+    expect(exitCode).toBe(0);
+    expect(bundleChecker.checks).toEqual([]);
+    expect(healthChecker.checkedUrls).toEqual([]);
+    expect(writes.join('')).toContain(
+      'dry-run: plugin bundle freshness would be checked for /src/teamem before launch.'
+    );
+    expect(writes.join('')).toContain(
+      'dry-run: server health would be checked at https://teamem.example/health before launch.'
+    );
+  });
+
+  it('launches dev claude through the real binary with isolated profile env and passthrough args', () => {
+    const runner = createDevClaudeLaunchRecorder();
+    const fileSystem = createDevProfileFileSystem({
+      directories: ['/tmp/home/.teamem/dev-profiles/alice'],
+      files: ['/tmp/home/.teamem/dev-profiles/alice/credentials.json']
+    });
+    const exitCode = runCli(
+      [
+        'dev',
+        'claude',
+        '--profile',
+        'alice',
+        '--cwd',
+        '/work/launch-repo',
+        '--',
+        '--model',
+        'opus',
+        '--name',
+        'kept'
+      ],
+      {
+        stdout: { write() {} },
+        stderr: { write() {} }
+      },
+      createDevCliEnvironment({
+        devProfileFileSystem: fileSystem,
+        devClaudeProcessRunner: runner,
+        homeDir: '/tmp/home',
+        env: {
+          PATH: '/tmp/home/.teamem/bin:/opt/claude/bin',
+          PRESERVED: '1',
+          CLAUDE_PLUGIN_DATA: '/tmp/home/.claude/plugins/data/teamem',
+          CLAUDE_PLUGIN_ROOT: '/tmp/home/.claude/plugins/cache/teamem-alpha',
+          CLAUDE_SESSION_ID: 'stale-session',
+          CLAUDE_PLUGIN_OPTION_DEFAULT_SPACE: 'stale-default',
+          TEAMEM_SPACE: 'stale-space',
+          TEAMEM_SPACE_ID: 'stale-space-id',
+          TEAMEM_DEFAULT_SPACE: 'stale-teamem-default',
+          TEAMEM_CLAUDE_LAUNCH_SPACE: 'stale-launch-space'
+        },
+        promptEnvironment: {
+          isInteractive: () => false
+        }
+      })
+    );
+
+    expect(exitCode).toBe(0);
+    expect(runner.invocations).toHaveLength(1);
+    expect(runner.invocations[0]).toMatchObject({
+      command: '/opt/claude/bin/claude',
+      cwd: '/work/launch-repo'
+    });
+    expect(runner.invocations[0]?.args).toEqual([
+      '--plugin-dir',
+      '/src/teamem/plugin',
+      '--mcp-config',
+      '/tmp/home/.teamem/dev-profiles/alice/mcp.json',
+      '--strict-mcp-config',
+      '--dangerously-load-development-channels',
+      'server:teamem-channel',
+      '--model',
+      'opus',
+      '--name',
+      'kept'
+    ]);
+    expect(runner.invocations[0]?.args).not.toContain(
+      'plugin:teamem@teamem-alpha'
+    );
+    expect(runner.invocations[0]?.args).not.toContain('--setting-sources');
+    expect(runner.invocations[0]?.args).not.toContain('--bare');
+    expect(runner.invocations[0]?.env).toMatchObject({
+      PATH: '/tmp/home/.teamem/bin:/opt/claude/bin',
+      PRESERVED: '1',
+      CLAUDE_CONFIG_DIR: '/tmp/home/.teamem/dev-profiles/alice/claude',
+      CLAUDE_CODE_PLUGIN_CACHE_DIR:
+        '/tmp/home/.teamem/dev-profiles/alice/claude/plugins',
+      CLAUDE_CODE_MCP_ALLOWLIST_ENV: '1',
+      CLAUDE_PLUGIN_DATA:
+        '/tmp/home/.teamem/dev-profiles/alice/plugin-data/teamem',
+      CLAUDE_PLUGIN_ROOT: '/src/teamem/plugin',
+      TEAMEM_CREDENTIALS:
+        '/tmp/home/.teamem/dev-profiles/alice/credentials.json',
+      TEAMEM_CLAUDE_LAUNCH_INTENT: 'activate'
+    });
+    expect(runner.invocations[0]?.env.CLAUDE_SESSION_ID).toBeUndefined();
+    expect(
+      runner.invocations[0]?.env.CLAUDE_PLUGIN_OPTION_DEFAULT_SPACE
+    ).toBeUndefined();
+    expect(runner.invocations[0]?.env.TEAMEM_SPACE).toBeUndefined();
+    expect(runner.invocations[0]?.env.TEAMEM_SPACE_ID).toBeUndefined();
+    expect(runner.invocations[0]?.env.TEAMEM_DEFAULT_SPACE).toBeUndefined();
+    expect(
+      runner.invocations[0]?.env.TEAMEM_CLAUDE_LAUNCH_SPACE
+    ).toBeUndefined();
+    expect(JSON.stringify(runner.invocations[0]?.env)).not.toContain(
+      '/tmp/home/.claude/plugins/data/teamem'
+    );
+    expect(JSON.stringify(runner.invocations[0]?.env)).not.toContain(
+      '/tmp/home/.claude/plugins/cache/teamem-alpha'
+    );
+  });
+
+  it('checks profile server health before launching dev claude', () => {
+    const runner = createDevClaudeLaunchRecorder();
+    const healthChecker = createDevServerHealthCheckerStub(true);
+    const fileSystem = createDevProfileFileSystem({
+      directories: ['/tmp/home/.teamem/dev-profiles/alice'],
+      files: ['/tmp/home/.teamem/dev-profiles/alice/credentials.json']
+    });
+
+    const exitCode = runCli(
+      ['dev', 'claude', '--profile', 'alice'],
+      { stdout: { write() {} }, stderr: { write() {} } },
+      createDevCliEnvironment({
+        devProfileFileSystem: fileSystem,
+        devClaudeProcessRunner: runner,
+        devServerHealthChecker: healthChecker,
+        homeDir: '/tmp/home',
+        promptEnvironment: { isInteractive: () => false }
+      })
+    );
+
+    expect(exitCode).toBe(0);
+    expect(healthChecker.checkedUrls).toEqual([
+      'https://teamem.example/health'
+    ]);
+    expect(runner.invocations).toHaveLength(1);
+  });
+
+  it('blocks dev claude and prints the checked URL when server health is unreachable', () => {
+    const writes: string[] = [];
+    const stderr: string[] = [];
+    const runner = createDevClaudeLaunchRecorder();
+    const healthChecker = createDevServerHealthCheckerStub(false);
+    const fileSystem = createDevProfileFileSystem({
+      directories: ['/tmp/home/.teamem/dev-profiles/alice'],
+      files: ['/tmp/home/.teamem/dev-profiles/alice/credentials.json']
+    });
+
+    const exitCode = runCli(
+      ['dev', 'claude', '--profile', 'alice'],
+      {
+        stdout: {
+          write(text: string) {
+            writes.push(text);
+          }
+        },
+        stderr: {
+          write(text: string) {
+            stderr.push(text);
+          }
+        }
+      },
+      createDevCliEnvironment({
+        devProfileFileSystem: fileSystem,
+        devClaudeProcessRunner: runner,
+        devServerHealthChecker: healthChecker,
+        homeDir: '/tmp/home',
+        promptEnvironment: { isInteractive: () => false }
+      })
+    );
+
+    expect(exitCode).toBe(1);
+    expect(runner.invocations).toEqual([]);
+    expect(writes.join('')).toContain(
+      'Server health: unreachable (https://teamem.example/health)'
+    );
+    expect(stderr.join('')).toContain(
+      'Teamem server is unreachable at https://teamem.example/health'
+    );
+  });
+
+  it('does not auto-start local servers or Docker during dev claude preflight', () => {
+    const commandRunner = createRecordingRunner({
+      'bun --version': ok('1.2.0\n'),
+      'git -C /src/teamem branch --show-current': ok('master\n'),
+      'git -C /src/teamem status --short': ok(''),
+      'git rev-parse --is-inside-work-tree': ok('true\n')
+    });
+
+    const exitCode = runCli(
+      ['dev', 'claude', '--profile', 'alice'],
+      { stdout: { write() {} }, stderr: { write() {} } },
+      createDevCliEnvironment({
+        commandRunner,
+        homeDir: '/tmp/home',
+        promptEnvironment: { isInteractive: () => false }
+      })
+    );
+
+    expect(exitCode).toBe(0);
+    expect(commandRunner.invocations.join('\n')).not.toContain('docker');
+    expect(commandRunner.invocations.join('\n')).not.toContain('server');
+  });
+
+  it('discloses dirty source checkout state in dry-run and launch output without blocking', () => {
+    const dryRunWrites: string[] = [];
+    const launchWrites: string[] = [];
+    const dirtyStatus = ' M src/bridge/index.ts\n?? scratch.txt\n';
+
+    const dryRunExitCode = runCli(
+      ['dev', 'claude', '--profile', 'alice', '--dry-run'],
+      {
+        stdout: {
+          write(text: string) {
+            dryRunWrites.push(text);
+          }
+        },
+        stderr: { write() {} }
+      },
+      createDevCliEnvironment({
+        commandRunner: createDevSourceCommandRunner({
+          sourceRoot: '/src/teamem',
+          dirtyStatus
+        }),
+        homeDir: '/tmp/home',
+        promptEnvironment: { isInteractive: () => false }
+      })
+    );
+
+    const launchExitCode = runCli(
+      ['dev', 'claude', '--profile', 'alice'],
+      {
+        stdout: {
+          write(text: string) {
+            launchWrites.push(text);
+          }
+        },
+        stderr: { write() {} }
+      },
+      createDevCliEnvironment({
+        commandRunner: createDevSourceCommandRunner({
+          sourceRoot: '/src/teamem',
+          dirtyStatus
+        }),
+        homeDir: '/tmp/home',
+        promptEnvironment: { isInteractive: () => false }
+      })
+    );
+
+    expect(dryRunExitCode).toBe(0);
+    expect(launchExitCode).toBe(0);
+    expect(dryRunWrites.join('')).toContain(
+      'Source checkout has 2 dirty path(s)'
+    );
+    expect(launchWrites.join('')).toContain(
+      'Source checkout has 2 dirty path(s)'
+    );
+  });
+
+  it('reports fresh plugin bundles before launching dev claude', () => {
+    const writes: string[] = [];
+    const runner = createDevClaudeLaunchRecorder();
+    const bundleChecker = createDevBundleFreshnessCheckerStub();
+
+    const exitCode = runCli(
+      ['dev', 'claude', '--profile', 'alice'],
+      {
+        stdout: {
+          write(text: string) {
+            writes.push(text);
+          }
+        },
+        stderr: { write() {} }
+      },
+      createDevCliEnvironment({
+        devBundleFreshnessChecker: bundleChecker,
+        devClaudeProcessRunner: runner,
+        homeDir: '/tmp/home',
+        promptEnvironment: { isInteractive: () => false }
+      })
+    );
+
+    expect(exitCode).toBe(0);
+    expect(bundleChecker.checks).toEqual(['/src/teamem']);
+    expect(writes.join('')).toContain(
+      'Bundle freshness passed: committed plugin/lib bundles match source builds byte-for-byte.'
+    );
+    expect(runner.invocations).toHaveLength(1);
+  });
+
+  it('blocks non-interactive dev claude when plugin bundles are stale or missing', () => {
+    const staleRunner = createDevClaudeLaunchRecorder();
+    const missingRunner = createDevClaudeLaunchRecorder();
+    const staleSetupRunner = createDevSetupRunnerStub();
+    const missingSetupRunner = createDevSetupRunnerStub();
+    const staleExitCode = runCli(
+      ['dev', 'claude', '--profile', 'alice'],
+      { stdout: { write() {} }, stderr: { write() {} } },
+      createDevCliEnvironment({
+        devBundleFreshnessChecker: createDevBundleFreshnessCheckerStub([
+          createStaleBundleReport('stale')
+        ]),
+        devSetupRunner: staleSetupRunner,
+        devClaudeProcessRunner: staleRunner,
+        homeDir: '/tmp/home',
+        promptEnvironment: { isInteractive: () => false }
+      })
+    );
+    const missingExitCode = runCli(
+      ['dev', 'claude', '--profile', 'alice'],
+      { stdout: { write() {} }, stderr: { write() {} } },
+      createDevCliEnvironment({
+        devBundleFreshnessChecker: createDevBundleFreshnessCheckerStub([
+          createStaleBundleReport('missing')
+        ]),
+        devSetupRunner: missingSetupRunner,
+        devClaudeProcessRunner: missingRunner,
+        homeDir: '/tmp/home',
+        promptEnvironment: { isInteractive: () => false }
+      })
+    );
+
+    expect(staleExitCode).toBe(1);
+    expect(missingExitCode).toBe(1);
+    expect(staleRunner.invocations).toEqual([]);
+    expect(missingRunner.invocations).toEqual([]);
+    expect(staleSetupRunner.invocations).toEqual([]);
+    expect(missingSetupRunner.invocations).toEqual([]);
+  });
+
+  it('runs build-plugin and rechecks bundles before dev claude launch when requested', () => {
+    const runner = createDevClaudeLaunchRecorder();
+    const builder = createDevPluginBuilderStub();
+    const checker = createDevBundleFreshnessCheckerStub([
+      createStaleBundleReport('stale'),
+      createFreshBundleReport()
+    ]);
+
+    const exitCode = runCli(
+      ['dev', 'claude', '--profile', 'alice', '--build-plugin'],
+      { stdout: { write() {} }, stderr: { write() {} } },
+      createDevCliEnvironment({
+        devBundleFreshnessChecker: checker,
+        devPluginBuilder: builder,
+        devClaudeProcessRunner: runner,
+        homeDir: '/tmp/home',
+        promptEnvironment: { isInteractive: () => false }
+      })
+    );
+
+    expect(exitCode).toBe(0);
+    expect(builder.builds).toEqual(['/src/teamem']);
+    expect(checker.checks).toEqual(['/src/teamem', '/src/teamem']);
+    expect(runner.invocations).toHaveLength(1);
+  });
+
+  it('runs build-plugin and rechecks bundles even when the initial report is fresh', () => {
+    const runner = createDevClaudeLaunchRecorder();
+    const builder = createDevPluginBuilderStub();
+    const checker = createDevBundleFreshnessCheckerStub([
+      createFreshBundleReport(),
+      createFreshBundleReport()
+    ]);
+
+    const exitCode = runCli(
+      ['dev', 'claude', '--profile', 'alice', '--build-plugin'],
+      { stdout: { write() {} }, stderr: { write() {} } },
+      createDevCliEnvironment({
+        devBundleFreshnessChecker: checker,
+        devPluginBuilder: builder,
+        devClaudeProcessRunner: runner,
+        homeDir: '/tmp/home',
+        promptEnvironment: { isInteractive: () => false }
+      })
+    );
+
+    expect(exitCode).toBe(0);
+    expect(builder.builds).toEqual(['/src/teamem']);
+    expect(checker.checks).toEqual(['/src/teamem', '/src/teamem']);
+    expect(runner.invocations).toHaveLength(1);
+  });
+
+  it('offers interactive bundle rebuild and launches only when accepted', () => {
+    const acceptedRunner = createDevClaudeLaunchRecorder();
+    const declinedRunner = createDevClaudeLaunchRecorder();
+    const acceptedBuilder = createDevPluginBuilderStub();
+    const declinedBuilder = createDevPluginBuilderStub();
+
+    const acceptedExitCode = runCli(
+      ['dev', 'claude', '--profile', 'alice'],
+      { stdout: { write() {} }, stderr: { write() {} } },
+      createDevCliEnvironment({
+        devBundleFreshnessChecker: createDevBundleFreshnessCheckerStub([
+          createStaleBundleReport('stale'),
+          createFreshBundleReport()
+        ]),
+        devPluginBuilder: acceptedBuilder,
+        devClaudeProcessRunner: acceptedRunner,
+        homeDir: '/tmp/home',
+        promptEnvironment: { isInteractive: () => true, prompt: () => 'yes' }
+      })
+    );
+    const declinedExitCode = runCli(
+      ['dev', 'claude', '--profile', 'alice'],
+      { stdout: { write() {} }, stderr: { write() {} } },
+      createDevCliEnvironment({
+        devBundleFreshnessChecker: createDevBundleFreshnessCheckerStub([
+          createStaleBundleReport('stale')
+        ]),
+        devPluginBuilder: declinedBuilder,
+        devClaudeProcessRunner: declinedRunner,
+        homeDir: '/tmp/home',
+        promptEnvironment: { isInteractive: () => true, prompt: () => 'no' }
+      })
+    );
+
+    expect(acceptedExitCode).toBe(0);
+    expect(acceptedBuilder.builds).toEqual(['/src/teamem']);
+    expect(acceptedRunner.invocations).toHaveLength(1);
+    expect(declinedExitCode).toBe(1);
+    expect(declinedBuilder.builds).toEqual([]);
+    expect(declinedRunner.invocations).toEqual([]);
+  });
+
+  it('bypasses a Teamem-owned claude shim and adds a profile-derived session name', () => {
+    const runner = createDevClaudeLaunchRecorder();
+    const exitCode = runCli(
+      ['dev', 'claude', '--profile', 'alice', '--', '--continue'],
+      {
+        stdout: { write() {} },
+        stderr: { write() {} }
+      },
+      createDevCliEnvironment({
+        devClaudeProcessRunner: runner,
+        homeDir: '/tmp/home',
+        pathEnv: '/tmp/home/.teamem/bin:/opt/claude/bin',
+        devSourceFileSystem: createDevSourceFileSystem({
+          roots: ['/src/teamem'],
+          executableFiles: [
+            '/tmp/home/.teamem/bin/claude',
+            '/opt/claude/bin/claude'
+          ]
+        }),
+        promptEnvironment: {
+          isInteractive: () => false
+        }
+      })
+    );
+
+    expect(exitCode).toBe(0);
+    expect(runner.invocations[0]?.command).toBe('/opt/claude/bin/claude');
+    expect(runner.invocations[0]?.args).toEqual([
+      '--plugin-dir',
+      '/src/teamem/plugin',
+      '--mcp-config',
+      '/tmp/home/.teamem/dev-profiles/alice/mcp.json',
+      '--strict-mcp-config',
+      '--dangerously-load-development-channels',
+      'server:teamem-channel',
+      '--name',
+      'teamem-alice',
+      '--continue'
+    ]);
+  });
+
+  it('preserves compact user-provided dev claude session names', () => {
+    const equalsRunner = createDevClaudeLaunchRecorder();
+    const compactRunner = createDevClaudeLaunchRecorder();
+
+    const equalsExitCode = runCli(
+      ['dev', 'claude', '--profile', 'alice', '--', '--name=custom'],
+      { stdout: { write() {} }, stderr: { write() {} } },
+      createDevCliEnvironment({
+        devClaudeProcessRunner: equalsRunner,
+        homeDir: '/tmp/home',
+        promptEnvironment: { isInteractive: () => false }
+      })
+    );
+    const compactExitCode = runCli(
+      ['dev', 'claude', '--profile', 'alice', '--', '-n=short'],
+      { stdout: { write() {} }, stderr: { write() {} } },
+      createDevCliEnvironment({
+        devClaudeProcessRunner: compactRunner,
+        homeDir: '/tmp/home',
+        promptEnvironment: { isInteractive: () => false }
+      })
+    );
+
+    expect(equalsExitCode).toBe(0);
+    expect(compactExitCode).toBe(0);
+    expect(equalsRunner.invocations[0]?.args).toContain('--name=custom');
+    expect(compactRunner.invocations[0]?.args).toContain('-n=short');
+    expect(equalsRunner.invocations[0]?.args).not.toContain('teamem-alice');
+    expect(compactRunner.invocations[0]?.args).not.toContain('teamem-alice');
+  });
+
+  it('blocks dev claude when the selected plugin MCP declaration is invalid', () => {
+    const stderr: string[] = [];
+    const profileFileSystem = createDevProfileFileSystem();
+    const devSetupRunner = createDevSetupRunnerStub();
+    const sourceFileSystem = createDevSourceFileSystem({
+      roots: ['/src/teamem'],
+      executableFiles: [
+        '/tmp/home/.teamem/bin/claude',
+        '/opt/claude/bin/claude'
+      ]
+    });
+    sourceFileSystem.files.set(
+      '/src/teamem/plugin/.mcp.json',
+      JSON.stringify({
+        mcpServers: {
+          teamem: {
+            command: 'bun',
+            args: ['run', '${CLAUDE_PLUGIN_ROOT}/lib/bridge.js'],
+            env: {
+              BAD: 123
+            }
+          },
+          'teamem-channel': {
+            command: 'bun',
+            args: ['run', '${CLAUDE_PLUGIN_ROOT}/lib/channel.js']
+          }
+        }
+      })
+    );
+
+    const exitCode = runCli(
+      ['dev', 'claude', '--profile', 'alice'],
+      {
+        stdout: { write() {} },
+        stderr: {
+          write(text: string) {
+            stderr.push(text);
+          }
+        }
+      },
+      createDevCliEnvironment({
+        devProfileFileSystem: profileFileSystem,
+        devSourceFileSystem: sourceFileSystem,
+        devSetupRunner,
+        homeDir: '/tmp/home',
+        promptEnvironment: {
+          isInteractive: () => false
+        }
+      })
+    );
+
+    expect(exitCode).toBe(1);
+    expect(stderr.join('')).toContain(
+      'Plugin MCP server env must be a string map: teamem'
+    );
+    expect(devSetupRunner.invocations).toEqual([]);
+    expect(
+      profileFileSystem.files.has(
+        '/tmp/home/.teamem/dev-profiles/alice/mcp.json'
+      )
+    ).toBe(false);
+  });
+
+  it('dry-runs prompted dev claude profile creation without writing profile state', () => {
+    const writes: string[] = [];
+    const fileSystem = createDevProfileFileSystem();
+    const exitCode = runCli(
+      ['dev', 'claude', '--dry-run'],
+      {
+        stdout: {
+          write(text: string) {
+            writes.push(text);
+          }
+        },
+        stderr: { write() {} }
+      },
+      createDevCliEnvironment({
+        devProfileFileSystem: fileSystem,
+        homeDir: '/tmp/home',
+        promptEnvironment: {
+          isInteractive: () => true,
+          prompt: () => 'alice'
+        }
+      })
+    );
+
+    expect(exitCode).toBe(0);
+    expect(fileSystem.mkdirCalls).toEqual([]);
+    expect(fileSystem.writeFileCalls).toEqual([]);
+    expect(fileSystem.directories).not.toContain(
+      '/tmp/home/.teamem/dev-profiles/alice'
+    );
+    expect(writes.join('')).toContain('Selected dev profile: alice');
+  });
+
+  it('dry-runs prompted dev claude existing-profile selection without writing profile state', () => {
+    const writes: string[] = [];
+    const promptMessages: string[] = [];
+    const fileSystem = createDevProfileFileSystem({
+      directories: [
+        '/tmp/home/.teamem/dev-profiles/alice',
+        '/tmp/home/.teamem/dev-profiles/bob'
+      ],
+      files: ['/tmp/home/.teamem/dev-profiles/alice/credentials.json']
+    });
+    const exitCode = runCli(
+      ['dev', 'claude', '--dry-run'],
+      {
+        stdout: {
+          write(text: string) {
+            writes.push(text);
+          }
+        },
+        stderr: { write() {} }
+      },
+      createDevCliEnvironment({
+        devProfileFileSystem: fileSystem,
+        homeDir: '/tmp/home',
+        promptEnvironment: {
+          isInteractive: () => true,
+          prompt: (message) => {
+            promptMessages.push(message);
+            return '1';
+          }
+        }
+      })
+    );
+
+    expect(exitCode).toBe(0);
+    expect(promptMessages.join('')).toContain('1. alice');
+    expect(promptMessages.join('')).toContain('2. bob');
+    expect(fileSystem.mkdirCalls).toEqual([]);
+    expect(fileSystem.writeFileCalls).toEqual([]);
+    expect(writes.join('')).toContain('Selected dev profile: alice');
+    expect(writes.join('')).toContain(
+      'dry-run: existing profile would be used without launching Claude Code.'
+    );
+  });
+
+  it('dry-runs prompted dev claude new slug planning without creating the profile', () => {
+    const writes: string[] = [];
+    const promptMessages: string[] = [];
+    const fileSystem = createDevProfileFileSystem({
+      directories: ['/tmp/home/.teamem/dev-profiles/alice']
+    });
+    const exitCode = runCli(
+      ['dev', 'claude', '--dry-run'],
+      {
+        stdout: {
+          write(text: string) {
+            writes.push(text);
+          }
+        },
+        stderr: { write() {} }
+      },
+      createDevCliEnvironment({
+        devProfileFileSystem: fileSystem,
+        homeDir: '/tmp/home',
+        promptEnvironment: {
+          isInteractive: () => true,
+          prompt: (message) => {
+            promptMessages.push(message);
+            return 'charlie';
+          }
+        }
+      })
+    );
+
+    expect(exitCode).toBe(0);
+    expect(promptMessages.join('')).toContain('1. alice');
+    expect(promptMessages.join('')).toContain('Or enter a new profile slug.');
+    expect(fileSystem.mkdirCalls).toEqual([]);
+    expect(fileSystem.writeFileCalls).toEqual([]);
+    expect(fileSystem.directories).not.toContain(
+      '/tmp/home/.teamem/dev-profiles/charlie'
+    );
+    expect(writes.join('')).toContain('Selected dev profile: charlie');
+    expect(writes.join('')).toContain(
+      'dry-run: profile skeleton would be created if the command runs without --dry-run.'
+    );
+  });
+
+  it('lets interactive dev claude create a selected profile skeleton', () => {
+    const writes: string[] = [];
+    const fileSystem = createDevProfileFileSystem();
+    const exitCode = runCli(
+      ['dev', 'claude'],
+      {
+        stdout: {
+          write(text: string) {
+            writes.push(text);
+          }
+        },
+        stderr: { write() {} }
+      },
+      createDevCliEnvironment({
+        devProfileFileSystem: fileSystem,
+        homeDir: '/tmp/home',
+        now: () => new Date('2026-05-29T00:00:00.000Z'),
+        promptEnvironment: {
+          isInteractive: () => true,
+          prompt: () => 'alice'
+        }
+      })
+    );
+
+    expect(exitCode).toBe(0);
+    expect(fileSystem.directories).toContain(
+      '/tmp/home/.teamem/dev-profiles/alice'
+    );
+    expect(
+      fileSystem.files.has('/tmp/home/.teamem/dev-profiles/alice/metadata.json')
+    ).toBe(true);
+    expect(writes.join('')).toContain('Selected dev profile: alice');
+    expect(writes.join('')).toContain('Teamem dev Claude launch');
+  });
+
+  it('does not create profiles for interactive dev delete selection', () => {
+    const stderr: string[] = [];
+    const fileSystem = createDevProfileFileSystem({
+      directories: ['/tmp/home/.teamem/dev-profiles/alice']
+    });
+    const exitCode = runCli(
+      ['dev', 'delete'],
+      {
+        stdout: { write() {} },
+        stderr: {
+          write(text: string) {
+            stderr.push(text);
+          }
+        }
+      },
+      createDevCliEnvironment({
+        devProfileFileSystem: fileSystem,
+        homeDir: '/tmp/home',
+        promptEnvironment: {
+          isInteractive: () => true,
+          prompt: () => 'bob'
+        }
+      })
+    );
+
+    expect(exitCode).toBe(1);
+    expect(fileSystem.directories).not.toContain(
+      '/tmp/home/.teamem/dev-profiles/bob'
+    );
+    expect(stderr.join('')).toContain('Creation is not allowed');
+  });
+
+  it('rejects missing requested dev delete profiles without creating state', () => {
+    const stderr: string[] = [];
+    const fileSystem = createDevProfileFileSystem({
+      directories: ['/tmp/home/.teamem/dev-profiles/alice']
+    });
+    const exitCode = runCli(
+      ['dev', 'delete', '--profile', 'missing', '--yes'],
+      {
+        stdout: { write() {} },
+        stderr: {
+          write(text: string) {
+            stderr.push(text);
+          }
+        }
+      },
+      createDevCliEnvironment({
+        devProfileFileSystem: fileSystem,
+        homeDir: '/tmp/home',
+        promptEnvironment: {
+          isInteractive: () => false
+        }
+      })
+    );
+
+    expect(exitCode).toBe(1);
+    expect(fileSystem.mkdirCalls).toEqual([]);
+    expect(fileSystem.writeFileCalls).toEqual([]);
+    expect(stderr.join('')).toContain('Dev profile does not exist: missing');
+  });
+
+  it('requires --yes for non-interactive dev delete', () => {
+    const stderr: string[] = [];
+    const fileSystem = createDevProfileFileSystem({
+      directories: ['/tmp/home/.teamem/dev-profiles/alice']
+    });
+    const exitCode = runCli(
+      ['dev', 'delete', '--profile', 'alice'],
+      {
+        stdout: { write() {} },
+        stderr: {
+          write(text: string) {
+            stderr.push(text);
+          }
+        }
+      },
+      createDevCliEnvironment({
+        devProfileFileSystem: fileSystem,
+        homeDir: '/tmp/home',
+        promptEnvironment: { isInteractive: () => false }
+      })
+    );
+
+    expect(exitCode).toBe(1);
+    expect(stderr.join('')).toContain(
+      'Non-interactive `teamem dev delete` requires --yes.'
+    );
+    expect(fileSystem.removeDirectoryCalls).toEqual([]);
+  });
+
+  it('deletes only the selected dev profile with --yes', () => {
+    const writes: string[] = [];
+    const fileSystem = createDevProfileFileSystem({
+      directories: [
+        '/tmp/home/.teamem/dev-profiles/alice/claude/plugins',
+        '/tmp/home/.teamem/dev-profiles/bob',
+        '/tmp/home/.claude',
+        '/src/teamem/plugin',
+        '/tmp/home/.config/claude/plugins'
+      ],
+      files: [
+        '/tmp/home/.teamem/dev-profiles/alice/credentials.json',
+        '/tmp/home/.teamem/credentials.json'
+      ]
+    });
+
+    const exitCode = runCli(
+      ['dev', 'delete', '--profile', 'alice', '--yes'],
+      {
+        stdout: {
+          write(text: string) {
+            writes.push(text);
+          }
+        },
+        stderr: { write() {} }
+      },
+      createDevCliEnvironment({
+        devProfileFileSystem: fileSystem,
+        homeDir: '/tmp/home',
+        promptEnvironment: { isInteractive: () => false }
+      })
+    );
+
+    expect(exitCode).toBe(0);
+    expect(writes.join('')).toContain(
+      'Profile root: /tmp/home/.teamem/dev-profiles/alice'
+    );
+    expect(writes.join('')).toContain('Deleted dev profile: alice');
+    expect(fileSystem.removeDirectoryCalls).toEqual([
+      '/tmp/home/.teamem/dev-profiles/alice'
+    ]);
+    expect(fileSystem.directories).not.toContain(
+      '/tmp/home/.teamem/dev-profiles/alice'
+    );
+    expect(
+      fileSystem.files.has(
+        '/tmp/home/.teamem/dev-profiles/alice/credentials.json'
+      )
+    ).toBe(false);
+    expect(fileSystem.directories).toContain(
+      '/tmp/home/.teamem/dev-profiles/bob'
+    );
+    expect(fileSystem.directories).toContain('/tmp/home/.claude');
+    expect(fileSystem.files.has('/tmp/home/.teamem/credentials.json')).toBe(
+      true
+    );
+    expect(fileSystem.directories).toContain('/src/teamem/plugin');
+    expect(fileSystem.directories).toContain(
+      '/tmp/home/.config/claude/plugins'
+    );
+  });
+
+  it('requires exact interactive confirmation before dev delete', () => {
+    const prompts: string[] = [];
+    const fileSystem = createDevProfileFileSystem({
+      directories: ['/tmp/home/.teamem/dev-profiles/alice']
+    });
+    const cancelledExitCode = runCli(
+      ['dev', 'delete', '--profile', 'alice'],
+      { stdout: { write() {} }, stderr: { write() {} } },
+      createDevCliEnvironment({
+        devProfileFileSystem: fileSystem,
+        homeDir: '/tmp/home',
+        promptEnvironment: {
+          isInteractive: () => true,
+          prompt: (message) => {
+            prompts.push(message);
+            return 'no';
+          }
+        }
+      })
+    );
+    const confirmedExitCode = runCli(
+      ['dev', 'delete', '--profile', 'alice'],
+      { stdout: { write() {} }, stderr: { write() {} } },
+      createDevCliEnvironment({
+        devProfileFileSystem: fileSystem,
+        homeDir: '/tmp/home',
+        promptEnvironment: {
+          isInteractive: () => true,
+          prompt: (message) => {
+            prompts.push(message);
+            return 'alice';
+          }
+        }
+      })
+    );
+
+    expect(cancelledExitCode).toBe(1);
+    expect(confirmedExitCode).toBe(0);
+    expect(prompts.join('\n')).toContain(
+      '/tmp/home/.teamem/dev-profiles/alice'
+    );
+    expect(fileSystem.removeDirectoryCalls).toEqual([
+      '/tmp/home/.teamem/dev-profiles/alice'
+    ]);
+  });
+
+  it('lets dev delete without --profile select existing profiles without creation', () => {
+    const prompts: string[] = [];
+    const fileSystem = createDevProfileFileSystem({
+      directories: [
+        '/tmp/home/.teamem/dev-profiles/alice',
+        '/tmp/home/.teamem/dev-profiles/bob'
+      ]
+    });
+    const exitCode = runCli(
+      ['dev', 'delete'],
+      { stdout: { write() {} }, stderr: { write() {} } },
+      createDevCliEnvironment({
+        devProfileFileSystem: fileSystem,
+        homeDir: '/tmp/home',
+        promptEnvironment: {
+          isInteractive: () => true,
+          prompt: (message) => {
+            prompts.push(message);
+            return prompts.length === 1 ? '2' : 'bob';
+          }
+        }
+      })
+    );
+
+    expect(exitCode).toBe(0);
+    expect(prompts[0]).toContain('Select Teamem dev profile:');
+    expect(prompts[0]).not.toContain('Or enter a new profile slug.');
+    expect(fileSystem.directories).not.toContain(
+      '/tmp/home/.teamem/dev-profiles/bob'
+    );
+    expect(fileSystem.mkdirCalls).toEqual([]);
+  });
+
+  it('blocks dev delete when an active profiled Claude process is detected unless forced', () => {
+    const blockedFileSystem = createDevProfileFileSystem({
+      directories: ['/tmp/home/.teamem/dev-profiles/alice']
+    });
+    const forcedFileSystem = createDevProfileFileSystem({
+      directories: ['/tmp/home/.teamem/dev-profiles/alice']
+    });
+    const detector = createDevProfileActiveSessionDetectorStub({
+      status: 'active',
+      message: 'Found running Claude process for profile alice: 123 claude'
+    });
+
+    const blockedExitCode = runCli(
+      ['dev', 'delete', '--profile', 'alice', '--yes'],
+      { stdout: { write() {} }, stderr: { write() {} } },
+      createDevCliEnvironment({
+        devProfileFileSystem: blockedFileSystem,
+        devProfileActiveSessionDetector: detector,
+        homeDir: '/tmp/home',
+        promptEnvironment: { isInteractive: () => false }
+      })
+    );
+    const forcedExitCode = runCli(
+      ['dev', 'delete', '--profile', 'alice', '--yes', '--force'],
+      { stdout: { write() {} }, stderr: { write() {} } },
+      createDevCliEnvironment({
+        devProfileFileSystem: forcedFileSystem,
+        devProfileActiveSessionDetector: detector,
+        homeDir: '/tmp/home',
+        promptEnvironment: { isInteractive: () => false }
+      })
+    );
+
+    expect(blockedExitCode).toBe(1);
+    expect(forcedExitCode).toBe(0);
+    expect(blockedFileSystem.removeDirectoryCalls).toEqual([]);
+    expect(forcedFileSystem.removeDirectoryCalls).toEqual([
+      '/tmp/home/.teamem/dev-profiles/alice'
+    ]);
+  });
+
+  it('warns and still requires confirmation when dev delete process detection is inconclusive', () => {
+    const stderr: string[] = [];
+    const fileSystem = createDevProfileFileSystem({
+      directories: ['/tmp/home/.teamem/dev-profiles/alice']
+    });
+    const exitCode = runCli(
+      ['dev', 'delete', '--profile', 'alice'],
+      {
+        stdout: { write() {} },
+        stderr: {
+          write(text: string) {
+            stderr.push(text);
+          }
+        }
+      },
+      createDevCliEnvironment({
+        devProfileFileSystem: fileSystem,
+        devProfileActiveSessionDetector:
+          createDevProfileActiveSessionDetectorStub({
+            status: 'inconclusive',
+            message: 'pgrep is unavailable'
+          }),
+        homeDir: '/tmp/home',
+        promptEnvironment: {
+          isInteractive: () => true,
+          prompt: () => 'alice'
+        }
+      })
+    );
+
+    expect(exitCode).toBe(0);
+    expect(stderr.join('')).toContain('Warning: pgrep is unavailable');
+    expect(fileSystem.removeDirectoryCalls).toEqual([
+      '/tmp/home/.teamem/dev-profiles/alice'
+    ]);
   });
 
   it('installs Teamem-owned machine-local Claude launcher state and shim', () => {
@@ -1050,8 +2994,7 @@ describe('runCli', () => {
         claudeLaunchProcessRunner: runner,
         env: {
           PATH: '/tmp/home/.teamem/bin:/opt/claude/bin',
-          TEAMEM_CLAUDE_LAUNCHER_STATE:
-            '/tmp/home/.teamem/launcher/claude.json'
+          TEAMEM_CLAUDE_LAUNCHER_STATE: '/tmp/home/.teamem/launcher/claude.json'
         },
         promptEnvironment: {
           isInteractive: () => false,
@@ -1667,9 +3610,7 @@ describe('runCli', () => {
       'prompts before starting Claude Code with Teamem'
     );
     expect(message).toContain('preserves a pure Claude Code path');
-    expect(message).toContain(
-      'then start Claude Code with normal `claude`'
-    );
+    expect(message).toContain('then start Claude Code with normal `claude`');
   });
 
   it('runs prerequisite diagnostics for init with injected fakes', () => {
@@ -1958,13 +3899,7 @@ describe('runCli', () => {
       executableFiles: ['/opt/claude/bin/claude']
     });
     const forcedExitCode = runCli(
-      [
-        'init',
-        '--dry-run',
-        '--scope',
-        'local',
-        '--install-claude-launcher'
-      ],
+      ['init', '--dry-run', '--scope', 'local', '--install-claude-launcher'],
       {
         stdout: {
           write(text: string) {
@@ -1987,13 +3922,7 @@ describe('runCli', () => {
 
     const skippedWrites: string[] = [];
     const skippedExitCode = runCli(
-      [
-        'init',
-        '--dry-run',
-        '--scope',
-        'local',
-        '--skip-claude-launcher'
-      ],
+      ['init', '--dry-run', '--scope', 'local', '--skip-claude-launcher'],
       {
         stdout: {
           write(text: string) {
@@ -3151,6 +5080,298 @@ function missing(): CommandProbeResult {
   };
 }
 
+function createDevCliEnvironment(
+  options: {
+    readonly devProfileFileSystem?: DevProfileFileSystem;
+    readonly devSourceFileSystem?: DevSourceFileSystem;
+    readonly commandRunner?: CommandRunner;
+    readonly cwd?: string;
+    readonly pathEnv?: string;
+    readonly homeDir?: string;
+    readonly env?: NodeJS.ProcessEnv;
+    readonly now?: () => Date;
+    readonly devSetupRunner?: DevSetupRunner;
+    readonly devClaudeProcessRunner?: DevClaudeProcessRunner;
+    readonly devCredentialsReader?: DevCredentialsReader;
+    readonly devServerHealthChecker?: DevServerHealthChecker;
+    readonly devBundleFreshnessChecker?: DevBundleFreshnessChecker;
+    readonly devPluginBuilder?: DevPluginBuilder;
+    readonly devProfileActiveSessionDetector?: DevProfileActiveSessionDetector;
+    readonly gitHookInstaller?: GitHookInstaller;
+    readonly gitHookPrompter?: GitHookPrompter;
+    readonly promptEnvironment?: {
+      readonly isInteractive?: () => boolean;
+      readonly prompt?: (message: string) => string | null;
+    };
+  } = {}
+): CliEnvironment {
+  const cwd = options.cwd ?? '/src/teamem';
+  return {
+    prerequisites: {
+      platform: 'linux',
+      cwd,
+      commandRunner:
+        options.commandRunner ??
+        createDevSourceCommandRunner({
+          sourceRoot: '/src/teamem'
+        })
+    },
+    homeDir: options.homeDir,
+    pathEnv: options.pathEnv ?? '/tmp/home/.teamem/bin:/opt/claude/bin',
+    env: options.env,
+    now: options.now,
+    promptEnvironment: options.promptEnvironment,
+    devProfileFileSystem:
+      options.devProfileFileSystem ?? createDevProfileFileSystem(),
+    devSourceFileSystem:
+      options.devSourceFileSystem ??
+      createDevSourceFileSystem({
+        roots: ['/src/teamem'],
+        executableFiles: [
+          '/tmp/home/.teamem/bin/claude',
+          '/opt/claude/bin/claude'
+        ]
+      }),
+    devSetupRunner: options.devSetupRunner ?? createDevSetupRunnerStub(),
+    devClaudeProcessRunner:
+      options.devClaudeProcessRunner ?? createDevClaudeLaunchRecorder(),
+    devCredentialsReader:
+      options.devCredentialsReader ?? createDevCredentialsReaderStub(),
+    devServerHealthChecker:
+      options.devServerHealthChecker ?? createDevServerHealthCheckerStub(),
+    devBundleFreshnessChecker:
+      options.devBundleFreshnessChecker ??
+      createDevBundleFreshnessCheckerStub(),
+    devPluginBuilder: options.devPluginBuilder ?? createDevPluginBuilderStub(),
+    devProfileActiveSessionDetector:
+      options.devProfileActiveSessionDetector ??
+      createDevProfileActiveSessionDetectorStub({ status: 'inactive' }),
+    gitHookInstaller: options.gitHookInstaller,
+    gitHookPrompter: options.gitHookPrompter
+  };
+}
+
+function createDevSourceFileSystem(
+  options: {
+    readonly roots?: readonly string[];
+    readonly executableFiles?: readonly string[];
+    readonly includePluginManifest?: boolean;
+    readonly includePluginMcp?: boolean;
+    readonly includeChannel?: boolean;
+  } = {}
+): DevSourceFileSystem & {
+  readonly directories: Set<string>;
+  readonly files: Map<string, string>;
+  readonly executableFiles: Set<string>;
+} {
+  const directories = new Set<string>();
+  const files = new Map<string, string>();
+  const executableFiles = new Set(options.executableFiles ?? []);
+
+  for (const root of options.roots ?? []) {
+    addDirectory(directories, root);
+    addFile(
+      directories,
+      files,
+      `${root}/package.json`,
+      '{"name":"teamem","private":true}\n'
+    );
+    if (options.includePluginManifest !== false) {
+      addFile(
+        directories,
+        files,
+        `${root}/plugin/.claude-plugin/plugin.json`,
+        '{"name":"teamem","mcpServers":"./.mcp.json"}\n'
+      );
+    }
+    if (options.includePluginMcp !== false) {
+      addFile(
+        directories,
+        files,
+        `${root}/plugin/.mcp.json`,
+        JSON.stringify({
+          mcpServers: {
+            teamem: {
+              command: 'bun',
+              args: ['run', '${CLAUDE_PLUGIN_ROOT}/lib/bridge.js']
+            },
+            ...(options.includeChannel === false
+              ? {}
+              : {
+                  'teamem-channel': {
+                    command: 'bun',
+                    args: ['run', '${CLAUDE_PLUGIN_ROOT}/lib/channel.js']
+                  }
+                })
+          }
+        })
+      );
+    }
+    addFile(
+      directories,
+      files,
+      `${root}/plugin/lib/setup.js`,
+      'console.log("setup");\n'
+    );
+  }
+
+  return {
+    directories,
+    files,
+    executableFiles,
+    exists(path: string): boolean {
+      return (
+        directories.has(path) || files.has(path) || executableFiles.has(path)
+      );
+    },
+    isDirectory(path: string): boolean {
+      return directories.has(path);
+    },
+    isReadableFile(path: string): boolean {
+      return files.has(path);
+    },
+    isExecutableFile(path: string): boolean {
+      return executableFiles.has(path);
+    },
+    readFile(path: string): string {
+      const value = files.get(path);
+      if (value === undefined) {
+        throw new Error(`Missing file: ${path}`);
+      }
+      return value;
+    }
+  };
+}
+
+function addFile(
+  directories: Set<string>,
+  files: Map<string, string>,
+  path: string,
+  content: string
+): void {
+  addDirectory(directories, path.slice(0, path.lastIndexOf('/')));
+  files.set(path, content);
+}
+
+function addDirectory(directories: Set<string>, path: string): void {
+  const parts = path.split('/').filter(Boolean);
+  let current = path.startsWith('/') ? '' : '.';
+  for (const part of parts) {
+    current = current === '' ? `/${part}` : `${current}/${part}`;
+    directories.add(current);
+  }
+}
+
+function createDevSourceCommandRunner(options: {
+  readonly sourceRoot: string;
+  readonly bun?: CommandProbeResult;
+  readonly dirtyStatus?: string;
+  readonly insideGitRepository?: boolean;
+}): CommandRunner {
+  return {
+    run(command: string, args: readonly string[]): CommandProbeResult {
+      const key = `${command} ${args.join(' ')}`;
+      if (key === 'bun --version') {
+        return options.bun ?? ok('1.2.0\n');
+      }
+      if (key === `git -C ${options.sourceRoot} branch --show-current`) {
+        return ok('master\n');
+      }
+      if (key === `git -C ${options.sourceRoot} status --short`) {
+        return ok(options.dirtyStatus ?? '');
+      }
+      if (key === 'git rev-parse --is-inside-work-tree') {
+        return options.insideGitRepository === false ? fail('') : ok('true\n');
+      }
+      return createFakeRunner({}).run(command, args);
+    }
+  };
+}
+
+function createDevProfileFileSystem(
+  options: {
+    readonly directories?: readonly string[];
+    readonly files?: readonly string[];
+  } = {}
+): DevProfileFileSystem & {
+  readonly directories: string[];
+  readonly files: Map<string, string>;
+  readonly mkdirCalls: string[];
+  readonly writeFileCalls: string[];
+  readonly removeDirectoryCalls: string[];
+} {
+  const directories = expandParentDirectories(options.directories ?? []);
+  const files = new Map((options.files ?? []).map((path) => [path, '']));
+  const mkdirCalls: string[] = [];
+  const writeFileCalls: string[] = [];
+  const removeDirectoryCalls: string[] = [];
+
+  return {
+    directories,
+    files,
+    mkdirCalls,
+    writeFileCalls,
+    removeDirectoryCalls,
+    exists(path: string): boolean {
+      return directories.includes(path) || files.has(path);
+    },
+    isDirectory(path: string): boolean {
+      return directories.includes(path);
+    },
+    readDirectory(path: string): readonly string[] {
+      const prefix = `${path}/`;
+      return [
+        ...new Set(
+          [...directories, ...files.keys()]
+            .filter((entry) => entry.startsWith(prefix))
+            .map((entry) => entry.slice(prefix.length).split('/')[0] ?? '')
+            .filter(Boolean)
+        )
+      ];
+    },
+    mkdir(path: string): void {
+      mkdirCalls.push(path);
+      if (!directories.includes(path)) {
+        directories.push(path);
+      }
+    },
+    writeFile(path: string, content: string): void {
+      writeFileCalls.push(path);
+      files.set(path, content);
+    },
+    removeDirectory(path: string): void {
+      removeDirectoryCalls.push(path);
+      const prefix = `${path}/`;
+      for (let index = directories.length - 1; index >= 0; index -= 1) {
+        if (
+          directories[index] === path ||
+          directories[index].startsWith(prefix)
+        ) {
+          directories.splice(index, 1);
+        }
+      }
+      for (const filePath of [...files.keys()]) {
+        if (filePath === path || filePath.startsWith(prefix)) {
+          files.delete(filePath);
+        }
+      }
+    }
+  };
+}
+
+function expandParentDirectories(paths: readonly string[]): string[] {
+  const directories = new Set<string>();
+  for (const path of paths) {
+    const parts = path.split('/').filter(Boolean);
+    let current = path.startsWith('/') ? '' : '.';
+    for (const part of parts) {
+      current = current === '' ? `/${part}` : `${current}/${part}`;
+      directories.add(current);
+    }
+  }
+  return [...directories];
+}
+
 function createReadyLaunchCommandRunner(
   options: { readonly pluginList?: string; readonly repoRoot?: string } = {}
 ): CommandRunner {
@@ -3265,6 +5486,141 @@ function createSetupRunnerStub(
   };
 }
 
+function createDevSetupRunnerStub(exitCode = 0): DevSetupRunner & {
+  invocations: Parameters<DevSetupRunner['run']>[0][];
+} {
+  const invocations: Parameters<DevSetupRunner['run']>[0][] = [];
+  return {
+    invocations,
+    run(invocation: Parameters<DevSetupRunner['run']>[0]) {
+      invocations.push(invocation);
+      return exitCode === 0
+        ? {
+            ok: true,
+            exitCode,
+            message: 'Profile-scoped Teamem setup completed.'
+          }
+        : {
+            ok: false,
+            exitCode,
+            message: `Profile-scoped Teamem setup exited with code ${exitCode}.`
+          };
+    }
+  };
+}
+
+function createDevCredentialsReaderStub(
+  content: string | null = createCredentialsJson()
+): DevCredentialsReader {
+  return {
+    read() {
+      return content;
+    }
+  };
+}
+
+function createDevProfileActiveSessionDetectorStub(
+  status: ReturnType<DevProfileActiveSessionDetector['check']>
+): DevProfileActiveSessionDetector {
+  return {
+    check() {
+      return status;
+    }
+  };
+}
+
+function createDevServerHealthCheckerStub(
+  okResult = true
+): DevServerHealthChecker & { checkedUrls: string[] } {
+  const checkedUrls: string[] = [];
+  return {
+    checkedUrls,
+    check(url: string) {
+      const checkedUrl = `${url.replace(/\/+$/, '')}/health`;
+      checkedUrls.push(checkedUrl);
+      return okResult
+        ? { ok: true, checkedUrl }
+        : { ok: false, checkedUrl, message: 'connection refused' };
+    }
+  };
+}
+
+function createFreshBundleReport(): DevBundleFreshnessReport {
+  return {
+    ok: true,
+    bundles: [
+      {
+        label: 'bridge',
+        committedPath: '/src/teamem/plugin/lib/bridge.js',
+        status: 'fresh'
+      },
+      {
+        label: 'setup',
+        committedPath: '/src/teamem/plugin/lib/setup.js',
+        status: 'fresh'
+      },
+      {
+        label: 'channel',
+        committedPath: '/src/teamem/plugin/lib/channel.js',
+        status: 'fresh'
+      }
+    ]
+  };
+}
+
+function createStaleBundleReport(
+  status: 'stale' | 'missing' = 'stale'
+): DevBundleFreshnessReport {
+  return {
+    ok: false,
+    bundles: [
+      {
+        label: 'bridge',
+        committedPath: '/src/teamem/plugin/lib/bridge.js',
+        status
+      }
+    ]
+  };
+}
+
+function createDevBundleFreshnessCheckerStub(
+  reports: readonly DevBundleFreshnessReport[] = [createFreshBundleReport()]
+): DevBundleFreshnessChecker & { checks: string[] } {
+  const checks: string[] = [];
+  let index = 0;
+  return {
+    checks,
+    check(source) {
+      checks.push(source.teamemRoot);
+      const report = reports[Math.min(index, reports.length - 1)];
+      index += 1;
+      return report;
+    }
+  };
+}
+
+function createDevPluginBuilderStub(
+  exitCode = 0
+): DevPluginBuilder & { builds: string[] } {
+  const builds: string[] = [];
+  return {
+    builds,
+    build(source) {
+      builds.push(source.teamemRoot);
+      return exitCode === 0
+        ? {
+            ok: true,
+            message: 'Plugin bundles rebuilt with `bun run build:plugin`.'
+          }
+        : {
+            ok: false,
+            exitCode,
+            message: `Plugin bundle build failed with exit code ${exitCode}.`
+          };
+    }
+  };
+}
+
 function createGitHookInstallerStub(
   result: GitHookInstallResult = {
     ok: true,
@@ -3272,9 +5628,9 @@ function createGitHookInstallerStub(
     message: 'Installed Teamem git hooks.'
   }
 ): GitHookInstaller & {
-  invocations: Array<{ scope: 'project' | 'user' | 'local' }>;
+  invocations: Parameters<GitHookInstaller['install']>[0][];
 } {
-  const invocations: Array<{ scope: 'project' | 'user' | 'local' }> = [];
+  const invocations: Parameters<GitHookInstaller['install']>[0][] = [];
   return {
     invocations,
     install(invocation) {
@@ -3536,6 +5892,34 @@ function createClaudeLaunchRecorder(): ClaudeLaunchProcessRunner & {
     invocations,
     run(command: string, args: readonly string[], env: NodeJS.ProcessEnv) {
       invocations.push({ command, args: [...args], env: { ...env } });
+      return 0;
+    }
+  };
+}
+
+function createDevClaudeLaunchRecorder(): DevClaudeProcessRunner & {
+  readonly invocations: Array<{
+    readonly command: string;
+    readonly args: readonly string[];
+    readonly env: NodeJS.ProcessEnv;
+    readonly cwd: string;
+  }>;
+} {
+  const invocations: Array<{
+    readonly command: string;
+    readonly args: readonly string[];
+    readonly env: NodeJS.ProcessEnv;
+    readonly cwd: string;
+  }> = [];
+  return {
+    invocations,
+    run(invocation) {
+      invocations.push({
+        command: invocation.command,
+        args: [...invocation.args],
+        env: { ...invocation.env },
+        cwd: invocation.cwd
+      });
       return 0;
     }
   };

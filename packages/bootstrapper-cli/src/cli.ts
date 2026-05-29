@@ -15,6 +15,7 @@ import {
 import {
   createSystemCommandRunner,
   detectPrerequisites,
+  type CommandRunner,
   type PrerequisiteEnvironment
 } from './prerequisites.js';
 import {
@@ -59,6 +60,52 @@ import {
   type ClaudeLaunchProcessRunner,
   type ClaudeLauncherFileSystem
 } from './claude-launcher.js';
+import {
+  createNodeDevProfileActiveSessionDetector,
+  createNodeDevProfileFileSystem,
+  deleteDevProfile,
+  getDevProfileNameError,
+  listDevProfiles,
+  renderDevProfileList,
+  renderDevProfileStatus,
+  selectDevProfile,
+  validateDevProfileName,
+  type DevProfilePaths,
+  type DevProfileFileSystem,
+  type DevProfileSelection,
+  type DevProfileActiveSessionDetector
+} from './dev-profiles.js';
+import {
+  createNodeDevSourceFileSystem,
+  probeDevSourcePrerequisites,
+  renderDevSourceProbeReport,
+  type DevSourceFileSystem,
+  type DevSourceResolution
+} from './dev-source.js';
+import { generateDevMcpConfig } from './dev-mcp-config.js';
+import { createLocalDevSetupRunner, type DevSetupRunner } from './dev-setup.js';
+import {
+  buildDevLaunchPlan,
+  createNodeDevClaudeProcessRunner,
+  renderDevLaunchBoundarySummary,
+  renderDevLaunchDryRun,
+  type DevClaudeProcessRunner
+} from './dev-launch.js';
+import {
+  createNodeDevBundleFreshnessChecker,
+  createNodeDevCredentialsReader,
+  createNodeDevPluginBuilder,
+  createNodeDevServerHealthChecker,
+  devServerHealthUrl,
+  hasDevBundleFreshnessFailure,
+  readDevProfileServerUrl,
+  renderDevBundleFreshness,
+  renderDevServerHealth,
+  type DevBundleFreshnessChecker,
+  type DevCredentialsReader,
+  type DevPluginBuilder,
+  type DevServerHealthChecker
+} from './dev-preflight.js';
 
 export interface CliIo {
   readonly stdout: { write(text: string): void };
@@ -75,6 +122,15 @@ export interface CliEnvironment {
   readonly gitHookInstaller?: GitHookInstaller;
   readonly localStateFileSystem?: LocalStateFileSystem;
   readonly claudeLauncherFileSystem?: ClaudeLauncherFileSystem;
+  readonly devProfileFileSystem?: DevProfileFileSystem;
+  readonly devSourceFileSystem?: DevSourceFileSystem;
+  readonly devSetupRunner?: DevSetupRunner;
+  readonly devClaudeProcessRunner?: DevClaudeProcessRunner;
+  readonly devCredentialsReader?: DevCredentialsReader;
+  readonly devServerHealthChecker?: DevServerHealthChecker;
+  readonly devBundleFreshnessChecker?: DevBundleFreshnessChecker;
+  readonly devPluginBuilder?: DevPluginBuilder;
+  readonly devProfileActiveSessionDetector?: DevProfileActiveSessionDetector;
   readonly claudeLaunchProcessRunner?: ClaudeLaunchProcessRunner;
   readonly promptEnvironment?: import('./runtime-prompt.js').RuntimePromptEnvironment;
   readonly env?: NodeJS.ProcessEnv;
@@ -99,6 +155,16 @@ export interface ParsedCliArgs {
   readonly claude?: {
     readonly lifecycleCommand: ClaudeLifecycleCommand;
     readonly launchMode?: ClaudeLaunchMode;
+    readonly claudeArgs?: readonly string[];
+  };
+  readonly dev?: {
+    readonly subcommand: DevSubcommand;
+    readonly profile?: string;
+    readonly teamemRoot?: string;
+    readonly cwd?: string;
+    readonly buildPlugin: boolean;
+    readonly yes?: boolean;
+    readonly force?: boolean;
     readonly claudeArgs?: readonly string[];
   };
   readonly setup?: SetupSelectionArgs;
@@ -129,6 +195,7 @@ export type ClaudeLifecycleCommand =
   | 'status'
   | 'uninstall'
   | 'launch';
+export type DevSubcommand = 'claude' | 'status' | 'delete';
 type LegacyCcUpdateMode = 'prompt' | 'always' | 'never';
 type ClaudeLauncherPrompter = () => boolean;
 
@@ -138,6 +205,7 @@ const COMMANDS = new Set<BootstrapperCommand>([
   'init',
   'cc',
   'claude',
+  'dev',
   'update',
   'uninstall'
 ]);
@@ -147,6 +215,7 @@ const CLAUDE_LIFECYCLE_COMMANDS = new Set<ClaudeLifecycleCommand>([
   'uninstall',
   'launch'
 ]);
+const DEV_SUBCOMMANDS = new Set<DevSubcommand>(['claude', 'status', 'delete']);
 
 const CC_MIGRATION_MESSAGE =
   '`teamem cc` has been retired and no longer launches Claude Code.\n' +
@@ -199,6 +268,14 @@ export function parseCliArgs(argv: readonly string[]): CliParseResult {
   let claudeLifecycleCommand: ClaudeLifecycleCommand | undefined;
   let claudeLaunchMode: ClaudeLaunchMode = 'prompt';
   let claudeLaunchArgs: string[] = [];
+  let devSubcommand: DevSubcommand | undefined;
+  let devProfile: string | undefined;
+  let devTeamemRoot: string | undefined;
+  let devCwd: string | undefined;
+  let devBuildPlugin = false;
+  let devYes = false;
+  let devForce = false;
+  let devClaudeArgs: string[] = [];
   for (let index = 0; index < rest.length; index += 1) {
     const arg = rest[index];
     if (HELP_FLAGS.has(arg)) {
@@ -259,6 +336,103 @@ export function parseCliArgs(argv: readonly string[]): CliParseResult {
         error: claudeLifecycleCommand
           ? `Unknown option for claude ${claudeLifecycleCommand}: ${arg}`
           : `Unknown teamem claude lifecycle command: ${arg}`
+      };
+    }
+    if (first === 'dev') {
+      if (!devSubcommand && DEV_SUBCOMMANDS.has(arg as DevSubcommand)) {
+        devSubcommand = arg as DevSubcommand;
+        continue;
+      }
+      if (!devSubcommand) {
+        return {
+          ok: false,
+          error: `Unknown teamem dev subcommand: ${arg}. Expected one of: claude, status, delete`
+        };
+      }
+      if (devSubcommand === 'claude' && arg === '--') {
+        devClaudeArgs = rest.slice(index + 1);
+        break;
+      }
+      if (arg === '--profile') {
+        const candidate = rest[index + 1];
+        if (!candidate) {
+          return {
+            ok: false,
+            error: 'Missing value for --profile'
+          };
+        }
+        const validation = validateDevProfileName(candidate);
+        if (!validation.ok) {
+          return {
+            ok: false,
+            error: `Invalid value for --profile. ${getDevProfileNameError()}`
+          };
+        }
+        devProfile = validation.value;
+        index += 1;
+        continue;
+      }
+      if (arg === '--teamem-root') {
+        const candidate = rest[index + 1];
+        if (!candidate) {
+          return {
+            ok: false,
+            error: 'Missing value for --teamem-root'
+          };
+        }
+        devTeamemRoot = candidate;
+        index += 1;
+        continue;
+      }
+      if (arg === '--cwd') {
+        const candidate = rest[index + 1];
+        if (!candidate) {
+          return {
+            ok: false,
+            error: 'Missing value for --cwd'
+          };
+        }
+        devCwd = candidate;
+        index += 1;
+        continue;
+      }
+      if (devSubcommand === 'claude' && arg === '--install-git-hooks') {
+        if (gitHooks === 'skip') {
+          return {
+            ok: false,
+            error:
+              'Choose only one git hook mode: --install-git-hooks or --skip-git-hooks'
+          };
+        }
+        gitHooks = 'install';
+        continue;
+      }
+      if (devSubcommand === 'claude' && arg === '--skip-git-hooks') {
+        if (gitHooks === 'install') {
+          return {
+            ok: false,
+            error:
+              'Choose only one git hook mode: --install-git-hooks or --skip-git-hooks'
+          };
+        }
+        gitHooks = 'skip';
+        continue;
+      }
+      if (devSubcommand === 'claude' && arg === '--build-plugin') {
+        devBuildPlugin = true;
+        continue;
+      }
+      if (devSubcommand === 'delete' && arg === '--yes') {
+        devYes = true;
+        continue;
+      }
+      if (devSubcommand === 'delete' && arg === '--force') {
+        devForce = true;
+        continue;
+      }
+      return {
+        ok: false,
+        error: `Unknown option for dev ${devSubcommand}: ${arg}`
       };
     }
     if (arg === '--scope') {
@@ -430,6 +604,14 @@ export function parseCliArgs(argv: readonly string[]): CliParseResult {
     };
   }
 
+  if (first === 'dev' && !devSubcommand) {
+    return {
+      ok: false,
+      error:
+        'Missing teamem dev subcommand. Expected one of: claude, status, delete'
+    };
+  }
+
   return {
     ok: true,
     value: {
@@ -458,6 +640,20 @@ export function parseCliArgs(argv: readonly string[]): CliParseResult {
                 : {})
             }
           : undefined,
+      dev:
+        first === 'dev' && devSubcommand
+          ? {
+              subcommand: devSubcommand,
+              profile: devProfile,
+              teamemRoot: devTeamemRoot,
+              cwd: devCwd,
+              buildPlugin: devBuildPlugin,
+              ...(devSubcommand === 'delete'
+                ? { yes: devYes, force: devForce }
+                : {}),
+              claudeArgs: devClaudeArgs
+            }
+          : undefined,
       uninstall:
         first === 'uninstall'
           ? {
@@ -484,6 +680,9 @@ Commands:
   claude install   Install or refresh the opt-in Teamem-aware Claude launcher lifecycle
   claude status    Report Teamem-aware Claude launcher status
   claude uninstall Remove Teamem-owned Claude launcher lifecycle files
+  dev claude       Select or create a durable Teamem dev profile skeleton
+  dev status       List Teamem dev profiles or show profile-owned paths
+  dev delete       Delete a selected Teamem dev profile capsule
   cc        Compatibility error; use the opt-in \`claude\` shim instead
   update    Refresh Teamem marketplace metadata and update the installed plugin
   uninstall Uninstall the Claude Code plugin, git hooks, and local Teamem state
@@ -498,6 +697,12 @@ Options:
   --label         Optional setup space label for --create
   --room-code     Setup room code for --join
   --keep-credentials For \`teamem uninstall\`, preserve ~/.teamem/credentials.json
+  --profile <slug> Safe Teamem dev profile slug for \`teamem dev ...\`
+  --teamem-root <path> Teamem source checkout for \`teamem dev ...\`
+  --cwd <path> Claude launch repository for \`teamem dev ...\`
+  --build-plugin Rebuild local plugin bundles before \`teamem dev claude\` launch checks
+  --yes          Confirm non-interactive \`teamem dev delete\`
+  --force        Allow \`teamem dev delete\` when a profiled Claude process is detected
   --install-git-hooks  Install Teamem git hooks after setup without prompting
   --skip-git-hooks     Skip Teamem git hook installation after setup
   --install-claude-launcher  Install Teamem-aware Claude launcher after setup without prompting
@@ -653,51 +858,17 @@ export function runCli(
       return setupResult.exitCode;
     }
 
-    if (!insideGitRepository) {
-      io.stdout.write(
-        'Git hooks skipped: current directory is not inside a git repository.\n'
-      );
-    } else if (parsed.value.gitHooks === 'skip') {
-      io.stdout.write('Git hooks skipped by --skip-git-hooks.\n');
-    } else {
-      const shouldPromptForGitHooks =
-        parsed.value.gitHooks === undefined &&
-        (environment.gitHookPrompter !== undefined ||
-          (process.stdin.isTTY && process.stdout.isTTY));
-      const shouldInstallGitHooks =
-        parsed.value.gitHooks === 'install'
-          ? true
-          : shouldPromptForGitHooks
-            ? (
-                environment.gitHookPrompter ??
-                createInteractiveGitHookPrompter(io)
-              )({
-                scope: resolvedScope
-              })
-            : false;
-
-      if (!shouldInstallGitHooks) {
-        io.stdout.write(
-          parsed.value.gitHooks === undefined
-            ? 'Git hooks were not installed because this session is non-interactive. Re-run `teamem init --install-git-hooks` to force install or `--skip-git-hooks` to silence this step.\n'
-            : 'Git hooks skipped.\n'
-        );
-      } else {
-        const gitHookInstaller =
-          environment.gitHookInstaller ??
-          createGitHookInstaller({
-            cwd: installerEnvironment.cwd,
-            commandRunner: installerEnvironment.commandRunner
-          });
-        const gitHookResult = gitHookInstaller.install({
-          scope: resolvedScope
-        });
-        if (!gitHookResult.ok) {
-          io.stderr.write(`${gitHookResult.message}\n`);
-          return gitHookResult.exitCode;
-        }
-        io.stdout.write(`${gitHookResult.message}\n`);
-      }
+    const gitHookExitCode = runPostSetupGitHookStep({
+      mode: parsed.value.gitHooks,
+      scope: resolvedScope,
+      cwd: installerEnvironment.cwd,
+      insideGitRepository,
+      io,
+      environment,
+      commandRunner: installerEnvironment.commandRunner
+    });
+    if (gitHookExitCode !== 0) {
+      return gitHookExitCode;
     }
 
     const launcherExitCode = runPostSetupClaudeLauncherStep({
@@ -709,6 +880,393 @@ export function runCli(
       return launcherExitCode;
     }
     return setupResult.exitCode;
+  }
+
+  if (parsed.value.command === 'dev') {
+    const devFileSystem =
+      environment.devProfileFileSystem ?? createNodeDevProfileFileSystem();
+    const devSourceFileSystem =
+      environment.devSourceFileSystem ?? createNodeDevSourceFileSystem();
+    const subcommand = parsed.value.dev?.subcommand;
+    const profile = parsed.value.dev?.profile;
+    if (!subcommand) {
+      io.stderr.write(
+        'Missing teamem dev subcommand. Expected one of: claude, status, delete\n'
+      );
+      return 1;
+    }
+
+    if (subcommand === 'status') {
+      if (!profile) {
+        io.stdout.write(
+          renderDevProfileList(
+            listDevProfiles({
+              homeDir: environment.homeDir,
+              fileSystem: devFileSystem
+            })
+          )
+        );
+        return 0;
+      }
+      const selection = selectDevProfile({
+        homeDir: environment.homeDir,
+        requestedProfile: profile,
+        allowCreate: false,
+        fileSystem: devFileSystem
+      });
+      if (!selection.ok) {
+        io.stderr.write(
+          `${selection.error}\nCreate the profile with \`teamem dev claude --profile ${profile}\` or choose an existing profile from \`teamem dev status\`.\n`
+        );
+        return 1;
+      }
+      const paths = selection.paths;
+      const sourceReport = probeDevSourcePrerequisites({
+        cwd: environment.prerequisites.cwd,
+        requestedTeamemRoot: parsed.value.dev?.teamemRoot,
+        requestedLaunchCwd: parsed.value.dev?.cwd,
+        pathEnv: environment.pathEnv,
+        homeDir: environment.homeDir,
+        fileSystem: devSourceFileSystem,
+        commandRunner: environment.prerequisites.commandRunner
+      });
+      io.stdout.write(
+        [
+          renderDevProfileStatusBoundary({
+            paths,
+            source: sourceReport.resolution,
+            fileSystem: devFileSystem,
+            credentialsReader:
+              environment.devCredentialsReader ??
+              createNodeDevCredentialsReader(),
+            healthChecker:
+              environment.devServerHealthChecker ??
+              createNodeDevServerHealthChecker()
+          }),
+          renderDevSourceProbeReport(sourceReport, {
+            dryRun: false
+          }).trimEnd(),
+          renderDevProfileStatusPreflight({
+            paths,
+            source: sourceReport.resolution,
+            environment
+          })
+        ]
+          .filter((line): line is string => line !== undefined)
+          .join('\n') + '\n'
+      );
+      return 0;
+    }
+
+    if (subcommand === 'claude') {
+      const canPrompt = isInteractiveTerminal(environment.promptEnvironment);
+      const sourceReport = probeDevSourcePrerequisites({
+        cwd: environment.prerequisites.cwd,
+        requestedTeamemRoot: parsed.value.dev?.teamemRoot,
+        requestedLaunchCwd: parsed.value.dev?.cwd,
+        pathEnv: environment.pathEnv,
+        homeDir: environment.homeDir,
+        fileSystem: devSourceFileSystem,
+        commandRunner: environment.prerequisites.commandRunner
+      });
+      if (sourceReport.hasErrors) {
+        io.stdout.write(
+          renderDevSourceProbeReport(sourceReport, {
+            dryRun: parsed.value.dryRun
+          })
+        );
+        return 1;
+      }
+      const sourceResolution = sourceReport.resolution;
+      if (!sourceResolution) {
+        io.stderr.write(
+          'Teamem dev claude could not resolve the selected source checkout.\n'
+        );
+        return 1;
+      }
+      if (!profile && !canPrompt) {
+        io.stderr.write(
+          'Non-interactive `teamem dev claude` requires --profile.\n'
+        );
+        return 1;
+      }
+      if (parsed.value.dryRun) {
+        const selection = profile
+          ? selectDevProfile({
+              homeDir: environment.homeDir,
+              requestedProfile: profile,
+              allowCreate: true,
+              createMode: 'plan',
+              fileSystem: devFileSystem
+            })
+          : selectDevProfile({
+              homeDir: environment.homeDir,
+              allowCreate: true,
+              createMode: 'plan',
+              fileSystem: devFileSystem,
+              prompt: (message) =>
+                promptWithRuntime(message, environment.promptEnvironment)
+            });
+        if (!selection.ok) {
+          io.stderr.write(`${selection.error}\n`);
+          return 1;
+        }
+        const paths = selection.paths;
+        const mcpConfig = generateDevMcpConfig({
+          source: sourceResolution,
+          profile: paths,
+          fileSystem: devSourceFileSystem
+        });
+        if (!mcpConfig.ok) {
+          io.stderr.write(`${mcpConfig.error}\n`);
+          return 1;
+        }
+        const credentialsReader =
+          environment.devCredentialsReader ?? createNodeDevCredentialsReader();
+        const serverUrl = readDevProfileServerUrl({
+          profile: paths,
+          credentialsReader
+        });
+        const plannedHealthLine = serverUrl.ok
+          ? `dry-run: server health would be checked at ${devServerHealthUrl(serverUrl.serverUrl)} before launch.`
+          : `dry-run: server health would be checked after profile credentials exist at ${paths.credentialsPath}.`;
+        const launchPlan = buildDevLaunchPlan({
+          source: sourceResolution,
+          profile: paths,
+          claudeArgs: parsed.value.dev?.claudeArgs ?? [],
+          env: environment.env,
+          pathEnv: environment.pathEnv,
+          homeDir: environment.homeDir,
+          fileSystem: devSourceFileSystem
+        });
+        io.stdout.write(
+          [
+            renderPlan(buildActionPlan({ command: 'dev', dryRun: true })),
+            renderDevSourceProbeReport(sourceReport, {
+              dryRun: true
+            }).trimEnd(),
+            `Selected dev profile: ${paths.profileName}`,
+            devFileSystem.exists(paths.profileRoot)
+              ? 'dry-run: existing profile would be used without launching Claude Code.'
+              : 'dry-run: profile skeleton would be created if the command runs without --dry-run.',
+            devFileSystem.exists(paths.credentialsPath)
+              ? 'dry-run: existing profile credentials would be reused; setup would not run.'
+              : `dry-run: profile-scoped Teamem setup would run with TEAMEM_CREDENTIALS=${paths.credentialsPath}.`,
+            `dry-run: profile MCP config would be written to ${paths.mcpConfigPath} from ${mcpConfig.declarationPath}.`,
+            parsed.value.dev?.buildPlugin
+              ? 'dry-run: --build-plugin would run `bun run build:plugin` before launch planning continues.'
+              : undefined,
+            `dry-run: plugin bundle freshness would be checked for ${sourceResolution.teamemRoot} before launch.`,
+            plannedHealthLine,
+            renderDevProfileStatus(paths),
+            renderDevLaunchDryRun(launchPlan).trimEnd()
+          ]
+            .filter((line): line is string => line !== undefined)
+            .join('\n') + '\n'
+        );
+        return 0;
+      }
+      const selection = selectDevProfile({
+        homeDir: environment.homeDir,
+        requestedProfile: profile,
+        allowCreate: true,
+        fileSystem: devFileSystem,
+        now: environment.now,
+        prompt: profile
+          ? undefined
+          : (message) =>
+              promptWithRuntime(message, environment.promptEnvironment)
+      });
+      if (!selection.ok) {
+        io.stderr.write(`${selection.error}\n`);
+        return 1;
+      }
+      const mcpConfig = generateDevMcpConfig({
+        source: sourceResolution,
+        profile: selection.paths,
+        fileSystem: devSourceFileSystem
+      });
+      if (!mcpConfig.ok) {
+        io.stderr.write(`${mcpConfig.error}\n`);
+        return 1;
+      }
+      const bundleExitCode = ensureDevPluginBundles({
+        source: sourceResolution,
+        buildPlugin: parsed.value.dev?.buildPlugin ?? false,
+        canPrompt,
+        io,
+        environment
+      });
+      if (bundleExitCode !== 0) {
+        return bundleExitCode;
+      }
+      const setupStatus = ensureDevProfileCredentials({
+        selection,
+        source: sourceResolution,
+        fileSystem: devFileSystem,
+        setupRunner:
+          environment.devSetupRunner ??
+          createLocalDevSetupRunner({
+            fileSystem: devSourceFileSystem,
+            env: environment.env
+          })
+      });
+      if (!setupStatus.ok) {
+        io.stderr.write(`${setupStatus.message}\n`);
+        return setupStatus.exitCode;
+      }
+      if (setupStatus.setupRan) {
+        const gitHookExitCode = runPostSetupGitHookStep({
+          mode: parsed.value.gitHooks,
+          scope: 'local',
+          cwd: sourceResolution.launchCwd,
+          pluginRoot: sourceResolution.pluginRoot,
+          insideGitRepository: isInsideGitRepositoryForCwd({
+            cwd: sourceResolution.launchCwd,
+            environment
+          }),
+          io,
+          environment
+        });
+        if (gitHookExitCode !== 0) {
+          return gitHookExitCode;
+        }
+      }
+      const healthExitCode = ensureDevServerHealth({
+        profile: selection.paths,
+        io,
+        environment
+      });
+      if (healthExitCode !== 0) {
+        return healthExitCode;
+      }
+      devFileSystem.writeFile(selection.paths.mcpConfigPath, mcpConfig.json);
+      io.stdout.write(
+        [
+          `Selected dev profile: ${selection.profileName}`,
+          selection.created ? 'Profile skeleton created.' : undefined,
+          setupStatus.message,
+          `Generated profile MCP config: ${selection.paths.mcpConfigPath}`
+        ]
+          .filter((line): line is string => line !== undefined)
+          .join('\n') + '\n'
+      );
+      io.stdout.write(
+        [
+          renderDevSourceProbeReport(sourceReport, {
+            dryRun: false
+          }).trimEnd(),
+          renderDevProfileStatus(selection.paths)
+        ]
+          .filter((line): line is string => line !== undefined)
+          .join('\n') + '\n'
+      );
+      const launchPlan = buildDevLaunchPlan({
+        source: sourceResolution,
+        profile: selection.paths,
+        claudeArgs: parsed.value.dev?.claudeArgs ?? [],
+        env: environment.env,
+        pathEnv: environment.pathEnv,
+        homeDir: environment.homeDir,
+        fileSystem: devSourceFileSystem
+      });
+      io.stdout.write(renderDevLaunchBoundarySummary(launchPlan));
+      const runner =
+        environment.devClaudeProcessRunner ??
+        createNodeDevClaudeProcessRunner();
+      const exitCode = runner.run({
+        command: launchPlan.command,
+        args: launchPlan.args,
+        env: launchPlan.env,
+        cwd: launchPlan.cwd
+      });
+      return exitCode ?? 1;
+    }
+
+    const canPrompt = isInteractiveTerminal(environment.promptEnvironment);
+    const deleteYes = parsed.value.dev?.yes ?? false;
+    const deleteForce = parsed.value.dev?.force ?? false;
+    if (!profile && !canPrompt) {
+      io.stderr.write(
+        'Non-interactive `teamem dev delete` requires --profile.\n'
+      );
+      return 1;
+    }
+    if (!deleteYes && !canPrompt) {
+      io.stderr.write('Non-interactive `teamem dev delete` requires --yes.\n');
+      return 1;
+    }
+    const selection = selectDevProfile({
+      homeDir: environment.homeDir,
+      requestedProfile: profile,
+      allowCreate: false,
+      fileSystem: devFileSystem,
+      prompt: profile
+        ? undefined
+        : (message) => promptWithRuntime(message, environment.promptEnvironment)
+    });
+    if (!selection.ok) {
+      io.stderr.write(`${selection.error}\n`);
+      return 1;
+    }
+    const detector =
+      environment.devProfileActiveSessionDetector ??
+      createNodeDevProfileActiveSessionDetector();
+    const activeSession = detector.check(selection.paths);
+    if (activeSession.status === 'active' && !deleteForce) {
+      io.stderr.write(
+        `${activeSession.message}\nRefusing to delete an active dev profile. Re-run with --force to override.\n`
+      );
+      return 1;
+    }
+    if (activeSession.status === 'active' && deleteForce) {
+      io.stderr.write(`${activeSession.message}\n--force was provided.\n`);
+    }
+    if (activeSession.status === 'inconclusive') {
+      io.stderr.write(
+        `Warning: ${activeSession.message}\nProceed only if no Claude session is using this profile.\n`
+      );
+    }
+
+    io.stdout.write(
+      [
+        `Selected dev profile for deletion: ${selection.profileName}`,
+        `Profile root: ${selection.paths.profileRoot}`
+      ].join('\n') + '\n'
+    );
+    if (!deleteYes) {
+      const answer = promptWithRuntime(
+        `Delete Teamem dev profile at ${selection.paths.profileRoot}? Type ${selection.profileName} to confirm: `,
+        environment.promptEnvironment
+      )?.trim();
+      if (answer !== selection.profileName) {
+        io.stderr.write('Dev profile deletion was cancelled.\n');
+        return 1;
+      }
+    }
+
+    if (parsed.value.dryRun) {
+      io.stdout.write(
+        `dry-run: dev profile would be deleted: ${selection.paths.profileRoot}\n`
+      );
+      return 0;
+    }
+
+    const deletion = deleteDevProfile({
+      paths: selection.paths,
+      fileSystem: devFileSystem
+    });
+    if (!deletion.ok) {
+      io.stderr.write(`${deletion.error}\n`);
+      return 1;
+    }
+    io.stdout.write(
+      [
+        `Deleted dev profile: ${deletion.profileName}`,
+        `Deleted profile root: ${deletion.profileRoot}`
+      ].join('\n') + '\n'
+    );
+    return 0;
   }
 
   const installerEnvironment = environment.installer ?? {
@@ -827,6 +1385,296 @@ export function runCli(
   }
 
   return 1;
+}
+
+type DevProfileCredentialSetupStatus =
+  | {
+      readonly ok: true;
+      readonly message: string;
+      readonly exitCode: 0;
+      readonly setupRan: boolean;
+    }
+  | {
+      readonly ok: false;
+      readonly message: string;
+      readonly exitCode: number;
+    };
+
+function ensureDevProfileCredentials(options: {
+  readonly selection: DevProfileSelection;
+  readonly source?: DevSourceResolution;
+  readonly fileSystem: DevProfileFileSystem;
+  readonly setupRunner: DevSetupRunner;
+}): DevProfileCredentialSetupStatus {
+  if (options.fileSystem.exists(options.selection.paths.credentialsPath)) {
+    return {
+      ok: true,
+      exitCode: 0,
+      setupRan: false,
+      message: 'Profile credentials already exist; setup skipped.'
+    };
+  }
+
+  if (!options.source) {
+    return {
+      ok: false,
+      exitCode: 1,
+      message:
+        'Teamem dev claude could not resolve the selected source checkout for profile setup.'
+    };
+  }
+
+  const result = options.setupRunner.run({
+    source: options.source,
+    profile: options.selection.paths
+  });
+  if (!result.ok) {
+    return {
+      ok: false,
+      exitCode: result.exitCode,
+      message: result.message
+    };
+  }
+
+  return {
+    ok: true,
+    exitCode: 0,
+    setupRan: true,
+    message: result.message
+  };
+}
+
+function ensureDevPluginBundles(options: {
+  readonly source: DevSourceResolution;
+  readonly buildPlugin: boolean;
+  readonly canPrompt: boolean;
+  readonly io: CliIo;
+  readonly environment: CliEnvironment;
+}): number {
+  const checker =
+    options.environment.devBundleFreshnessChecker ??
+    createNodeDevBundleFreshnessChecker();
+  const builder =
+    options.environment.devPluginBuilder ?? createNodeDevPluginBuilder();
+
+  let report = checker.check(options.source);
+  options.io.stdout.write(`${renderDevBundleFreshness(report)}\n`);
+
+  if (options.buildPlugin) {
+    const build = builder.build(options.source);
+    options.io.stdout.write(`${build.message}\n`);
+    if (!build.ok) {
+      return build.exitCode;
+    }
+    report = checker.check(options.source);
+    options.io.stdout.write(`${renderDevBundleFreshness(report)}\n`);
+    return hasDevBundleFreshnessFailure(report) ? 1 : 0;
+  }
+
+  if (!hasDevBundleFreshnessFailure(report)) {
+    return 0;
+  }
+
+  if (options.canPrompt) {
+    const answer = promptWithRuntime(
+      'Plugin bundles are stale or missing. Run `bun run build:plugin` now? [y/N] ',
+      options.environment.promptEnvironment
+    )
+      ?.trim()
+      .toLowerCase();
+    if (answer === 'y' || answer === 'yes') {
+      const build = builder.build(options.source);
+      options.io.stdout.write(`${build.message}\n`);
+      if (!build.ok) {
+        return build.exitCode;
+      }
+      report = checker.check(options.source);
+      options.io.stdout.write(`${renderDevBundleFreshness(report)}\n`);
+      return hasDevBundleFreshnessFailure(report) ? 1 : 0;
+    }
+
+    options.io.stderr.write(
+      'Plugin bundles are stale or missing and rebuild was declined; Claude was not launched.\n'
+    );
+    return 1;
+  }
+
+  options.io.stderr.write(
+    'Plugin bundles are stale or missing. Run `bun run build:plugin` from the selected Teamem source checkout or pass --build-plugin.\n'
+  );
+  return 1;
+}
+
+function renderDevProfileStatusPreflight(options: {
+  readonly paths: DevProfilePaths;
+  readonly source?: DevSourceResolution;
+  readonly environment: CliEnvironment;
+}): string | undefined {
+  if (!options.source) {
+    return undefined;
+  }
+
+  const bundleReport = (
+    options.environment.devBundleFreshnessChecker ??
+    createNodeDevBundleFreshnessChecker()
+  ).check(options.source);
+  return renderDevBundleFreshness(bundleReport);
+}
+
+function renderDevProfileStatusBoundary(options: {
+  readonly paths: DevProfilePaths;
+  readonly source?: DevSourceResolution;
+  readonly fileSystem: DevProfileFileSystem;
+  readonly credentialsReader: DevCredentialsReader;
+  readonly healthChecker: DevServerHealthChecker;
+}): string {
+  const credentials = readDevProfileServerUrl({
+    profile: options.paths,
+    credentialsReader: options.credentialsReader
+  });
+  const sourceCheckout = options.source?.teamemRoot;
+  const launchCwd = options.source?.launchCwd;
+  const generatedMcpStatus = options.fileSystem.exists(
+    options.paths.mcpConfigPath
+  )
+    ? 'present'
+    : 'missing; run `teamem dev claude --profile ' +
+      options.paths.profileName +
+      '` to generate it';
+  const healthLine = credentials.ok
+    ? renderDevServerHealth(options.healthChecker.check(credentials.serverUrl))
+    : `Server health: not checked (${credentials.message})`;
+
+  return [
+    `Profile: ${options.paths.profileName}`,
+    `Profile path: ${options.paths.profileRoot}`,
+    `Teamem credentials path: ${options.paths.credentialsPath}`,
+    credentials.ok
+      ? `Teamem credentials status: present (${credentials.serverUrl})`
+      : `Teamem credentials status: missing or unusable (${credentials.message})`,
+    healthLine,
+    `Claude config root: ${options.paths.claudeConfigDir}`,
+    `Plugin cache root: ${options.paths.pluginCacheDir}`,
+    `Plugin data root: ${options.paths.pluginDataDir}`,
+    `Source checkout: ${sourceCheckout ?? 'missing; pass --teamem-root <path-to-teamem-source> or run from a Teamem source checkout'}`,
+    `Launch cwd: ${launchCwd ?? 'unresolved because source checkout is missing'}`,
+    `Generated MCP config: ${options.paths.mcpConfigPath}`,
+    `Generated MCP config status: ${generatedMcpStatus}`,
+    'MCP isolation mode: strict profile MCP config (--strict-mcp-config)',
+    'Channel source: server:teamem-channel',
+    'Marketplace plugin ignored: yes (teamem@teamem-alpha is not loaded for source-checkout dev status).',
+    `Metadata: ${options.paths.metadataPath}`,
+    `Logs: ${options.paths.logsDir}`
+  ].join('\n');
+}
+
+function ensureDevServerHealth(options: {
+  readonly profile: DevProfilePaths;
+  readonly io: CliIo;
+  readonly environment: CliEnvironment;
+}): number {
+  const serverUrl = readDevProfileServerUrl({
+    profile: options.profile,
+    credentialsReader:
+      options.environment.devCredentialsReader ??
+      createNodeDevCredentialsReader()
+  });
+  if (!serverUrl.ok) {
+    options.io.stderr.write(`${serverUrl.message}\n`);
+    return 1;
+  }
+
+  const health = (
+    options.environment.devServerHealthChecker ??
+    createNodeDevServerHealthChecker()
+  ).check(serverUrl.serverUrl);
+  options.io.stdout.write(`${renderDevServerHealth(health)}\n`);
+  if (!health.ok) {
+    options.io.stderr.write(
+      `Teamem server is unreachable at ${health.checkedUrl}; Claude was not launched.\n`
+    );
+    return 1;
+  }
+  return 0;
+}
+
+function runPostSetupGitHookStep(options: {
+  readonly mode?: 'install' | 'skip';
+  readonly scope: PluginScope;
+  readonly cwd: string;
+  readonly pluginRoot?: string;
+  readonly insideGitRepository: boolean;
+  readonly io: CliIo;
+  readonly environment: CliEnvironment;
+  readonly commandRunner?: CommandRunner;
+}): number {
+  if (!options.insideGitRepository) {
+    options.io.stdout.write(
+      'Git hooks skipped: current directory is not inside a git repository.\n'
+    );
+    return 0;
+  }
+  if (options.mode === 'skip') {
+    options.io.stdout.write('Git hooks skipped by --skip-git-hooks.\n');
+    return 0;
+  }
+
+  const shouldPromptForGitHooks =
+    options.mode === undefined &&
+    (options.environment.gitHookPrompter !== undefined ||
+      (process.stdin.isTTY && process.stdout.isTTY));
+  const shouldInstallGitHooks =
+    options.mode === 'install'
+      ? true
+      : shouldPromptForGitHooks
+        ? (
+            options.environment.gitHookPrompter ??
+            createInteractiveGitHookPrompter(options.io)
+          )({
+            scope: options.scope
+          })
+        : false;
+
+  if (!shouldInstallGitHooks) {
+    options.io.stdout.write(
+      options.mode === undefined
+        ? 'Git hooks were not installed because this session is non-interactive. Re-run `teamem init --install-git-hooks` to force install or `--skip-git-hooks` to silence this step.\n'
+        : 'Git hooks skipped.\n'
+    );
+    return 0;
+  }
+
+  const gitHookInstaller =
+    options.environment.gitHookInstaller ??
+    createGitHookInstaller({
+      cwd: options.cwd,
+      commandRunner: options.commandRunner
+    });
+  const gitHookResult = gitHookInstaller.install({
+    scope: options.scope,
+    pluginRoot: options.pluginRoot
+  });
+  if (!gitHookResult.ok) {
+    options.io.stderr.write(`${gitHookResult.message}\n`);
+    return gitHookResult.exitCode;
+  }
+  options.io.stdout.write(`${gitHookResult.message}\n`);
+  return 0;
+}
+
+function isInsideGitRepositoryForCwd(options: {
+  readonly cwd: string;
+  readonly environment: CliEnvironment;
+}): boolean {
+  const commandRunner =
+    options.cwd === options.environment.prerequisites.cwd
+      ? options.environment.prerequisites.commandRunner
+      : createSystemCommandRunner(options.cwd);
+  const result = commandRunner.run('git', [
+    'rev-parse',
+    '--is-inside-work-tree'
+  ]);
+  return result.exitCode === 0 && result.stdout.trim() === 'true';
 }
 
 function runPostSetupClaudeLauncherStep(options: {

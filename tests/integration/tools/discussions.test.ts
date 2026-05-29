@@ -204,6 +204,45 @@ describe('discussions — post_message + read_thread', () => {
     }
   });
 
+  it('omitted recipient_principal creates a broadcast thread', () => {
+    const { db, tools } = setup();
+    const post = tools.postMessage({
+      space_id: SPACE,
+      principal: 'alice',
+      actor: 'alice',
+      delegation: 'alice->alice',
+      body: 'team-wide announcement'
+    });
+    if (!post.ok) throw new Error('post failed');
+
+    const threadRow = loadThreadRow(db, post.data.thread_id);
+    expect(threadRow?.visibility_mode).toBe('broadcast');
+    expect(JSON.parse(threadRow?.participant_principals_json ?? '[]')).toEqual(
+      []
+    );
+
+    const bobInbox = tools.readThread({ space_id: SPACE, principal: 'bob' });
+    if (!bobInbox.ok) throw new Error('read_thread failed');
+    expect(bobInbox.data.messages).toHaveLength(1);
+    expect(bobInbox.data.messages[0]!.recipient_principal).toBeNull();
+  });
+
+  it('rejects string-null as an inactive direct recipient', () => {
+    const { tools } = setup();
+    const result = tools.postMessage({
+      space_id: SPACE,
+      principal: 'alice',
+      actor: 'alice',
+      delegation: 'alice->alice',
+      body: 'hello',
+      recipient_principal: 'null'
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('expected invalid recipient');
+    expect(result.error.code).toBe('invalid_recipient');
+  });
+
   it('direct thread reads reject unrelated active members who guess the thread id', () => {
     const { tools } = setup();
     const post = tools.postMessage({
