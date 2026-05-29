@@ -5,6 +5,7 @@ export type BootstrapperCommand =
   | 'cc'
   | 'update'
   | 'uninstall'
+  | 'dev'
   | 'claude';
 
 export type BootstrapperActionKind =
@@ -19,7 +20,8 @@ export type BootstrapperActionKind =
   | 'check-for-updates'
   | 'launch-claude'
   | 'report-cc-migration'
-  | 'manage-claude-launcher';
+  | 'manage-claude-launcher'
+  | 'manage-dev-profile';
 
 export interface PlannedExternalCommand {
   readonly command: string;
@@ -118,6 +120,19 @@ export function buildActionPlan(options: BuildActionPlanOptions): ActionPlan {
             title: 'Manage Teamem-aware Claude launcher',
             description:
               'Install, inspect, or remove Teamem-owned machine-local launcher state and shim files. With --dry-run, report planned launcher file changes without mutating local state.'
+          }
+        ]
+      };
+    case 'dev':
+      return {
+        command: 'dev',
+        dryRun,
+        actions: [
+          {
+            kind: 'manage-dev-profile',
+            title: 'Manage Teamem dev profile',
+            description:
+              'Select, create, inspect, or delete a machine-local Teamem dev profile without touching normal Claude or marketplace plugin state.'
           }
         ]
       };

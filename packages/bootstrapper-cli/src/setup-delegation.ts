@@ -35,7 +35,7 @@ export interface SetupProcessRunner {
   run(
     command: string,
     args: readonly string[],
-    options: { readonly cwd: string }
+    options: { readonly cwd: string; readonly env?: NodeJS.ProcessEnv }
   ): { readonly status: number | null; readonly error?: Error };
 }
 
@@ -148,6 +148,7 @@ export function createSetupRunner(
     } {
       return spawnSync(command, [...args], {
         cwd,
+        env: process.env,
         stdio: 'inherit'
       });
     }

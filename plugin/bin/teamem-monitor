@@ -239,6 +239,13 @@ function resolveSpaceInput(): string {
   return '';
 }
 
+function credentialsPath(): string {
+  const override = process.env.TEAMEM_CREDENTIALS?.trim();
+  return override && override.length > 0
+    ? override
+    : join(homedir(), '.teamem/credentials.json');
+}
+
 // Codex F16 — resolve the local principal so we can filter out our own
 // events. Codex F19 — also captures the resolved space so we can pass it
 // as `--space` on every `get_updates` call (otherwise the bridge falls
@@ -252,7 +259,7 @@ function resolveSpaceInput(): string {
 let myPrincipal = '';
 let resolvedSpace = '';
 try {
-  const credPath = join(homedir(), '.teamem/credentials.json');
+  const credPath = credentialsPath();
   const creds = JSON.parse(readFileSync(credPath, 'utf-8')) as {
     default_space_id: string | null;
     spaces: Record<string, { member_name: string; label?: string }>;

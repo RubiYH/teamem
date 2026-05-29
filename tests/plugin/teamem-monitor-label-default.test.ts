@@ -88,7 +88,8 @@ function writeCreds(
 async function runMonitorOnce(
   workdir: string,
   defaultSpace: string | undefined,
-  homeOverride: string
+  homeOverride: string,
+  credentialsOverride?: string
 ) {
   const sessionId = 'mon-test';
   const sessionDir = join(workdir, 'plugin-data/sessions', sessionId);
@@ -102,6 +103,11 @@ async function runMonitorOnce(
     HOME: homeOverride,
     TEAMEM_MONITOR_POLL_MS: '1000'
   };
+  if (credentialsOverride) {
+    env.TEAMEM_CREDENTIALS = credentialsOverride;
+  } else {
+    delete env.TEAMEM_CREDENTIALS;
+  }
   if (defaultSpace) {
     env.CLAUDE_PLUGIN_OPTION_DEFAULT_SPACE = defaultSpace;
   } else {
@@ -175,6 +181,32 @@ describe('teamem-monitor self-filter via label (Codex F16)', () => {
       const { stdout } = await runMonitorOnce(work, '01ULIDB', work);
       expect(stdout).toContain('"event_id":"e-2"');
       expect(stdout).not.toContain('"event_id":"e-1"');
+    } finally {
+      rmSync(work, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  it('profile credential override controls monitor identity', async () => {
+    const work = mkdtempSync(join(tmpdir(), 'teamem-monitor-profile-'));
+    try {
+      stagePluginWithBridge(work);
+      writeCreds(work, {
+        '01HOME': { member_name: 'alice', label: 'team-alpha' }
+      });
+      const profileCreds = writeCreds(join(work, 'profile'), {
+        '01PROFILE': { member_name: 'bob', label: 'team-alpha' }
+      });
+
+      const { stdout } = await runMonitorOnce(
+        work,
+        'team-alpha',
+        work,
+        profileCreds
+      );
+
+      expect(stdout).toContain('"event_id":"e-1"');
+      expect(stdout).toContain('"principal":"alice"');
+      expect(stdout).not.toContain('"event_id":"e-2"');
     } finally {
       rmSync(work, { recursive: true, force: true });
     }

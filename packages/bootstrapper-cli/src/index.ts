@@ -107,6 +107,7 @@ export {
   installClaudeLauncher,
   launchClaudeWithTeamemPolicy,
   renderClaudeLauncherReport,
+  resolveRealClaudeExecutable,
   uninstallClaudeLauncher,
   type ClaudeLaunchEnvironment,
   type ClaudeLaunchMode,
@@ -119,3 +120,83 @@ export {
   type ClaudeLauncherState,
   type ClaudeLauncherStatus
 } from './claude-launcher.js';
+export {
+  createDevProfile,
+  createNodeDevProfileActiveSessionDetector,
+  createNodeDevProfileFileSystem,
+  deleteDevProfile,
+  getDevProfileNameError,
+  listDevProfiles,
+  renderDevProfileList,
+  renderDevProfileStatus,
+  resolveDevProfilePaths,
+  selectDevProfile,
+  validateDevProfileName,
+  validateDevProfileDeleteTarget,
+  type DevProfileActiveSessionDetector,
+  type DevProfileActiveSessionStatus,
+  type DevProfileCreateResult,
+  type DevProfileDeleteResult,
+  type DevProfileFailure,
+  type DevProfileFileSystem,
+  type DevProfileListEntry,
+  type DevProfilePaths,
+  type DevProfilePrompt,
+  type DevProfileSelection,
+  type DevProfileSelectionResult
+} from './dev-profiles.js';
+export {
+  createNodeDevSourceFileSystem,
+  probeDevSourcePrerequisites,
+  renderDevSourceProbeReport,
+  splitDevPath,
+  type DevSourceDiagnostic,
+  type DevSourceFileSystem,
+  type DevSourceProbeReport,
+  type DevSourceResolution
+} from './dev-source.js';
+export {
+  generateDevMcpConfig,
+  type DevMcpConfigFailure,
+  type DevMcpConfigFileSystem,
+  type DevMcpConfigGeneration,
+  type DevMcpConfigGenerationResult,
+  type StrictMcpConfig,
+  type StrictMcpServer
+} from './dev-mcp-config.js';
+export {
+  createLocalDevSetupRunner,
+  createNodeDevSetupFileSystem,
+  type DevSetupFileSystem,
+  type DevSetupInvocation,
+  type DevSetupRunner,
+  type DevSetupRunnerEnvironment
+} from './dev-setup.js';
+export {
+  buildDevLaunchPlan,
+  createNodeDevClaudeProcessRunner,
+  renderDevLaunchBoundarySummary,
+  renderDevLaunchDryRun,
+  type DevClaudeProcessInvocation,
+  type DevClaudeProcessRunner,
+  type DevLaunchPlan
+} from './dev-launch.js';
+export {
+  createNodeDevBundleFreshnessChecker,
+  createNodeDevCredentialsReader,
+  createNodeDevPluginBuilder,
+  createNodeDevServerHealthChecker,
+  hasDevBundleFreshnessFailure,
+  readDevProfileServerUrl,
+  renderDevBundleFreshness,
+  renderDevServerHealth,
+  type DevBundleFreshnessChecker,
+  type DevBundleFreshnessEntry,
+  type DevBundleFreshnessReport,
+  type DevCredentialsReader,
+  type DevPluginBuilder,
+  type DevPluginBuildResult,
+  type DevProfileServerUrlResult,
+  type DevServerHealthChecker,
+  type DevServerHealthResult
+} from './dev-preflight.js';

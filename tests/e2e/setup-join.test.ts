@@ -35,8 +35,24 @@ function buildApp() {
   return app;
 }
 
+function buildSetupEnv(envOverrides: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    TEAMEM_BRIDGE_DIR: process.cwd()
+  };
+  for (const [key, value] of Object.entries(envOverrides)) {
+    if (value === undefined) {
+      delete env[key];
+    } else {
+      env[key] = value;
+    }
+  }
+  return env;
+}
+
 function runSetup(
-  jsonArgs: Record<string, unknown>
+  jsonArgs: Record<string, unknown>,
+  envOverrides: NodeJS.ProcessEnv = {}
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   return new Promise((resolve) => {
     const child = spawn(
@@ -44,7 +60,7 @@ function runSetup(
       ['run', 'src/cli/setup.ts', '--json', JSON.stringify(jsonArgs)],
       {
         cwd: process.cwd(),
-        env: { ...process.env, TEAMEM_BRIDGE_DIR: process.cwd() },
+        env: buildSetupEnv(envOverrides),
         stdio: ['pipe', 'pipe', 'pipe']
       }
     );
@@ -131,6 +147,52 @@ describe('AC11 — setup join flow', () => {
     const entries = Object.values(creds.spaces);
     expect(entries).toHaveLength(1);
     expect(entries[0].member_name).toBe('bob');
+    expect(result.stdout).toContain(
+      `Credentials saved to ${credPath}.`
+    );
+  });
+
+  it('prints the default credentials path when joining without an explicit path', async () => {
+    const homeDir = join(tmpDir, 'home');
+    const defaultCredPath = join(homeDir, '.teamem', 'credentials.json');
+    const serverUrl = `http://127.0.0.1:${serverPort}`;
+
+    const result = await runSetup(
+      {
+        serverUrl,
+        flow: 'join',
+        memberName: 'bob',
+        roomCode
+      },
+      { HOME: homeDir, TEAMEM_CREDENTIALS: undefined }
+    );
+
+    expect(result.exitCode).toBe(0);
+    await expect(stat(defaultCredPath)).resolves.toBeTruthy();
+    expect(result.stdout).toContain(
+      `Credentials saved to ${defaultCredPath}.`
+    );
+  });
+
+  it('prints the TEAMEM_CREDENTIALS path when joining with profile-scoped credentials', async () => {
+    const credPath = join(tmpDir, 'dev-profiles', 'alice', 'credentials.json');
+    const serverUrl = `http://127.0.0.1:${serverPort}`;
+
+    const result = await runSetup(
+      {
+        serverUrl,
+        flow: 'join',
+        memberName: 'bob',
+        roomCode
+      },
+      { TEAMEM_CREDENTIALS: credPath }
+    );
+
+    expect(result.exitCode).toBe(0);
+    await expect(stat(credPath)).resolves.toBeTruthy();
+    expect(result.stdout).toContain(
+      `Credentials saved to ${credPath}.`
+    );
   });
 
   it('makes an explicitly joined space the default over stale credentials', async () => {

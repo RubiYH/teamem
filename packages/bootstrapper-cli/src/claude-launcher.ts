@@ -424,6 +424,18 @@ export function renderClaudeLauncherReport(
   return `${lines.join('\n')}\n`;
 }
 
+export function resolveRealClaudeExecutable(options: {
+  readonly fileSystem?: ClaudeLauncherFileSystem;
+  readonly pathEnv?: string;
+  readonly homeDir?: string;
+}): string | undefined {
+  return resolveRealClaudePath({
+    paths: buildLauncherPaths(options.homeDir ?? homedir()),
+    fileSystem: options.fileSystem ?? createNodeClaudeLauncherFileSystem(),
+    pathEntries: splitPath(options.pathEnv ?? process.env.PATH ?? '')
+  });
+}
+
 export function launchClaudeWithTeamemPolicy(
   environment: ClaudeLaunchEnvironment
 ): ClaudeLaunchResult {

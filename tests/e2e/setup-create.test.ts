@@ -42,8 +42,24 @@ function buildApp() {
   return app;
 }
 
+function buildSetupEnv(envOverrides: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    TEAMEM_BRIDGE_DIR: process.cwd()
+  };
+  for (const [key, value] of Object.entries(envOverrides)) {
+    if (value === undefined) {
+      delete env[key];
+    } else {
+      env[key] = value;
+    }
+  }
+  return env;
+}
+
 function runSetup(
-  jsonArgs: Record<string, unknown>
+  jsonArgs: Record<string, unknown>,
+  envOverrides: NodeJS.ProcessEnv = {}
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   return new Promise((resolve) => {
     const child = spawn(
@@ -51,7 +67,7 @@ function runSetup(
       ['run', 'src/cli/setup.ts', '--json', JSON.stringify(jsonArgs)],
       {
         cwd: process.cwd(),
-        env: { ...process.env, TEAMEM_BRIDGE_DIR: process.cwd() },
+        env: buildSetupEnv(envOverrides),
         stdio: ['pipe', 'pipe', 'pipe']
       }
     );
@@ -138,6 +154,9 @@ describe('AC11 + AC24 — setup create flow', () => {
 
     // AC24: warning string present in stdout
     expect(result.stdout).toContain(AC24_WARNING);
+    expect(result.stdout).toContain(
+      `Space created. Credentials saved to ${credPath}.`
+    );
 
     // AC24: warning within 3 lines of the code line
     const lines = result.stdout.split('\n');
@@ -146,6 +165,49 @@ describe('AC11 + AC24 — setup create flow', () => {
     expect(codeLineIdx).toBeGreaterThanOrEqual(0);
     expect(warnLineIdx).toBeGreaterThanOrEqual(0);
     expect(Math.abs(warnLineIdx - codeLineIdx)).toBeLessThanOrEqual(3);
+  });
+
+  it('prints the default credentials path when no explicit path is provided', async () => {
+    const homeDir = join(tmpDir, 'home');
+    const defaultCredPath = join(homeDir, '.teamem', 'credentials.json');
+    const serverUrl = `http://127.0.0.1:${serverPort}`;
+
+    const result = await runSetup(
+      {
+        serverUrl,
+        flow: 'create',
+        memberName: 'alice',
+        spaceLabel: 'default-path-team'
+      },
+      { HOME: homeDir, TEAMEM_CREDENTIALS: undefined }
+    );
+
+    expect(result.exitCode).toBe(0);
+    await expect(stat(defaultCredPath)).resolves.toBeTruthy();
+    expect(result.stdout).toContain(
+      `Space created. Credentials saved to ${defaultCredPath}.`
+    );
+  });
+
+  it('prints the TEAMEM_CREDENTIALS path when creating with profile-scoped credentials', async () => {
+    const credPath = join(tmpDir, 'dev-profiles', 'alice', 'credentials.json');
+    const serverUrl = `http://127.0.0.1:${serverPort}`;
+
+    const result = await runSetup(
+      {
+        serverUrl,
+        flow: 'create',
+        memberName: 'alice',
+        spaceLabel: 'profile-path-team'
+      },
+      { TEAMEM_CREDENTIALS: credPath }
+    );
+
+    expect(result.exitCode).toBe(0);
+    await expect(stat(credPath)).resolves.toBeTruthy();
+    expect(result.stdout).toContain(
+      `Space created. Credentials saved to ${credPath}.`
+    );
   });
 
   it('re-running with existing credentials still creates another entry', async () => {

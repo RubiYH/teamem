@@ -123,6 +123,17 @@ export function postMessage(
         'recipient_principal must name another teammate'
       );
     }
+    const recipientStatus = ctx.getSpaceMembershipStatus(
+      ctx.db,
+      input.space_id,
+      recipientPrincipal
+    );
+    if (recipientStatus === 'inactive') {
+      return ctx.toolError(
+        'invalid_recipient',
+        'recipient_principal must name an active teammate'
+      );
+    }
     participantPrincipals = ctx.dedupeSorted([
       input.principal,
       recipientPrincipal

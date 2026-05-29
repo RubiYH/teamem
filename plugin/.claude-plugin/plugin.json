@@ -1,6 +1,6 @@
 {
   "name": "teamem",
-  "version": "0.3.21",
+  "version": "0.3.23",
   "description": "Team memory for humans and their coding agents — opt-in slash commands, Channels delivery, and queue-first conflict coordination.",
   "author": { "name": "Teamem" },
   "homepage": "https://github.com/RubiYH/teamem",

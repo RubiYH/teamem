@@ -1528,6 +1528,9 @@ function bail(msg) {
   me(msg);
   process.exit(1);
 }
+function credentialsOutputPath(credPath) {
+  return credPath ?? defaultCredentialsPath();
+}
 function parseNonInteractive() {
   const args = process.argv.slice(2);
   const jsonIdx = args.indexOf("--json");
@@ -1582,7 +1585,7 @@ async function runNonInteractive(opts) {
     process.stdout.write(`Your room code: ${data.room_code}
 ${AC24_WARNING}
 `);
-    process.stdout.write(`Space created. Credentials saved.
+    process.stdout.write(`Space created. Credentials saved to ${credentialsOutputPath(opts.credPath)}.
 `);
   } else {
     const roomCode = opts.roomCode?.trim();
@@ -1638,7 +1641,7 @@ ${AC24_WARNING}
     await appendEntry(entry, opts.credPath, { makeDefault: true });
     process.stdout.write(`Joined space ${data.space_id}
 `);
-    process.stdout.write(`Credentials saved.
+    process.stdout.write(`Credentials saved to ${credentialsOutputPath(opts.credPath)}.
 `);
   }
 }
@@ -1723,7 +1726,7 @@ async function runInteractive() {
     const coordPref = await promptCoordPref();
     await applyCoordPref(baseUrl, data.jwt, coordPref);
     printRoomCode(data.room_code);
-    ye(`Space created (coord pref: ${coordPref}). Credentials saved to ~/.teamem/credentials.json`);
+    ye(`Space created (coord pref: ${coordPref}). Credentials saved to ${credentialsOutputPath()}`);
   } else {
     const roomCode = await Pe({
       message: "Room code",
@@ -1777,7 +1780,7 @@ async function runInteractive() {
     R2.success(`Joined space ${data.space_id}`);
     const coordPref = await promptCoordPref();
     await applyCoordPref(baseUrl, data.jwt, coordPref);
-    ye(`Credentials saved to ~/.teamem/credentials.json (coord pref: ${coordPref})`);
+    ye(`Credentials saved to ${credentialsOutputPath()} (coord pref: ${coordPref})`);
   }
 }
 async function main() {

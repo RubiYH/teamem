@@ -21,6 +21,20 @@ describe('/teamem-discuss direct send contract', () => {
     expect(command).toContain('topic after `--` is empty or whitespace-only');
   });
 
+  it('documents broadcast input without string-null ambiguity', () => {
+    const command = readFileSync(
+      join(REPO_ROOT, 'plugin/commands/teamem-discuss.md'),
+      'utf-8'
+    );
+
+    expect(command).toContain(
+      'If the recipient token is `*`, this is a broadcast. Omit `recipient_principal`'
+    );
+    expect(command).toContain('Never pass `"null"` as a string');
+    expect(command).toContain('For broadcasts, call');
+    expect(command).toContain('For direct sends, call');
+  });
+
   it('does not route discuss through the postponed negotiator helper', () => {
     const hooks = readFileSync(
       join(REPO_ROOT, 'plugin/hooks/hooks.json'),

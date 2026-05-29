@@ -14,14 +14,23 @@ Fail closed on malformed input:
 - If the topic after `--` is empty or whitespace-only, stop and ask for a non-empty message body.
 
 Recipient mapping:
-- If the recipient token is `*`, this is a broadcast and `recipient_principal` must be `null`.
-- Otherwise treat the token as the exact `recipient_principal`.
+- If the recipient token is `*`, this is a broadcast. Omit `recipient_principal` from the tool input.
+- Otherwise treat the token as the exact direct `recipient_principal`.
+- Never pass `"null"` as a string. `"null"` is a literal teammate name, not broadcast routing.
 
-Call `mcp__teamem__post_message` exactly once with:
+For broadcasts, call `mcp__teamem__post_message` exactly once with:
 
 ```json
 {
-  "recipient_principal": "<principal or null>",
+  "body": "<trimmed topic>"
+}
+```
+
+For direct sends, call `mcp__teamem__post_message` exactly once with:
+
+```json
+{
+  "recipient_principal": "<exact principal>",
   "body": "<trimmed topic>"
 }
 ```
