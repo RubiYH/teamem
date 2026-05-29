@@ -23506,6 +23506,15 @@ function classifyTeamemChannelRoute(ev) {
   }
   return "peer";
 }
+function discussionTargetLabel(ev) {
+  const recipient = ev.payload?.recipient_principal;
+  if (typeof recipient === "string")
+    return recipient;
+  if (ev.delivery_scope === "sprint") {
+    return typeof ev.sprint_id === "string" && ev.sprint_id.length > 0 ? `sprint:${ev.sprint_id}` : "sprint";
+  }
+  return "space";
+}
 function summarizeTeamemChannelEvent(ev) {
   const p = ev.principal;
   const t = ev.event_type;
@@ -23530,7 +23539,7 @@ function summarizeTeamemChannelEvent(ev) {
       }
       return `${p} shared finding: ${String(ev.payload?.summary ?? "")}`;
     case "discussion_posted": {
-      const to = String(ev.payload?.recipient_principal ?? "space");
+      const to = discussionTargetLabel(ev);
       const body = String(ev.payload?.body ?? "").replace(/\s+/g, " ").slice(0, 120);
       return `${p} -> ${to}: ${body}`;
     }
@@ -23621,8 +23630,12 @@ function createClaudeChannelNotification(ev) {
   if (ev.event_type !== "permission_requested") {
     if (typeof recipient === "string")
       meta.recipient_principal = recipient;
-    if (recipient === null)
-      meta.recipient_principal = "space";
+    if (ev.event_type === "discussion_posted" && recipient == null)
+      meta.recipient_principal = discussionTargetLabel(ev);
+    if (ev.delivery_scope)
+      meta.delivery_scope = ev.delivery_scope;
+    if (typeof ev.sprint_id === "string")
+      meta.sprint_id = ev.sprint_id;
   }
   return {
     method: "notifications/claude/channel",

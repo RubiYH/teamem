@@ -315,6 +315,8 @@ type AnyEvent = {
   event_id: string;
   event_type: string;
   principal: string;
+  sprint_id?: string | null;
+  delivery_scope?: 'direct' | 'sprint' | 'space';
   scope?: { paths?: string[] };
   payload?: Record<string, unknown>;
 };
@@ -366,6 +368,17 @@ function classifyNotificationName(ev: AnyEvent): string {
   return 'teamem.peer_event';
 }
 
+function discussionTargetLabel(ev: AnyEvent): string {
+  const recipient = ev.payload?.recipient_principal;
+  if (typeof recipient === 'string') return recipient;
+  if (ev.delivery_scope === 'sprint') {
+    return typeof ev.sprint_id === 'string' && ev.sprint_id.length > 0
+      ? `sprint:${ev.sprint_id}`
+      : 'sprint';
+  }
+  return 'space';
+}
+
 function summarize(ev: AnyEvent): string {
   const p = ev.principal;
   const t = ev.event_type;
@@ -380,7 +393,7 @@ function summarize(ev: AnyEvent): string {
     case 'decision_recorded':
       return `${p} recorded decision: ${(ev.payload?.title as string) ?? ''}`;
     case 'discussion_posted': {
-      const to = (ev.payload?.recipient_principal as string | null) ?? 'space';
+      const to = discussionTargetLabel(ev);
       const body = ((ev.payload?.body as string) ?? '')
         .replace(/\s+/g, ' ')
         .slice(0, 120);
@@ -434,7 +447,10 @@ function pollOnce(): void {
     logInternal(`bridge_call_failed status=${r.status}`);
     return;
   }
-  let parsed: { ok: boolean; data?: { events?: AnyEvent[] } } | null = null;
+  let parsed: {
+    ok: boolean;
+    data?: { events?: AnyEvent[]; next_cursor?: string };
+  } | null = null;
   try {
     parsed = JSON.parse(r.stdout);
   } catch {
@@ -446,7 +462,22 @@ function pollOnce(): void {
     return;
   }
   const events = parsed.data?.events ?? [];
-  if (events.length === 0) return;
+  const nextCursor =
+    typeof parsed.data?.next_cursor === 'string' &&
+    parsed.data.next_cursor.length > 0
+      ? parsed.data.next_cursor
+      : null;
+  if (events.length === 0) {
+    if (nextCursor) {
+      cursor = nextCursor;
+      try {
+        writeFileSync(CURSOR_FILE, cursor);
+      } catch {
+        /* swallow */
+      }
+    }
+    return;
+  }
 
   for (const ev of events) {
     if (myPrincipal && ev.principal === myPrincipal) continue;
@@ -472,9 +503,10 @@ function pollOnce(): void {
     }
   }
 
-  const last = events[events.length - 1];
-  if (last?.event_id) {
-    cursor = last.event_id;
+  const lastVisibleEventId = events[events.length - 1]?.event_id;
+  const cursorToPersist = nextCursor ?? lastVisibleEventId;
+  if (cursorToPersist) {
+    cursor = cursorToPersist;
     try {
       writeFileSync(CURSOR_FILE, cursor);
     } catch {

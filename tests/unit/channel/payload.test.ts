@@ -82,6 +82,69 @@ describe('channel payload', () => {
     expect(envelope.payload.body).toContain('release');
   });
 
+  it('labels Sprint-wide discussion notifications with Sprint scope', () => {
+    const notification = createClaudeChannelNotification({
+      event_id: 'evt-sprint-1',
+      event_type: 'discussion_posted',
+      principal: 'bob',
+      sprint_id: 'sprint-plugin-release',
+      delivery_scope: 'sprint',
+      payload: {
+        message_id: 'msg-sprint-1',
+        thread_id: 'thr-sprint-1',
+        body: 'Sprint only update.'
+      }
+    });
+
+    expect(notification.params.meta).toEqual({
+      route: 'peer',
+      event_type: 'discussion_posted',
+      event_id: 'evt-sprint-1',
+      principal: 'bob',
+      notification_name: 'teamem.peer_event',
+      message_id: 'msg-sprint-1',
+      thread_id: 'thr-sprint-1',
+      recipient_principal: 'sprint:sprint-plugin-release',
+      delivery_scope: 'sprint',
+      sprint_id: 'sprint-plugin-release'
+    });
+
+    const envelope = JSON.parse(notification.params.content) as {
+      summary: string;
+    };
+    expect(envelope.summary).toContain('bob -> sprint:sprint-plugin-release');
+    expect(envelope.summary).not.toContain('bob -> space');
+  });
+
+  it('preserves direct and Space-wide discussion labels', () => {
+    const direct = createTeamemChannelEnvelope({
+      event_id: 'evt-direct-1',
+      event_type: 'discussion_posted',
+      principal: 'bob',
+      sprint_id: 'sprint-plugin-release',
+      delivery_scope: 'direct',
+      recipient_principals: ['alice'],
+      payload: {
+        recipient_principal: 'alice',
+        body: 'Direct still interrupts.'
+      }
+    });
+    const space = createTeamemChannelEnvelope({
+      event_id: 'evt-space-1',
+      event_type: 'discussion_posted',
+      principal: 'bob',
+      sprint_id: null,
+      delivery_scope: 'space',
+      payload: {
+        recipient_principal: null,
+        body: 'Escalating to Space.'
+      }
+    });
+
+    expect(direct.summary).toContain('bob -> alice');
+    expect(space.summary).toContain('bob -> space');
+  });
+
   it('builds urgent permission request notifications with exact contract metadata and full payload content', () => {
     const event = {
       event_id: 'evt-perm-1',

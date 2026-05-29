@@ -3,6 +3,7 @@ export type TeamemChannelEvent = {
   event_type: string;
   principal: string;
   space_id?: string;
+  sprint_id?: string | null;
   delivery_scope?: 'direct' | 'sprint' | 'space';
   recipient_principals?: readonly string[];
   scope?: { paths?: string[] };
@@ -46,6 +47,17 @@ export function classifyTeamemChannelRoute(
   return 'peer';
 }
 
+function discussionTargetLabel(ev: TeamemChannelEvent): string {
+  const recipient = ev.payload?.recipient_principal;
+  if (typeof recipient === 'string') return recipient;
+  if (ev.delivery_scope === 'sprint') {
+    return typeof ev.sprint_id === 'string' && ev.sprint_id.length > 0
+      ? `sprint:${ev.sprint_id}`
+      : 'sprint';
+  }
+  return 'space';
+}
+
 export function summarizeTeamemChannelEvent(ev: TeamemChannelEvent): string {
   const p = ev.principal;
   const t = ev.event_type;
@@ -72,7 +84,7 @@ export function summarizeTeamemChannelEvent(ev: TeamemChannelEvent): string {
       }
       return `${p} shared finding: ${String(ev.payload?.summary ?? '')}`;
     case 'discussion_posted': {
-      const to = String(ev.payload?.recipient_principal ?? 'space');
+      const to = discussionTargetLabel(ev);
       const body = String(ev.payload?.body ?? '')
         .replace(/\s+/g, ' ')
         .slice(0, 120);
@@ -183,7 +195,10 @@ export function createClaudeChannelNotification(
   const recipient = ev.payload?.recipient_principal;
   if (ev.event_type !== 'permission_requested') {
     if (typeof recipient === 'string') meta.recipient_principal = recipient;
-    if (recipient === null) meta.recipient_principal = 'space';
+    if (ev.event_type === 'discussion_posted' && recipient == null)
+      meta.recipient_principal = discussionTargetLabel(ev);
+    if (ev.delivery_scope) meta.delivery_scope = ev.delivery_scope;
+    if (typeof ev.sprint_id === 'string') meta.sprint_id = ev.sprint_id;
   }
 
   return {
