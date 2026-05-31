@@ -98,6 +98,22 @@ installation, authentication, and may spend model budget.
 - `TEAMEM_CLAUDE_PLUGIN_E2E=1` enables headless Teamem live tests.
 - `TEAMEM_CLAUDE_PLUGIN_INTERACTIVE_E2E=1` is the additional gate for
   interactive Teamem live tests.
+- `TEAMEM_CLAUDE_PLUGIN_INTERACTIVE_PERMISSION_MODE=<mode>` optionally selects
+  the Claude Code permission mode for the interactive Teamem live smoke. It
+  defaults to `auto` and accepts `default`, `acceptEdits`, `plan`, `auto`,
+  `dontAsk`, and `bypassPermissions`.
+
+Run the default interactive permission mode:
+
+```bash
+TEAMEM_CLAUDE_PLUGIN_E2E=1 TEAMEM_CLAUDE_PLUGIN_INTERACTIVE_E2E=1 bun test tests/plugin/teamem-interactive-whoami-smoke.test.ts
+```
+
+Run an overridden interactive permission mode:
+
+```bash
+TEAMEM_CLAUDE_PLUGIN_E2E=1 TEAMEM_CLAUDE_PLUGIN_INTERACTIVE_E2E=1 TEAMEM_CLAUDE_PLUGIN_INTERACTIVE_PERMISSION_MODE=bypassPermissions bun test tests/plugin/teamem-interactive-whoami-smoke.test.ts
+```
 
 Current Teamem consumer tiers under `tests/plugin/` prove:
 

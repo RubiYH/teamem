@@ -22,11 +22,19 @@ import {
   initGitRepo,
   inspectRuntimePrerequisite
 } from './teamem-live-smoke-helpers.js';
+import {
+  DEFAULT_TEAMEM_INTERACTIVE_PERMISSION_MODE,
+  TEAMEM_INTERACTIVE_PERMISSION_MODE_ENV,
+  resolveTeamemInteractivePermissionMode
+} from './teamem-interactive-permission-mode.js';
 
 const liveGateEnabled = process.env.TEAMEM_CLAUDE_PLUGIN_E2E === '1';
 const interactiveGateEnabled =
   process.env.TEAMEM_CLAUDE_PLUGIN_INTERACTIVE_E2E === '1';
 const liveInteractiveGateEnabled = liveGateEnabled && interactiveGateEnabled;
+const interactivePermissionMode = liveInteractiveGateEnabled
+  ? resolveTeamemInteractivePermissionMode()
+  : DEFAULT_TEAMEM_INTERACTIVE_PERMISSION_MODE;
 const runtimePrerequisite = await inspectRuntimePrerequisite({
   liveGateEnabled: liveInteractiveGateEnabled,
   gateReason: formatInteractiveGateReason()
@@ -85,7 +93,7 @@ describeLiveInteractive(
           expect(commandPrompt).toBe(whoamiSlashCommand);
 
           session = await tester.launchInteractive({
-            permissionMode: 'auto',
+            permissionMode: interactivePermissionMode,
             allowedTools: [`${pluginScopedToolPrefix}whoami`],
             disallowedTools: [
               `${pluginScopedToolPrefix}get_current_sprint`,
@@ -97,6 +105,10 @@ describeLiveInteractive(
             waitTimeoutMs: INTERACTIVE_WAIT_TIMEOUT_MS,
             closeTimeoutMs: INTERACTIVE_CLOSE_TIMEOUT_MS
           });
+          expectPermissionModeLaunchArgs(
+            session.command.args,
+            interactivePermissionMode
+          );
 
           await delay(INTERACTIVE_STARTUP_SETTLE_MS);
           await session.submit(commandPrompt, {
@@ -154,6 +166,15 @@ function formatInteractiveGateReason(): string {
   return 'set TEAMEM_CLAUDE_PLUGIN_INTERACTIVE_E2E=1 to run live interactive Claude plugin tests';
 }
 
+function expectPermissionModeLaunchArgs(
+  args: string[],
+  permissionMode: string
+): void {
+  const permissionFlagIndex = args.indexOf('--permission-mode');
+  expect(permissionFlagIndex).toBeGreaterThanOrEqual(0);
+  expect(args[permissionFlagIndex + 1]).toBe(permissionMode);
+}
+
 function isClaudeInteractiveReady(transcript: string): boolean {
   const normalized = normalizeTranscript(transcript);
 
@@ -199,7 +220,7 @@ async function waitForWhoamiMcpEvidence(
   }
 
   throw new Error(
-    `Timed out waiting for live teamem tools/call MCP evidence after ${INTERACTIVE_WAIT_TIMEOUT_MS}ms. Last trace summary: ${lastTraceSummary}. Artifacts: ${session.artifacts.dir}`
+    `Timed out waiting for live teamem tools/call MCP evidence after ${INTERACTIVE_WAIT_TIMEOUT_MS}ms. Last trace summary: ${lastTraceSummary}. Artifacts: ${session.artifacts.dir}. Permission mode env: ${TEAMEM_INTERACTIVE_PERMISSION_MODE_ENV}`
   );
 }
 
