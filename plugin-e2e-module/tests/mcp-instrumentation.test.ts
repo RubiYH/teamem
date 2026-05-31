@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import { spawn } from 'node:child_process';
 import {
   cp,
+  mkdir,
   mkdtemp,
   readFile,
   readdir,
@@ -507,6 +508,106 @@ describe('plugin-e2e-module MCP instrumentation', () => {
     }
   });
 
+  it('updates partial MCP artifacts while the proxy is still running', async () => {
+    const artifactsDir = await mkdtemp(
+      join(tmpdir(), 'claude-plugin-e2e-mcp-live-partial-')
+    );
+    const sourceDir = await copyFakePlugin();
+    const hangingScript = join(sourceDir, 'scripts', 'mcp-live-echo.js');
+
+    try {
+      await writeFile(
+        hangingScript,
+        [
+          'process.stdin.resume();',
+          "process.stdin.on('data', (chunk) => process.stdout.write(chunk));",
+          'setInterval(() => {}, 1000);'
+        ].join('\n'),
+        'utf8'
+      );
+      await writeMcpConfig(sourceDir, {
+        mcpServers: {
+          livePartial: {
+            command: process.execPath,
+            args: [hangingScript]
+          }
+        }
+      });
+      const tester = createClaudePluginTester({
+        pluginDir: sourceDir,
+        artifactsDir,
+        cleanup: 'never',
+        processRunner: createBootRunner()
+      });
+
+      const boot = await tester.boot();
+      const traceDir = join(artifactsDir, 'manual-mcp-live-partial-traces');
+      const config = await readMcpConfig(boot.instrumentedPlugin.pluginDir);
+      const server = config.mcpServers.livePartial;
+      const child = spawn(server.command, server.args, {
+        cwd: boot.instrumentedPlugin.pluginDir,
+        env: {
+          ...process.env,
+          CLAUDE_PLUGIN_E2E_MCP_TRACE_DIR: traceDir
+        },
+        shell: false
+      });
+      const request = `${JSON.stringify({
+        jsonrpc: '2.0',
+        id: 9,
+        method: 'initialize'
+      })}\n`;
+
+      try {
+        child.stdin.write(request);
+        const trace = await waitForMcpTraceMethod(traceDir, 'initialize');
+
+        expect(child.exitCode).toBeNull();
+        expect(trace.partial).toBe(true);
+        expect(trace.terminationReason).toBe('live-update');
+      } finally {
+        const close = waitForChildClose(child);
+        child.kill('SIGTERM');
+        await close;
+      }
+    } finally {
+      await rm(artifactsDir, { recursive: true, force: true });
+      await rm(sourceDir, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps final MCP trace reads strict while allowing polling to ignore transient parse errors', async () => {
+    const traceDir = await mkdtemp(
+      join(tmpdir(), 'claude-plugin-e2e-mcp-malformed-trace-')
+    );
+    const invocationDir = join(traceDir, 'broken');
+    const emptyTraceDir = await mkdtemp(
+      join(tmpdir(), 'claude-plugin-e2e-mcp-empty-trace-')
+    );
+    const emptyInvocationDir = join(emptyTraceDir, 'empty');
+
+    try {
+      await mkdir(invocationDir);
+      await mkdir(emptyInvocationDir);
+      await writeFile(join(invocationDir, 'trace.json'), '{', 'utf8');
+      await writeFile(join(emptyInvocationDir, 'trace.json'), '', 'utf8');
+
+      await expect(readMcpTraces(traceDir)).rejects.toThrow(
+        'Failed to parse MCP trace artifact'
+      );
+      await expect(readMcpTraces(emptyTraceDir)).rejects.toThrow('empty file');
+      await expect(
+        readMcpTraces(traceDir, { ignoreTransientErrors: true })
+      ).resolves.toEqual([]);
+      await expect(
+        readMcpTraces(emptyTraceDir, { ignoreTransientErrors: true })
+      ).resolves.toEqual([]);
+    } finally {
+      await rm(traceDir, { recursive: true, force: true });
+      await rm(emptyTraceDir, { recursive: true, force: true });
+    }
+  });
+
   it('surfaces MCP traces on prompt results and assertion helpers', async () => {
     const artifactsDir = await mkdtemp(
       join(tmpdir(), 'claude-plugin-e2e-mcp-prompt-')
@@ -869,6 +970,51 @@ async function runStructuredCommandAndTerminate(input: {
   });
 }
 
+async function waitForMcpTraceMethod(
+  traceDir: string,
+  method: string
+): Promise<Awaited<ReturnType<typeof readMcpTraces>>[number]> {
+  const deadline = Date.now() + 5_000;
+
+  while (Date.now() < deadline) {
+    const traces = await readMcpTraces(traceDir, {
+      ignoreTransientErrors: true
+    });
+    const trace = traces.find((candidate) =>
+      candidate.messages.some((message) => message.method === method)
+    );
+    if (trace) {
+      return trace;
+    }
+    await delay(25);
+  }
+
+  throw new Error(`Timed out waiting for MCP method ${method}`);
+}
+
+async function waitForChildClose(
+  child: ReturnType<typeof spawn>,
+  timeoutMs = 5_000
+): Promise<void> {
+  if (child.exitCode !== null || child.signalCode !== null) {
+    return;
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      child.off('close', onClose);
+      reject(new Error(`Timed out waiting ${timeoutMs}ms for child close.`));
+    }, timeoutMs);
+
+    function onClose(): void {
+      clearTimeout(timeout);
+      resolve();
+    }
+
+    child.once('close', onClose);
+  });
+}
+
 async function readTraceArtifactText(traceDir: string): Promise<string> {
   const invocationDirs = await readdir(traceDir, { withFileTypes: true });
   const chunks = await Promise.all(
@@ -882,6 +1028,10 @@ async function readTraceArtifactText(traceDir: string): Promise<string> {
       })
   );
   return chunks.join('\n');
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function ok(stdout: string): ProcessRunResult {

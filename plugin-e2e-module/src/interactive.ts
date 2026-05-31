@@ -1,4 +1,6 @@
 import { spawn as spawnPty, type IPty } from '@lydell/node-pty';
+import { spawn as spawnChild } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { InteractiveProcessError, InteractiveTimeoutError } from './errors.js';
 import { withClaudeArgs } from './command.js';
 import { readHookTraces } from './hook-traces.js';
@@ -28,10 +30,15 @@ export const DEFAULT_INTERACTIVE_CLOSE_TIMEOUT_MS = 10_000;
 const DEFAULT_READINESS_MATCHER: InteractiveReadinessMatcher = (transcript) =>
   /\bready\b/i.test(normalizeTranscript(transcript));
 const CONTROL_C = '\x03';
+const ENTER = '\r';
 const PROXY_REDACTION_MODE_ENV = 'CLAUDE_PLUGIN_E2E_REDACTION_MODE';
 
 export const nodePtyAdapter: InteractivePtyAdapter = {
   spawn(request) {
+    if (isBunRuntime()) {
+      return spawnViaNodePtyBridge(request);
+    }
+
     const pty = spawnPty(request.command, request.args, {
       cwd: request.cwd,
       env: request.env,
@@ -43,6 +50,10 @@ export const nodePtyAdapter: InteractivePtyAdapter = {
     return adaptNodePty(pty);
   }
 };
+
+const NODE_PTY_BRIDGE_PATH = fileURLToPath(
+  new URL('./node-pty-bridge.cjs', import.meta.url)
+);
 
 export async function launchInteractiveRun(input: {
   artifactManager: ArtifactManager;
@@ -213,7 +224,7 @@ export async function launchInteractiveRun(input: {
     },
     async submit(text, options = {}) {
       await writeToPty(state, text, 'submit', options.delayMs);
-      await writeToPty(state, '\n', 'submit');
+      await writeToPty(state, ENTER, 'submit');
     },
     async close() {
       if (state.closed) {
@@ -278,6 +289,138 @@ function adaptNodePty(pty: IPty): InteractivePtyProcess {
       return pty.onExit((event) => listener(event));
     }
   };
+}
+
+function isBunRuntime(): boolean {
+  return typeof Bun !== 'undefined';
+}
+
+function spawnViaNodePtyBridge(
+  request: Parameters<InteractivePtyAdapter['spawn']>[0]
+): InteractivePtyProcess {
+  const child = spawnChild('node', [NODE_PTY_BRIDGE_PATH], {
+    cwd: request.cwd,
+    env: process.env,
+    stdio: ['pipe', 'pipe', 'pipe']
+  });
+  const dataListeners = new Set<(data: string) => void>();
+  const exitListeners = new Set<
+    (event: { exitCode: number; signal?: number }) => void
+  >();
+  let stdoutBuffer = '';
+  let exited = false;
+
+  child.stdout.setEncoding('utf8');
+  child.stdout.on('data', (chunk: string) => {
+    stdoutBuffer += chunk;
+    let newlineIndex = stdoutBuffer.indexOf('\n');
+
+    while (newlineIndex >= 0) {
+      const line = stdoutBuffer.slice(0, newlineIndex);
+      stdoutBuffer = stdoutBuffer.slice(newlineIndex + 1);
+      handleBridgeLine(line);
+      newlineIndex = stdoutBuffer.indexOf('\n');
+    }
+  });
+
+  child.on('exit', (exitCode) => {
+    if (!exited) {
+      emitExit({ exitCode: exitCode ?? 1 });
+    }
+  });
+
+  sendBridgeMessage({
+    type: 'spawn',
+    request: {
+      command: request.command,
+      args: request.args,
+      cwd: request.cwd,
+      env: request.env
+    }
+  });
+
+  return {
+    pid: child.pid ?? -1,
+    write(data) {
+      sendBridgeMessage({
+        type: 'write',
+        data: Buffer.isBuffer(data) ? data.toString('utf8') : data
+      });
+    },
+    kill(signal) {
+      if (child.exitCode !== null || child.signalCode !== null) {
+        return;
+      }
+
+      sendBridgeMessage({ type: 'kill', signal });
+      if (signal) {
+        child.kill(signal as NodeJS.Signals);
+      }
+    },
+    onData(listener) {
+      dataListeners.add(listener);
+      return {
+        dispose: () => dataListeners.delete(listener)
+      };
+    },
+    onExit(listener) {
+      exitListeners.add(listener);
+      return {
+        dispose: () => exitListeners.delete(listener)
+      };
+    }
+  };
+
+  function handleBridgeLine(line: string): void {
+    if (!line) {
+      return;
+    }
+
+    let message: unknown;
+    try {
+      message = JSON.parse(line);
+    } catch {
+      return;
+    }
+
+    if (!isRecord(message)) {
+      return;
+    }
+
+    if (message.type === 'data' && typeof message.data === 'string') {
+      for (const listener of dataListeners) {
+        listener(message.data);
+      }
+      return;
+    }
+
+    if (message.type === 'exit') {
+      emitExit({
+        exitCode:
+          typeof message.exitCode === 'number' ? message.exitCode : 0,
+        signal: typeof message.signal === 'number' ? message.signal : undefined
+      });
+    }
+  }
+
+  function emitExit(event: { exitCode: number; signal?: number }): void {
+    if (exited) {
+      return;
+    }
+
+    exited = true;
+    for (const listener of exitListeners) {
+      listener(event);
+    }
+  }
+
+  function sendBridgeMessage(message: unknown): void {
+    if (child.stdin.destroyed) {
+      return;
+    }
+
+    child.stdin.write(`${JSON.stringify(message)}\n`);
+  }
 }
 
 function createInteractiveState(pty: InteractivePtyProcess): {
@@ -440,7 +583,7 @@ async function closeInteractivePty(
     timestamp: new Date().toISOString(),
     step: 'exit-command'
   });
-  await writeToPty(state, '/exit\n', 'close');
+  await writeToPty(state, `/exit${ENTER}`, 'close');
   if (await waitForExit(state, closeTimeoutMs)) {
     return true;
   }
@@ -695,7 +838,7 @@ function redactInteractiveEvents(
 function keyToBytes(key: InteractiveKey | string): string {
   switch (key) {
     case 'enter':
-      return '\n';
+      return ENTER;
     case 'escape':
       return '\x1b';
     case 'tab':
@@ -715,6 +858,10 @@ function keyToBytes(key: InteractiveKey | string): string {
     default:
       return key;
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function delay(ms: number): Promise<void> {

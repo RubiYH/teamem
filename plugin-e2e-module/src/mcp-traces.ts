@@ -9,14 +9,23 @@ import type {
   PromptResult
 } from './types.js';
 
-export async function readMcpTraces(traceDir: string): Promise<McpTrace[]> {
+export type ReadMcpTracesOptions = {
+  ignoreTransientErrors?: boolean;
+};
+
+export async function readMcpTraces(
+  traceDir: string,
+  options: ReadMcpTracesOptions = {}
+): Promise<McpTrace[]> {
   const entries = await readdir(traceDir, { withFileTypes: true }).catch(
     () => []
   );
   const traces = await Promise.all(
     entries
       .filter((entry) => entry.isDirectory())
-      .map(async (entry) => readMcpTrace(join(traceDir, entry.name)))
+      .map(async (entry) =>
+        readMcpTrace(join(traceDir, entry.name), options)
+      )
   );
 
   return traces
@@ -75,14 +84,33 @@ function matchesMcpMessage(
   return matcher(message);
 }
 
-async function readMcpTrace(dir: string): Promise<McpTrace | undefined> {
+async function readMcpTrace(
+  dir: string,
+  options: ReadMcpTracesOptions
+): Promise<McpTrace | undefined> {
   const tracePath = join(dir, 'trace.json');
-  const raw = await readFile(tracePath, 'utf8').catch(() => undefined);
-  if (!raw) {
-    return undefined;
+  let raw: string;
+  try {
+    raw = await readFile(tracePath, 'utf8');
+  } catch (error) {
+    if (options.ignoreTransientErrors) {
+      return undefined;
+    }
+    throw new Error(
+      `Failed to read MCP trace artifact ${tracePath}: ${formatError(error)}`
+    );
   }
 
-  const parsed = JSON.parse(raw) as {
+  if (raw.length === 0) {
+    if (options.ignoreTransientErrors) {
+      return undefined;
+    }
+    throw new Error(
+      `Failed to parse MCP trace artifact ${tracePath}: empty file`
+    );
+  }
+
+  let parsed: {
     serverName: string;
     command: string;
     args: string[];
@@ -109,6 +137,16 @@ async function readMcpTrace(dir: string): Promise<McpTrace | undefined> {
       unsupportedShellExpansion?: boolean;
     };
   };
+  try {
+    parsed = JSON.parse(raw) as typeof parsed;
+  } catch (error) {
+    if (options.ignoreTransientErrors) {
+      return undefined;
+    }
+    throw new Error(
+      `Failed to parse MCP trace artifact ${tracePath}: ${formatError(error)}`
+    );
+  }
   const artifacts = {
     tracePath: parsed.artifacts?.tracePath ?? tracePath,
     stdinPath: parsed.artifacts?.stdinPath ?? join(dir, 'stdin.raw'),
@@ -152,4 +190,8 @@ async function readMcpTrace(dir: string): Promise<McpTrace | undefined> {
 
 function formatMatcher(matcher: string | RegExp): string {
   return typeof matcher === 'string' ? matcher : matcher.toString();
+}
+
+function formatError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

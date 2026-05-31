@@ -108,8 +108,11 @@ Current Teamem consumer tiers under `tests/plugin/` prove:
 - Runtime `/teamem:teamem-whoami` smoke: when credentials and a runtime Space
   are available, a small Teamem command flow can invoke the core Teamem MCP path
   and return identity-oriented output.
-- Interactive live tests: reserved for terminal-dependent behavior and gated
-  separately from headless tests.
+- Interactive `/teamem:teamem-whoami` smoke: when credentials and a runtime
+  Space are available, real Claude Code can start in a TTY, accept a typed
+  slash command, emit terminal transcript evidence, and produce MCP trace
+  evidence through the core Teamem proxy. This is gated separately from
+  headless tests.
 
 Module self-tests use the generic fake plugin fixture in
 `plugin-e2e-module/fixtures/`. They prove module behavior without Teamem runtime

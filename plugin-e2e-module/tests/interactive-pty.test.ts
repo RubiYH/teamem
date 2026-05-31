@@ -7,6 +7,7 @@ import {
   InteractiveProcessError,
   InteractiveTimeoutError,
   createClaudePluginTester,
+  nodePtyAdapter,
   type InteractivePtyAdapter,
   type InteractivePtyProcess,
   type InteractivePtySpawnRequest,
@@ -19,6 +20,37 @@ const moduleRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const fakePluginDir = join(moduleRoot, 'fixtures', 'fake-plugin');
 
 describe('plugin-e2e-module interactive PTY execution', () => {
+  it('emits output from the default node-pty adapter in the current test runtime', async () => {
+    const pty = nodePtyAdapter.spawn({
+      command: process.execPath,
+      args: ['-e', 'console.log("real-pty-output")'],
+      cwd: moduleRoot,
+      env: process.env
+    });
+    let output = '';
+
+    const exit = await new Promise<{ exitCode: number; signal?: number }>(
+      (resolve, reject) => {
+        const timeout = setTimeout(() => {
+          pty.kill();
+          reject(new Error('Timed out waiting for real PTY adapter output.'));
+        }, 5_000);
+        const dataDisposer = pty.onData((data) => {
+          output += data;
+        });
+        const exitDisposer = pty.onExit((event) => {
+          clearTimeout(timeout);
+          dataDisposer.dispose();
+          exitDisposer.dispose();
+          resolve(event);
+        });
+      }
+    );
+
+    expect(exit.exitCode).toBe(0);
+    expect(output).toContain('real-pty-output');
+  });
+
   it('types a namespaced slash command through the TTY and waits for visible response evidence', async () => {
     const ptySpawns: InteractivePtySpawnRequest[] = [];
     const slashResponse = 'slash command observed through interactive TTY';
@@ -53,7 +85,7 @@ describe('plugin-e2e-module interactive PTY execution', () => {
       });
       await session.submit(prompt, { delayMs: 0 });
       await session.waitFor(slashResponse, { timeoutMs: 20 });
-      fakePty.exitOnWrite('/exit\n', 0);
+      fakePty.exitOnWrite('/exit\r', 0);
       await session.close();
 
       const rawTranscript = await readFile(
@@ -66,7 +98,7 @@ describe('plugin-e2e-module interactive PTY execution', () => {
       );
 
       expect(prompt).toBe('/generic-fake-plugin:echo issue 09 proof');
-      expect(fakePty.writes).toEqual([prompt, '\n', '/exit\n']);
+      expect(fakePty.writes).toEqual([prompt, '\r', '/exit\r']);
       expect(
         session.events().filter((event) => event.type === 'input')
       ).toHaveLength(3);
@@ -110,7 +142,7 @@ describe('plugin-e2e-module interactive PTY execution', () => {
       });
       await session.submit('first', { delayMs: 0 });
       await session.submit('second', { delayMs: 0 });
-      fakePty.exitOnWrite('/exit\n', 0);
+      fakePty.exitOnWrite('/exit\r', 0);
       await session.close();
 
       expect(session.kind).toBe('interactive');
@@ -133,10 +165,10 @@ describe('plugin-e2e-module interactive PTY execution', () => {
       expect(ptySpawns[0].env).not.toHaveProperty('CLAUDE_PLUGIN_DATA');
       expect(fakePty.writes).toEqual([
         'first',
-        '\n',
+        '\r',
         'second',
-        '\n',
-        '/exit\n'
+        '\r',
+        '/exit\r'
       ]);
       expect(
         session.events().filter((event) => event.type === 'input')
@@ -183,7 +215,7 @@ describe('plugin-e2e-module interactive PTY execution', () => {
       } as Parameters<typeof tester.launchInteractive>[0] & {
         maxTurns: number;
       });
-      fakePty.exitOnWrite('/exit\n', 0);
+      fakePty.exitOnWrite('/exit\r', 0);
       await session.close();
 
       expect(ptySpawns).toHaveLength(1);
@@ -293,7 +325,7 @@ describe('plugin-e2e-module interactive PTY execution', () => {
         closeTimeoutMs: 20
       });
       fakePty.emitData('answer: \x1b[1mok\x1b[0m\r\n');
-      fakePty.exitOnWrite('/exit\n', 0);
+      fakePty.exitOnWrite('/exit\r', 0);
       await session.close();
 
       const rawTranscript = await readFile(
@@ -386,7 +418,7 @@ describe('plugin-e2e-module interactive PTY execution', () => {
       fakePty.emitData('\x1b[32mReady\x1b[0m\r\n');
       const session = await launch;
       expect(session.normalizedTranscript()).toContain('Ready\n');
-      fakePty.exitOnWrite('/exit\n', 0);
+      fakePty.exitOnWrite('/exit\r', 0);
       await session.close();
     } finally {
       await rm(artifactsDir, { recursive: true, force: true });
@@ -423,10 +455,10 @@ describe('plugin-e2e-module interactive PTY execution', () => {
 
       expect(fakePty.writes).toEqual([
         'ab',
-        '\n',
+        '\r',
         'done',
-        '\n',
-        '/exit\n',
+        '\r',
+        '/exit\r',
         '\x03'
       ]);
       expect(fakePty.killCalls).toEqual([undefined]);
@@ -509,7 +541,7 @@ describe('plugin-e2e-module interactive PTY execution', () => {
       });
       await session.submit(secret, { delayMs: 0 });
       fakePty.emitData(`echoed ${secret}\n`);
-      fakePty.exitOnWrite('/exit\n', 0);
+      fakePty.exitOnWrite('/exit\r', 0);
       await session.close();
 
       const rawTranscript = await readFile(
@@ -558,7 +590,7 @@ describe('plugin-e2e-module interactive PTY execution', () => {
         closeTimeoutMs: 20
       });
       fakePty.emitData(`plugin emitted ${secret}\n`);
-      fakePty.exitOnWrite('/exit\n', 0);
+      fakePty.exitOnWrite('/exit\r', 0);
       await session.close();
 
       const rawTranscript = await readFile(
@@ -615,7 +647,7 @@ describe('plugin-e2e-module interactive PTY execution', () => {
       });
       await session.submit(secret, { delayMs: 0 });
       fakePty.emitData(`echoed ${secret}\n`);
-      fakePty.exitOnWrite('/exit\n', 0);
+      fakePty.exitOnWrite('/exit\r', 0);
       await session.close();
 
       expect(
@@ -682,7 +714,7 @@ class FakePty implements InteractivePtyProcess {
   write(data: string | Buffer): void {
     const text = String(data);
     this.writes.push(text);
-    if (text === '\n' && this.pendingCommandResponse !== undefined) {
+    if (text === '\r' && this.pendingCommandResponse !== undefined) {
       const response = this.pendingCommandResponse;
       this.pendingCommandResponse = undefined;
       setTimeout(() => this.emitData(response), 0);

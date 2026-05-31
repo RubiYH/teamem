@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 const { spawn } = require('node:child_process');
 const { randomUUID } = require('node:crypto');
-const { mkdirSync, writeFileSync } = require('node:fs');
+const { mkdirSync, renameSync, writeFileSync } = require('node:fs');
 const { join } = require('node:path');
 
 const args = parseArgs(process.argv.slice(2));
@@ -211,16 +211,35 @@ function finalizeTrace({ reason, exitCode = null, signal = null, partial }) {
   finalized = true;
   clientBuffer = flushMessageBuffer(clientBuffer, 'client-to-server');
   serverBuffer = flushMessageBuffer(serverBuffer, 'server-to-client');
+  writeTrace({ reason, exitCode, signal, partial });
+
+  return true;
+}
+
+function writeLiveTrace() {
+  if (finalized) {
+    return;
+  }
+
+  writeTrace({
+    reason: 'live-update',
+    exitCode: null,
+    signal: null,
+    partial: true
+  });
+}
+
+function writeTrace({ reason, exitCode = null, signal = null, partial }) {
   const endedAt = new Date();
   const durationMs = endedAt.getTime() - startedAtMs;
   const artifactStdin = redactText(stdin);
   const artifactStdout = redactText(stdout);
   const artifactStderr = redactText(stderr);
 
-  writeFileSync(stdinPath, artifactStdin);
-  writeFileSync(stdoutPath, artifactStdout);
-  writeFileSync(stderrPath, artifactStderr);
-  writeFileSync(
+  writeFileAtomicSync(stdinPath, artifactStdin);
+  writeFileAtomicSync(stdoutPath, artifactStdout);
+  writeFileAtomicSync(stderrPath, artifactStderr);
+  writeFileAtomicSync(
     tracePath,
     `${JSON.stringify(
       {
@@ -257,8 +276,12 @@ function finalizeTrace({ reason, exitCode = null, signal = null, partial }) {
       2
     )}\n`
   );
+}
 
-  return true;
+function writeFileAtomicSync(path, value) {
+  const tmpPath = `${path}.${process.pid}.tmp`;
+  writeFileSync(tmpPath, value);
+  renameSync(tmpPath, path);
 }
 
 function parseArgs(argv) {
@@ -320,6 +343,7 @@ function recordMessage(raw, direction) {
       stderrPath
     }
   });
+  writeLiveTrace();
 }
 
 function resolveRedactionMode() {
