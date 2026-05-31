@@ -728,7 +728,7 @@ function matchBootRequest(
 
   if (args.at(-1) === '--help') {
     return ok(
-      'Usage: claude -p --output-format stream-json --verbose --include-hook-events'
+      'Usage: claude --plugin-dir ./plugin -p --output-format stream-json --verbose --include-hook-events --permission-mode auto'
     );
   }
 

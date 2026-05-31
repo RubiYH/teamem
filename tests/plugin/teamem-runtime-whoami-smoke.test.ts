@@ -29,70 +29,77 @@ const describeLiveRuntime =
 
 const repoRoot = process.cwd();
 const teamemPluginDir = join(repoRoot, 'plugin');
+const LIVE_SMOKE_TEST_TIMEOUT_MS = 180_000;
+const whoamiSlashCommand = '/teamem:teamem-whoami';
+const pluginScopedToolPrefix = 'mcp__plugin_teamem_teamem__teamem_';
 
 describeLiveRuntime(
   `Teamem runtime whoami live smoke${runtimePrerequisite.ok ? '' : ` (${runtimePrerequisite.reason})`}`,
   () => {
-    it('invokes /teamem-whoami through the core Teamem MCP proxy', async () => {
-      const cwd = await mkdtemp(join(tmpdir(), 'teamem-whoami-cwd-'));
-      const artifactsDir = await mkdtemp(
-        join(tmpdir(), 'teamem-whoami-artifacts-')
-      );
-      let success = false;
+    it(
+      'invokes /teamem:teamem-whoami through the core Teamem MCP proxy',
+      async () => {
+        const cwd = await mkdtemp(join(tmpdir(), 'teamem-whoami-cwd-'));
+        const artifactsDir = await mkdtemp(
+          join(tmpdir(), 'teamem-whoami-artifacts-')
+        );
+        let success = false;
 
-      try {
-        initGitRepo(cwd);
+        try {
+          initGitRepo(cwd);
 
-        const tester = createClaudePluginTester({
-          pluginDir: teamemPluginDir,
-          cwd,
-          artifactsDir,
-          cleanup: 'never',
-          mcp: { include: ['teamem'], mode: 'disable-non-included' },
-          env: createLiveRuntimeEnv(),
-          timeouts: {
-            headlessRunMs: 120_000
+          const tester = createClaudePluginTester({
+            pluginDir: teamemPluginDir,
+            cwd,
+            artifactsDir,
+            cleanup: 'never',
+            mcp: { include: ['teamem'], mode: 'disable-non-included' },
+            env: createLiveRuntimeEnv(),
+            timeouts: {
+              headlessRunMs: 120_000
+            }
+          });
+          const boot = await tester.boot();
+
+          await expectOnlyTeamemMcpIsProxied(boot);
+
+          const commandPrompt =
+            await tester.slashCommandPrompt('teamem-whoami');
+          expect(commandPrompt).toBe(whoamiSlashCommand);
+
+          const result = await tester.prompt(commandPrompt, {
+            allowedTools: [`${pluginScopedToolPrefix}whoami`],
+            disallowedTools: [
+              `${pluginScopedToolPrefix}get_current_sprint`,
+              `${pluginScopedToolPrefix}list_claims`,
+              `${pluginScopedToolPrefix}get_briefing`
+            ],
+            maxTurns: 5
+          });
+
+          expect(result.exitCode).toBe(0);
+          expect(result.expectText(/^principal:\s+\S+/m)).toBe(result);
+          expect(result.expectText(/^space_id:\s+\S+/m)).toBe(result);
+          expect(result.expectText(/^label:\s+.*$/m)).toBe(result);
+          expect(result.prompt).not.toContain('teamem-status');
+          assertNoTeamemChannelMcpTrace(result);
+          assertWhoamiMcpEvidence(result);
+          await assertLaunchDidNotForcePluginData(result);
+          await assertProxyTraceEvidence(result);
+          success = true;
+        } finally {
+          if (success) {
+            await rm(artifactsDir, { recursive: true, force: true });
+            await rm(cwd, { recursive: true, force: true });
+          } else {
+            console.error(
+              `Preserving failed live smoke artifacts at ${artifactsDir} and cwd ${cwd}`
+            );
           }
-        });
-        const boot = await tester.boot();
-
-        await expectOnlyTeamemMcpIsProxied(boot);
-
-        const commandPrompt = await tester.slashCommandPrompt('teamem-whoami');
-        expect(commandPrompt).toContain('teamem-whoami');
-        expect(commandPrompt).not.toContain('teamem-status');
-
-        const result = await tester.prompt(commandPrompt, {
-          allowedTools: ['mcp__teamem__whoami'],
-          disallowedTools: [
-            'mcp__teamem__get_current_sprint',
-            'mcp__teamem__list_claims',
-            'mcp__teamem__get_briefing'
-          ],
-          maxTurns: 3
-        });
-
-        expect(result.exitCode).toBe(0);
-        expect(result.expectText(/^principal:\s+\S+/m)).toBe(result);
-        expect(result.expectText(/^space_id:\s+\S+/m)).toBe(result);
-        expect(result.expectText(/^label:\s+.*$/m)).toBe(result);
-        expect(result.prompt).not.toContain('teamem-status');
-        assertNoTeamemChannelMcpTrace(result);
-        assertWhoamiMcpEvidence(result);
-        await assertLaunchDidNotForcePluginData(result);
-        await assertProxyTraceEvidence(result);
-        success = true;
-      } finally {
-        if (success) {
-          await rm(artifactsDir, { recursive: true, force: true });
-          await rm(cwd, { recursive: true, force: true });
-        } else {
-          console.error(
-            `Preserving failed live smoke artifacts at ${artifactsDir} and cwd ${cwd}`
-          );
         }
-      }
-    });
+      },
+      LIVE_SMOKE_TEST_TIMEOUT_MS
+    );
   }
 );
 

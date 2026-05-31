@@ -45,7 +45,8 @@ main methods are:
 - `validatePlugin({ target })` explicitly runs Claude plugin validation against
   the source plugin or instrumented plugin.
 - `prompt(prompt, options?)` runs a headless Claude Code print-mode invocation
-  with `-p --output-format stream-json --verbose --include-hook-events`.
+  with `--plugin-dir <instrumented-plugin> -p --output-format stream-json
+  --verbose --include-hook-events --permission-mode auto` by default.
 - `launchInteractive(options?)` starts real interactive Claude Code in a TTY and
   returns controls for `type`, `press`, `submit`, `waitFor`, transcripts,
   synthetic events, and `close`.
@@ -104,9 +105,9 @@ Current Teamem consumer tiers under `tests/plugin/` prove:
   instrument the core `teamem` MCP server, observe `SessionStart`, avoid forcing
   `CLAUDE_PLUGIN_DATA`, and avoid `teamem-channel` noise without requiring a
   Teamem Space.
-- Runtime `/teamem-whoami` smoke: when credentials and a runtime Space are
-  available, a small Teamem command flow can invoke the core Teamem MCP path and
-  return identity-oriented output.
+- Runtime `/teamem:teamem-whoami` smoke: when credentials and a runtime Space
+  are available, a small Teamem command flow can invoke the core Teamem MCP path
+  and return identity-oriented output.
 - Interactive live tests: reserved for terminal-dependent behavior and gated
   separately from headless tests.
 

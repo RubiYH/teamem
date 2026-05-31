@@ -62,9 +62,11 @@ import type {
 export const DEFAULT_MIN_CLAUDE_VERSION = '2.1.158';
 export const REQUIRED_CLAUDE_HELP_FEATURES = [
   '-p',
+  '--plugin-dir',
   '--output-format',
   '--verbose',
-  '--include-hook-events'
+  '--include-hook-events',
+  '--permission-mode'
 ] as const;
 
 const DEFAULT_BOOT_TIMEOUT_MS = 10_000;
