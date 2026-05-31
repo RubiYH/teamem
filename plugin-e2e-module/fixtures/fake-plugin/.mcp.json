@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "generic-fake": {
+      "command": "node",
+      "args": ["scripts/mcp-echo.js"]
+    }
+  }
+}
