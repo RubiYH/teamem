@@ -63,6 +63,7 @@ export const DEFAULT_MIN_CLAUDE_VERSION = '2.1.158';
 export const REQUIRED_CLAUDE_HELP_FEATURES = [
   '-p',
   '--output-format',
+  '--verbose',
   '--include-hook-events'
 ] as const;
 
@@ -541,6 +542,7 @@ async function runHeadlessPrompt(
     '-p',
     '--output-format',
     'stream-json',
+    '--verbose',
     '--include-hook-events',
     ...buildHeadlessOptionArgs(options),
     prompt

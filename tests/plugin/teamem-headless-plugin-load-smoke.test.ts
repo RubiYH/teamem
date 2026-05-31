@@ -23,6 +23,7 @@ describeLive('Teamem headless plugin-load live smoke', () => {
     const artifactsDir = await mkdtemp(
       join(tmpdir(), 'teamem-plugin-load-artifacts-')
     );
+    let success = false;
 
     try {
       initGitRepo(cwd);
@@ -58,9 +59,16 @@ describeLive('Teamem headless plugin-load live smoke', () => {
       assertNoTeamemChannelMcpTrace(result);
       await assertLaunchDidNotForcePluginData(result);
       await assertSessionStartTraceEvidence(result);
+      success = true;
     } finally {
-      await rm(artifactsDir, { recursive: true, force: true });
-      await rm(cwd, { recursive: true, force: true });
+      if (success) {
+        await rm(artifactsDir, { recursive: true, force: true });
+        await rm(cwd, { recursive: true, force: true });
+      } else {
+        console.error(
+          `Preserving failed live smoke artifacts at ${artifactsDir} and cwd ${cwd}`
+        );
+      }
     }
   });
 });

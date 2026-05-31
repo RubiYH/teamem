@@ -45,7 +45,7 @@ main methods are:
 - `validatePlugin({ target })` explicitly runs Claude plugin validation against
   the source plugin or instrumented plugin.
 - `prompt(prompt, options?)` runs a headless Claude Code print-mode invocation
-  with `-p --output-format stream-json --include-hook-events`.
+  with `-p --output-format stream-json --verbose --include-hook-events`.
 - `launchInteractive(options?)` starts real interactive Claude Code in a TTY and
   returns controls for `type`, `press`, `submit`, `waitFor`, transcripts,
   synthetic events, and `close`.

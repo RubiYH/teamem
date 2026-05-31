@@ -63,6 +63,7 @@ describe('plugin-e2e-module headless prompt execution', () => {
             '-p',
             '--output-format',
             'stream-json',
+            '--verbose',
             '--include-hook-events',
             '--permission-mode',
             'auto',
@@ -81,6 +82,7 @@ describe('plugin-e2e-module headless prompt execution', () => {
             '-p',
             '--output-format',
             'stream-json',
+            '--verbose',
             '--include-hook-events',
             '--permission-mode',
             'auto',
@@ -145,7 +147,8 @@ describe('plugin-e2e-module headless prompt execution', () => {
         '-p',
         '--output-format',
         'stream-json',
-        '--include-hook-events',
+            '--verbose',
+            '--include-hook-events',
         '--permission-mode',
         'plan',
         '--allowedTools',
@@ -725,7 +728,7 @@ function matchBootRequest(
 
   if (args.at(-1) === '--help') {
     return ok(
-      'Usage: claude -p --output-format stream-json --include-hook-events'
+      'Usage: claude -p --output-format stream-json --verbose --include-hook-events'
     );
   }
 
@@ -868,7 +871,8 @@ function parseHeadlessPromptArgs(
     promptIndex < 0 ||
     args[promptIndex + 1] !== '--output-format' ||
     args[promptIndex + 2] !== 'stream-json' ||
-    args[promptIndex + 3] !== '--include-hook-events'
+    args[promptIndex + 3] !== '--verbose' ||
+    args[promptIndex + 4] !== '--include-hook-events'
   ) {
     return undefined;
   }

@@ -38,6 +38,7 @@ describeLiveRuntime(
       const artifactsDir = await mkdtemp(
         join(tmpdir(), 'teamem-whoami-artifacts-')
       );
+      let success = false;
 
       try {
         initGitRepo(cwd);
@@ -80,9 +81,16 @@ describeLiveRuntime(
         assertWhoamiMcpEvidence(result);
         await assertLaunchDidNotForcePluginData(result);
         await assertProxyTraceEvidence(result);
+        success = true;
       } finally {
-        await rm(artifactsDir, { recursive: true, force: true });
-        await rm(cwd, { recursive: true, force: true });
+        if (success) {
+          await rm(artifactsDir, { recursive: true, force: true });
+          await rm(cwd, { recursive: true, force: true });
+        } else {
+          console.error(
+            `Preserving failed live smoke artifacts at ${artifactsDir} and cwd ${cwd}`
+          );
+        }
       }
     });
   }

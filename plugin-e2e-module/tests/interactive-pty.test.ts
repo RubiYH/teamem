@@ -764,7 +764,7 @@ function createFakeClaudeRunner(calls: ProcessRunRequest[]): ProcessRunner {
 
     if (request.args.at(-1) === '--help') {
       return ok(
-        'Usage: claude -p --output-format stream-json --include-hook-events'
+        'Usage: claude -p --output-format stream-json --verbose --include-hook-events'
       );
     }
 
