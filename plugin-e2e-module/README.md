@@ -8,6 +8,40 @@ The reusable module stays generic. It must not import Teamem code, hardcode
 Teamem commands, or assume Teamem environment contracts. Teamem-specific live
 tests are consumers under `tests/plugin/`.
 
+## Current Status
+
+The PoC is implemented as a local, reusable-looking module with Teamem as its
+first real consumer. The delivered branch history is:
+
+- `6e530c0` established the generic module foundation: Claude boot checks,
+  source-plugin validation, copied-plugin instrumentation, headless and
+  interactive backends, hook and MCP proxies, redacted artifacts, fake-plugin
+  self-tests, and the first Teamem live smokes.
+- `678a199` aligned headless print mode with Claude Code 2.1.158 by adding
+  `--verbose` whenever `--output-format stream-json` is used, and preserved
+  failed live-smoke artifacts for diagnosis.
+- `e0becd6` locked Teamem live smokes to Claude Code's observed local-plugin
+  naming: namespaced slash commands such as `/teamem:teamem-whoami` and
+  plugin-scoped MCP tools such as `mcp__plugin_teamem_teamem__teamem_whoami`.
+- `3585344` proved the interactive TTY path against real Teamem by routing
+  Bun through a Node `@lydell/node-pty` bridge, submitting carriage-return
+  enters, writing live MCP partial traces, and asserting `tools/call` evidence
+  instead of assistant UI prose.
+- `6180126` made the interactive Teamem smoke permission mode configurable with
+  `TEAMEM_CLAUDE_PLUGIN_INTERACTIVE_PERMISSION_MODE`, while keeping `auto` as
+  the default and failing fast for unsupported modes.
+
+The current live Teamem coverage is intentionally small: plugin load, runtime
+`/teamem:teamem-whoami`, interactive `/teamem:teamem-whoami`, and an
+interactive permission-mode override smoke. Broader command flows such as
+`/teamem:teamem-status`, permission-prompt choreography, reporters, custom
+matchers, package publishing, and `assistantReport` remain deferred.
+
+The next useful tracked slice is a broader, headless `/teamem:teamem-status`
+live smoke. That should stay opt-in, assert MCP and process evidence rather
+than assistant wording, and continue to proxy only the core `teamem` MCP server
+until channel-specific behavior is intentionally brought into scope.
+
 ## Public API
 
 The module entrypoint is `plugin-e2e-module/src/index.ts`.
