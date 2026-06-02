@@ -20,7 +20,8 @@ import {
   createLiveRuntimeEnv,
   expectOnlyTeamemMcpIsProxied,
   initGitRepo,
-  inspectRuntimePrerequisite
+  inspectRuntimePrerequisite,
+  TEAMEM_MCP_INSTRUMENTATION_OPTIONS
 } from './teamem-live-smoke-helpers.js';
 import {
   DEFAULT_TEAMEM_INTERACTIVE_PERMISSION_MODE,
@@ -76,7 +77,7 @@ describeLiveInteractive(
             cwd,
             artifactsDir,
             cleanup: 'never',
-            mcp: { include: ['teamem'], mode: 'disable-non-included' },
+            mcp: TEAMEM_MCP_INSTRUMENTATION_OPTIONS,
             env: createLiveRuntimeEnv(),
             timeouts: {
               interactiveReadinessMs: INTERACTIVE_READINESS_TIMEOUT_MS,
@@ -179,7 +180,7 @@ function isClaudeInteractiveReady(transcript: string): boolean {
   const normalized = normalizeTranscript(transcript);
 
   return (
-    /(^|\n)\s*[>›]\s*$/.test(normalized) ||
+    /(^|\n)[^\S\n]*[>›❯][^\S\n]*(?=\n|$)/.test(normalized) ||
     /\btry ["'].*["']/i.test(normalized)
   );
 }
@@ -211,9 +212,11 @@ async function waitForWhoamiMcpEvidence(
         : traces
             .map(
               (trace) =>
-                `${trace.serverName}:${trace.messages
-                  .map((message) => message.method ?? 'unknown')
-                  .join(',') || 'no messages'}`
+                `${trace.serverName}:${
+                  trace.messages
+                    .map((message) => message.method ?? 'unknown')
+                    .join(',') || 'no messages'
+                }`
             )
             .join('; ');
     await delay(250);
@@ -254,9 +257,7 @@ async function assertInteractiveArtifactsExist(
   expect(summary.result?.mcpTraceCount ?? 0).toBeGreaterThan(0);
 }
 
-async function assertSessionStartEvidence(
-  traces: HookTrace[]
-): Promise<void> {
+async function assertSessionStartEvidence(traces: HookTrace[]): Promise<void> {
   const sessionStart = traces.find((trace) => trace.event === 'SessionStart');
   expect(sessionStart).toBeDefined();
 
@@ -267,9 +268,7 @@ async function assertSessionStartEvidence(
   }
 }
 
-async function assertTeamemMcpTraceEvidence(
-  traces: McpTrace[]
-): Promise<void> {
+async function assertTeamemMcpTraceEvidence(traces: McpTrace[]): Promise<void> {
   const teamemTrace = traces.find((trace) => trace.serverName === 'teamem');
   expect(teamemTrace).toBeDefined();
 

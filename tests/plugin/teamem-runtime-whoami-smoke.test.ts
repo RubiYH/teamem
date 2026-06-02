@@ -15,7 +15,8 @@ import {
   createLiveRuntimeEnv,
   expectOnlyTeamemMcpIsProxied,
   initGitRepo,
-  inspectRuntimePrerequisite
+  inspectRuntimePrerequisite,
+  TEAMEM_MCP_INSTRUMENTATION_OPTIONS
 } from './teamem-live-smoke-helpers.js';
 
 const liveGateEnabled = process.env.TEAMEM_CLAUDE_PLUGIN_E2E === '1';
@@ -52,7 +53,7 @@ describeLiveRuntime(
             cwd,
             artifactsDir,
             cleanup: 'never',
-            mcp: { include: ['teamem'], mode: 'disable-non-included' },
+            mcp: TEAMEM_MCP_INSTRUMENTATION_OPTIONS,
             env: createLiveRuntimeEnv(),
             timeouts: {
               headlessRunMs: 120_000

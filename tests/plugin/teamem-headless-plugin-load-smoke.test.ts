@@ -9,68 +9,74 @@ import {
   type HookTrace,
   type PromptResult
 } from '../../plugin-e2e-module/src/index.js';
+import { TEAMEM_MCP_INSTRUMENTATION_OPTIONS } from './teamem-live-smoke-helpers.js';
 
 const describeLive =
   process.env.TEAMEM_CLAUDE_PLUGIN_E2E === '1' ? describe : describe.skip;
 
 const repoRoot = process.cwd();
 const teamemPluginDir = join(repoRoot, 'plugin');
+const LIVE_SMOKE_TEST_TIMEOUT_MS = 180_000;
 const fixedReply = 'TEAMEM_PLUGIN_LOAD_SMOKE_OK';
 
 describeLive('Teamem headless plugin-load live smoke', () => {
-  it('loads the real local Teamem plugin without forcing plugin data or runtime credentials', async () => {
-    const cwd = await mkdtemp(join(tmpdir(), 'teamem-plugin-load-cwd-'));
-    const artifactsDir = await mkdtemp(
-      join(tmpdir(), 'teamem-plugin-load-artifacts-')
-    );
-    let success = false;
-
-    try {
-      initGitRepo(cwd);
-
-      const tester = createClaudePluginTester({
-        pluginDir: teamemPluginDir,
-        cwd,
-        artifactsDir,
-        cleanup: 'never',
-        mcp: { include: ['teamem'], mode: 'disable-non-included' },
-        env: createSanitizedLiveEnv(cwd),
-        timeouts: {
-          headlessRunMs: 120_000
-        }
-      });
-      const boot = await tester.boot();
-
-      await expectOnlyTeamemMcpIsProxied(boot);
-
-      const result = await tester.prompt(
-        [
-          `Reply exactly with ${fixedReply}.`,
-          'Do not use tools, MCP tools, shell commands, slash commands, or Teamem runtime features.'
-        ].join(' '),
-        {
-          disallowedTools: ['mcp__teamem__*'],
-          maxTurns: 1
-        }
+  it(
+    'loads the real local Teamem plugin without forcing plugin data or runtime credentials',
+    async () => {
+      const cwd = await mkdtemp(join(tmpdir(), 'teamem-plugin-load-cwd-'));
+      const artifactsDir = await mkdtemp(
+        join(tmpdir(), 'teamem-plugin-load-artifacts-')
       );
+      let success = false;
 
-      expect(result.exitCode).toBe(0);
-      expect(result.expectText(fixedReply)).toBe(result);
-      assertNoTeamemChannelMcpTrace(result);
-      await assertLaunchDidNotForcePluginData(result);
-      await assertSessionStartTraceEvidence(result);
-      success = true;
-    } finally {
-      if (success) {
-        await rm(artifactsDir, { recursive: true, force: true });
-        await rm(cwd, { recursive: true, force: true });
-      } else {
-        console.error(
-          `Preserving failed live smoke artifacts at ${artifactsDir} and cwd ${cwd}`
+      try {
+        initGitRepo(cwd);
+
+        const tester = createClaudePluginTester({
+          pluginDir: teamemPluginDir,
+          cwd,
+          artifactsDir,
+          cleanup: 'never',
+          mcp: TEAMEM_MCP_INSTRUMENTATION_OPTIONS,
+          env: createSanitizedLiveEnv(cwd),
+          timeouts: {
+            headlessRunMs: 120_000
+          }
+        });
+        const boot = await tester.boot();
+
+        await expectOnlyTeamemMcpIsProxied(boot);
+
+        const result = await tester.prompt(
+          [
+            `Reply exactly with ${fixedReply}.`,
+            'Do not use tools, MCP tools, shell commands, slash commands, or Teamem runtime features.'
+          ].join(' '),
+          {
+            disallowedTools: ['mcp__teamem__*'],
+            maxTurns: 1
+          }
         );
+
+        expect(result.exitCode).toBe(0);
+        expect(result.expectText(fixedReply)).toBe(result);
+        assertNoTeamemChannelMcpTrace(result);
+        await assertLaunchDidNotForcePluginData(result);
+        await assertSessionStartTraceEvidence(result);
+        success = true;
+      } finally {
+        if (success) {
+          await rm(artifactsDir, { recursive: true, force: true });
+          await rm(cwd, { recursive: true, force: true });
+        } else {
+          console.error(
+            `Preserving failed live smoke artifacts at ${artifactsDir} and cwd ${cwd}`
+          );
+        }
       }
-    }
-  });
+    },
+    LIVE_SMOKE_TEST_TIMEOUT_MS
+  );
 });
 
 function initGitRepo(cwd: string): void {

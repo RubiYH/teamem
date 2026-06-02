@@ -3,6 +3,8 @@ import type { ClaudePermissionMode } from '../../plugin-e2e-module/src/index.js'
 export const TEAMEM_INTERACTIVE_PERMISSION_MODE_ENV =
   'TEAMEM_CLAUDE_PLUGIN_INTERACTIVE_PERMISSION_MODE';
 export const DEFAULT_TEAMEM_INTERACTIVE_PERMISSION_MODE = 'auto';
+export const DEFAULT_TEAMEM_INTERACTIVE_SCRIPT_PERMISSION_MODE =
+  'bypassPermissions';
 export const SUPPORTED_TEAMEM_INTERACTIVE_PERMISSION_MODES = [
   'default',
   'acceptEdits',
@@ -13,12 +15,13 @@ export const SUPPORTED_TEAMEM_INTERACTIVE_PERMISSION_MODES = [
 ] as const satisfies readonly ClaudePermissionMode[];
 
 export function resolveTeamemInteractivePermissionMode(
-  env: NodeJS.ProcessEnv = process.env
+  env: NodeJS.ProcessEnv = process.env,
+  defaultMode: ClaudePermissionMode = DEFAULT_TEAMEM_INTERACTIVE_PERMISSION_MODE
 ): ClaudePermissionMode {
   const rawMode = env[TEAMEM_INTERACTIVE_PERMISSION_MODE_ENV]?.trim();
 
   if (!rawMode) {
-    return DEFAULT_TEAMEM_INTERACTIVE_PERMISSION_MODE;
+    return defaultMode;
   }
 
   if (isSupportedTeamemInteractivePermissionMode(rawMode)) {
