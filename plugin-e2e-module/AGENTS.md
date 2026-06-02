@@ -1,5 +1,5 @@
 <!-- Parent: ../AGENTS.md -->
-<!-- Created: 2026-06-01 -->
+<!-- Created: 2026-06-01 | Updated: 2026-06-02 -->
 
 # plugin-e2e-module
 
@@ -60,6 +60,14 @@ tests belong under `tests/plugin/`.
 - Treat MCP and hook proxy traces as the v1 correctness base. Assistant text and
   terminal prose can be useful debugging evidence, but should not be the only
   proof that a plugin command ran.
+- MCP instrumentation is generic. Use `McpInstrumentationOptions.include`,
+  `exclude`, `mode`, and caller-supplied `envPassthroughKeys`; do not bake
+  product-specific environment names such as Teamem credential or Space keys
+  into this module.
+- `mode: "disable-non-included"` should leave non-included MCP servers disabled
+  in the per-run config while proxied included servers preserve structured
+  command/argument/env data. Keep config materialization structural rather than
+  shell-string based.
 - Keep `readMcpTraces(...)` strict by default. Use transient-tolerant reads only
   for live polling while a proxy may be writing partial artifacts.
 - Keep redaction safe by default. `redaction.mode: "off"` must require
@@ -112,6 +120,9 @@ bun run lint
   fake plugin fixture to prove behavior without Teamem runtime state.
 - Teamem-specific assertions, environment gates, and live runtime prerequisites
   are consumers of this module and should remain under `tests/plugin/`.
+- Consumer suites that need product env in proxied MCP children should define
+  their own `envPassthroughKeys` constants beside their tests. The module should
+  only provide the generic mechanism and safe default process keys.
 - Assertion helpers should be runner-neutral methods or plain functions, not
   Vitest/Bun/Jest custom matcher integrations in v1.
 - Artifact paths should be included in typed errors and assertion failures so

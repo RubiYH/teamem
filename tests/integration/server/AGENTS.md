@@ -1,5 +1,5 @@
 <!-- Parent: ../AGENTS.md -->
-<!-- Generated: 2026-05-09 | Updated: 2026-05-09 -->
+<!-- Generated: 2026-05-09 | Updated: 2026-06-02 -->
 
 # server
 
@@ -13,7 +13,7 @@ Integration tests for the core server tools: claim scope with branch isolation, 
 |------|-------------|
 | `claim-scope-branch.test.ts` | Branch isolation — same path on different branches do not block each other |
 | `claim-scope-manual-modes.test.ts` | Slice #34 — mode semantics (expires_at nullability), lease_seconds validation, mode stickiness |
-| `idempotency-collision.test.ts` | Idempotency keys prevent duplicate event emission on retried requests |
+| `idempotency-collision.test.ts` | Idempotency keys prevent duplicate event emission on retried requests and recover stale/missing claim projections |
 | `release-scope-via-git.test.ts` | Release via git evidence (HEAD_SHA_AT_ACQUIRE, current_head_sha validation) |
 | `claim-scope-manual-modes.test.ts` | TTL expiry and lease_seconds enforcement |
 | `boot-warning.test.ts` | Server boots without errors (smoke test for entrypoint) |
@@ -38,9 +38,11 @@ Integration tests for the core server tools: claim scope with branch isolation, 
 - **Mode semantics**: manual_only and on_commit have `expires_at IS NULL`; ttl has `expires_at = now + lease_seconds`.
 - **Schema validation**: Server rejects ttl claims with `lease_seconds <= 0`; rejects manual_only/on_commit with lease_seconds (ttl-only field).
 - **Git release**: evaluateRelease() checks SHA format (40 lowercase hex) and rejects invalid.
-- **Idempotency**: Same idempotency_key emits event once, retries return cached result.
+- **Idempotency**: Same idempotency_key emits event once when the original claim projection is still visible. If the event/idempotency row exists but the `claims` projection row is missing, recovery must treat the old claim as stale and create a fresh visible claim.
+- **Projection visibility**: `on_commit` and `manual_only` claims have nullable `expires_at`; tests must cover missing projection rows for those modes instead of relying on `expires_at` truthiness.
 - **Rate limiting**: Exceed log-volume threshold per space → subsequent calls return error (recovers on time).
 - **TTL expiry**: Query-time expiry check allows new claim from different principal on expired ttl claim.
+- **Cloud free trials**: Provisioning tests that need an active free-trial policy should use far-future named timestamp constants, not calendar-close literals that expire during future test runs.
 
 ### Common Patterns
 

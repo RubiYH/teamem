@@ -1,11 +1,11 @@
 <!-- Parent: ../AGENTS.md -->
-<!-- Generated: 2026-05-09 | Updated: 2026-05-10 -->
+<!-- Generated: 2026-05-09 | Updated: 2026-06-02 -->
 
 # plugin
 
 ## Purpose
 
-Claude Code plugin tests that verify the integration between the bridge, git hooks, slash commands, and the HTTP server. Tests here exercise the plugin's CLI interfaces, gate-claim logic, post-commit/post-checkout hooks, and the current discussion/deferred-dispute behavior.
+Claude Code plugin tests that verify the integration between the bridge, git hooks, slash commands, live Claude plugin loading, copied demo workspaces, and the HTTP server. Tests here exercise the plugin's CLI interfaces, gate-claim logic, post-commit/post-checkout hooks, runtime/headless/interactive live smokes, multi-profile coordination, and the current discussion/deferred-dispute behavior.
 
 ## Key Files
 
@@ -33,6 +33,12 @@ Claude Code plugin tests that verify the integration between the bridge, git hoo
 | `teamem-monitor-no-source-tree.test.ts` | `/teamem-monitor` CLI fallback (no source tree) |
 | `teamem-flag-no-shasum.test.ts` | `/teamem-flag` without shasum falls back to env var or prompts |
 | `teamem-discuss-agent.test.ts` | Direct discuss command contract plus absence of postponed negotiator routing |
+| `teamem-live-smoke-helpers.ts` | Shared live smoke gates, Teamem runtime preflight, MCP env passthrough, and single-host interactive lock |
+| `teamem-demo-repository-workspace.ts` | Copies `tests/fixtures/demo-repository-template/` into a safe temp git workspace for live smokes |
+| `teamem-interactive-readiness.ts` | Claude TTY readiness and startup-safety prompt handling for interactive smokes |
+| `teamem-runtime-*-smoke.test.ts` | L3 runtime/headless live smokes through real plugin MCP evidence |
+| `teamem-interactive-*-smoke.test.ts` | L4 interactive live smokes through real Claude TTY, hook traces, and runtime evidence |
+| `teamem-multi-profile-*.ts` | L5 Alice/Bob profile isolation and multi-profile live smoke coverage |
 | `teamem-setup-no-source-tree.test.ts` | `/teamem-setup` CLI fallback (no source tree) |
 | `teamem-space-no-source-tree.test.ts` | `/teamem-space` CLI fallback (no source tree) |
 | `teamem-onboarding-no-source-tree.test.ts` | `/teamem-onboarding` CLI fallback (no source tree) |
@@ -46,6 +52,13 @@ Claude Code plugin tests that verify the integration between the bridge, git hoo
 - Use `spawnSync()` to invoke CLI commands (e.g., `bun run teamem ...`, `bun build ...`, `bash scripts/gate-claim.sh`).
 - For tests that verify bundle freshness, spawn `bun build` in a temp directory, then byte-compare against committed `plugin/lib/` files.
 - Marketplace-env tests use `setupMarketplaceEnv()` to mock `~/.claude/plugins/data/` structure.
+- Live Teamem plugin smokes are opt-in and should skip cleanly unless their env gates are set. L3 runtime/headless tests use `TEAMEM_CLAUDE_PLUGIN_E2E`; stateful flows also use `TEAMEM_CLAUDE_PLUGIN_STATEFUL_E2E`; L4 interactive flows add `TEAMEM_CLAUDE_PLUGIN_INTERACTIVE_E2E`; L5 multi-profile flows add `TEAMEM_CLAUDE_PLUGIN_MULTI_PROFILE_E2E`.
+- Use `TEAMEM_MCP_INSTRUMENTATION_OPTIONS` from `teamem-live-smoke-helpers.ts` for live Teamem smokes so Teamem credential/Space env reaches proxied MCP children without hardcoding those keys into `plugin-e2e-module/`.
+- Live interactive smokes should run under `withLiveInteractiveSmokeLock(...)` when they share local Claude/plugin/runtime state. Preserve failed artifacts and copied demo workspaces; cleanup only after success.
+- Live smokes should launch against a copied demo workspace from `tests/fixtures/demo-repository-template/`, never the Teamem source checkout. Report preserved workspace/artifact paths in failures.
+- Treat MCP traces, hook traces, runtime tool reads, and copied-workspace file state as proof. Do not treat assistant prose alone as proof that a Teamem command, claim, handoff, or Space Rules sync happened.
+- Scope-claim conflict smokes must use neutral fixture markers and require edit-like `PreToolUse` denial evidence (`Edit`, `Write`, or `MultiEdit`) with incumbent claim/principal metadata. Do not let the prompt itself tell Bob to stop before the hook runs.
+- Multi-profile L5 tests must keep Alice/Bob profile credentials, plugin data, transcripts, MCP traces, hook traces, and runtime evidence separate. Use `teamem dev claude --profile <name> --dry-run` planning through `teamem-multi-profile-coordinator.ts`; do not overwrite the developer's default `~/.teamem/credentials.json`.
 
 ### Testing Requirements
 
@@ -55,6 +68,8 @@ Claude Code plugin tests that verify the integration between the bridge, git hoo
 - CLI fallback tests ("no-source-tree" variants) verify the bridge can run in stdio fallback mode without accessing `plugin/` directory.
 - SessionStart tests must ensure decisions and gotcha notices come from `teamem.session_sync`, while durable unread notifications remain in `fetchUnreadNotifications`. Gotchas must not be surfaced twice.
 - Teamem rule tests must include hostile labels/names that could break HTML comments (`--`, `<`, `>`) because `TEAMEM.md` metadata is stored in a comment.
+- Demo workspace tests must verify deterministic git history, safe deletion markers, and hostile caller git config isolation. The helper must not honor caller hooks, GPG signing, or `GIT_DIR`/`GIT_WORK_TREE`.
+- Live smoke gates should be verified both ways: unset env produces skips in `bun test`, while the explicit live commands prove the real Claude/plugin path when credentials and auth are available.
 
 ### Common Patterns
 
@@ -64,6 +79,8 @@ Claude Code plugin tests that verify the integration between the bridge, git hoo
 - **Output parsing**: capture `stdout`, split lines, find patterns (e.g., regex for claim info) to verify UX format.
 - **Marketplace mocking**: `setupMarketplaceEnv({ space_id, jwt, ... })` to set environment variables that simulate Claude Code plugin context.
 - **Credential cleanup in E2E-like tests**: If a test uses `TEAMEM_CREDENTIALS`, create a temp file and delete it. Never rely on the developer's real `~/.teamem/credentials.json`.
+- **Live L3/L4 command shape**: run the runtime/headless/interactive smoke files with `TEAMEM_CLAUDE_PLUGIN_E2E=1`, `TEAMEM_CLAUDE_PLUGIN_INTERACTIVE_E2E=1`, `TEAMEM_CLAUDE_PLUGIN_STATEFUL_E2E=1`, and `CLAUDE_PLUGIN_E2E_ALLOW_UNREDACTED=1` when artifact contents are needed for diagnosis.
+- **Live L5 command shape**: run `tests/plugin/teamem-multi-profile-*.test.ts` with the L3/L4 env plus `TEAMEM_CLAUDE_PLUGIN_MULTI_PROFILE_E2E=1`. A split rerun of one failed L5 file is acceptable for debugging, but before release prefer one continuous six-stream L5 run when time allows.
 
 ## Dependencies
 
