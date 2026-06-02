@@ -18,6 +18,12 @@ const REQUIRED_PACKED_FILES = [
 
 describe('package artifact', () => {
   it('only publishes the built CLI artifact set', () => {
+    const build = spawnSync('bun', ['run', 'build'], {
+      cwd: PACKAGE_ROOT,
+      encoding: 'utf8'
+    });
+    expect(build.status).toBe(0);
+
     const packageJson = JSON.parse(readFileSync(PACKAGE_JSON_PATH, 'utf8')) as {
       bin?: Record<string, string>;
     };

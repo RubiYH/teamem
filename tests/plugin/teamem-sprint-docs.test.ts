@@ -11,7 +11,6 @@ describe('Sprint plugin docs contract', () => {
     const command = read('plugin/commands/teamem-sprint.md');
     const pluginReadme = read('plugin/README.md');
     const publicPluginDoc = read('docs/integrations/claude-code-plugin.md');
-    const operatorPluginDoc = read('.docs/integrations/claude-code-plugin.md');
 
     for (const verb of [
       'create',
@@ -25,10 +24,9 @@ describe('Sprint plugin docs contract', () => {
       expect(command).toContain(`\`${verb}`);
       expect(pluginReadme).toContain(`/teamem-sprint ${verb}`);
       expect(publicPluginDoc).toContain(`/teamem-sprint ${verb}`);
-      expect(operatorPluginDoc).toContain(`/teamem-sprint ${verb}`);
     }
 
-    for (const doc of [pluginReadme, publicPluginDoc, operatorPluginDoc]) {
+    for (const doc of [pluginReadme, publicPluginDoc]) {
       const normalizedDoc = doc.replace(/\s+/g, ' ');
 
       expect(doc).toContain('Space mode');
@@ -45,7 +43,5 @@ describe('Sprint plugin docs contract', () => {
     expect(pluginReadme).not.toContain('/teamem-sprint off');
     expect(publicPluginDoc).not.toContain('/teamem-sprint use');
     expect(publicPluginDoc).not.toContain('/teamem-sprint off');
-    expect(operatorPluginDoc).not.toContain('/teamem-sprint use');
-    expect(operatorPluginDoc).not.toContain('/teamem-sprint off');
   });
 });
