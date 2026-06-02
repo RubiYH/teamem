@@ -15,6 +15,8 @@ import {
 const TEST_JWT_SECRET = 'test-secret-32bytes-padded-xxxxx';
 const SERVICE_TOKEN = 'runtime-service-token-32bytes-ok';
 const RUNTIME_URL = 'https://runtime.teamem.test';
+const ACTIVE_TRIAL_EXPIRES_AT = '2999-01-01T00:00:00.000Z';
+const UPDATED_ACTIVE_TRIAL_EXPIRES_AT = '2999-07-01T00:00:00.000Z';
 
 function setup() {
   resetRateLimitBuckets();
@@ -43,7 +45,7 @@ function createRequest(overrides: Record<string, unknown> = {}) {
     controlPlaneSpaceId: 'csp-1',
     provisioningRequestId: 'req-1',
     plan: 'free',
-    trialExpiresAt: '2026-06-01T00:00:00.000Z',
+    trialExpiresAt: ACTIVE_TRIAL_EXPIRES_AT,
     memberLimit: 3,
     ...overrides
   };
@@ -72,7 +74,7 @@ function policyRequest(overrides: Record<string, unknown> = {}) {
   return {
     controlPlaneSpaceId: 'csp-1',
     runtimeSpaceId: 'runtime-1',
-    trialExpiresAt: '2026-07-01T00:00:00.000Z',
+    trialExpiresAt: UPDATED_ACTIVE_TRIAL_EXPIRES_AT,
     memberLimit: 5,
     ...overrides
   };
@@ -293,7 +295,7 @@ describe('runtime cloud-admin provisioning', () => {
       cloud_provisioning_request_id: 'req-1',
       cloud_idempotency_key: 'idem-1',
       cloud_plan: 'free',
-      cloud_trial_expires_at: '2026-06-01T00:00:00.000Z',
+      cloud_trial_expires_at: ACTIVE_TRIAL_EXPIRES_AT,
       cloud_member_limit: 3,
       cloud_suspended_at: null,
       cloud_suspension_reason: null
@@ -754,7 +756,7 @@ describe('runtime cloud-admin provisioning', () => {
     expect(await update.json()).toMatchObject({
       controlPlaneSpaceId: created.controlPlaneSpaceId,
       runtimeSpaceId: created.runtimeSpaceId,
-      trialExpiresAt: '2026-07-01T00:00:00.000Z',
+      trialExpiresAt: UPDATED_ACTIVE_TRIAL_EXPIRES_AT,
       memberLimit: 5,
       suspendedAt: null,
       suspensionReason: null
@@ -763,7 +765,7 @@ describe('runtime cloud-admin provisioning', () => {
     const status = await getAdminStatus(app, created.runtimeSpaceId);
     expect(status.status).toBe(200);
     expect(await status.json()).toMatchObject({
-      trialExpiresAt: '2026-07-01T00:00:00.000Z',
+      trialExpiresAt: UPDATED_ACTIVE_TRIAL_EXPIRES_AT,
       memberLimit: 5
     });
 
@@ -778,7 +780,7 @@ describe('runtime cloud-admin provisioning', () => {
       cloud_member_limit: number;
     };
     expect(row).toEqual({
-      cloud_trial_expires_at: '2026-07-01T00:00:00.000Z',
+      cloud_trial_expires_at: UPDATED_ACTIVE_TRIAL_EXPIRES_AT,
       cloud_member_limit: 5
     });
   });
