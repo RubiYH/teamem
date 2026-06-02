@@ -898,7 +898,9 @@ describe('runCli', () => {
     expect(generatedMcp).toContain(
       '"CLAUDE_PLUGIN_DATA": "/tmp/home/.teamem/dev-profiles/alice/plugin-data/teamem"'
     );
-    expect(generatedMcp).toContain('"CLAUDE_PLUGIN_ROOT": "/src/teamem/plugin"');
+    expect(generatedMcp).toContain(
+      '"CLAUDE_PLUGIN_ROOT": "/src/teamem/plugin"'
+    );
     expect(generatedMcp).not.toContain('${CLAUDE_PLUGIN_ROOT}');
     expect(generatedMcp).not.toContain('/cache/teamem');
     expect(gitHookInstaller.invocations).toEqual([

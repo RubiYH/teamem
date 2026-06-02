@@ -3,10 +3,7 @@ import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import {
-  createClaudePluginTester,
-  readSlashCommands
-} from '../src/index.js';
+import { createClaudePluginTester, readSlashCommands } from '../src/index.js';
 
 const moduleRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const fakePluginDir = join(moduleRoot, 'fixtures', 'fake-plugin');

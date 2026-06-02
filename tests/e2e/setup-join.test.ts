@@ -147,9 +147,7 @@ describe('AC11 — setup join flow', () => {
     const entries = Object.values(creds.spaces);
     expect(entries).toHaveLength(1);
     expect(entries[0].member_name).toBe('bob');
-    expect(result.stdout).toContain(
-      `Credentials saved to ${credPath}.`
-    );
+    expect(result.stdout).toContain(`Credentials saved to ${credPath}.`);
   });
 
   it('prints the default credentials path when joining without an explicit path', async () => {
@@ -169,9 +167,7 @@ describe('AC11 — setup join flow', () => {
 
     expect(result.exitCode).toBe(0);
     await expect(stat(defaultCredPath)).resolves.toBeTruthy();
-    expect(result.stdout).toContain(
-      `Credentials saved to ${defaultCredPath}.`
-    );
+    expect(result.stdout).toContain(`Credentials saved to ${defaultCredPath}.`);
   });
 
   it('prints the TEAMEM_CREDENTIALS path when joining with profile-scoped credentials', async () => {
@@ -190,9 +186,7 @@ describe('AC11 — setup join flow', () => {
 
     expect(result.exitCode).toBe(0);
     await expect(stat(credPath)).resolves.toBeTruthy();
-    expect(result.stdout).toContain(
-      `Credentials saved to ${credPath}.`
-    );
+    expect(result.stdout).toContain(`Credentials saved to ${credPath}.`);
   });
 
   it('makes an explicitly joined space the default over stale credentials', async () => {

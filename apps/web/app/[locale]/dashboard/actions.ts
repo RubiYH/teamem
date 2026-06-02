@@ -112,10 +112,13 @@ export async function rotateRoomCodeAction() {
     redirect(`${dashboardPath.dashboard}?rotate=success`);
   }
   const rotateReason =
-    result.reason === 'space_not_found' ? 'missing'
-    : result.reason === 'runtime_details_missing' ? 'unavailable'
-    : result.reason === 'control_plane_reconciliation_required' ? 'reconcile'
-    : 'failed';
+    result.reason === 'space_not_found'
+      ? 'missing'
+      : result.reason === 'runtime_details_missing'
+        ? 'unavailable'
+        : result.reason === 'control_plane_reconciliation_required'
+          ? 'reconcile'
+          : 'failed';
   await capturePostHogServerEvent({
     distinctId: session.user.id,
     event: 'room_code_rotation_failed',
@@ -164,11 +167,15 @@ export async function deleteSpaceAction(formData: FormData) {
     redirect(`${dashboardPath.dashboard}?delete=success`);
   }
   const deleteReason =
-    result.reason === 'confirmation_required' ? 'confirm'
-    : result.reason === 'space_not_found' ? 'missing'
-    : result.reason === 'runtime_details_missing' ? 'unavailable'
-    : result.reason === 'control_plane_reconciliation_required' ? 'reconcile'
-    : 'failed';
+    result.reason === 'confirmation_required'
+      ? 'confirm'
+      : result.reason === 'space_not_found'
+        ? 'missing'
+        : result.reason === 'runtime_details_missing'
+          ? 'unavailable'
+          : result.reason === 'control_plane_reconciliation_required'
+            ? 'reconcile'
+            : 'failed';
   await capturePostHogServerEvent({
     distinctId: session.user.id,
     event: 'space_deletion_failed',

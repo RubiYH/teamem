@@ -23,9 +23,7 @@ export async function readMcpTraces(
   const traces = await Promise.all(
     entries
       .filter((entry) => entry.isDirectory())
-      .map(async (entry) =>
-        readMcpTrace(join(traceDir, entry.name), options)
-      )
+      .map(async (entry) => readMcpTrace(join(traceDir, entry.name), options))
   );
 
   return traces

@@ -33,9 +33,8 @@ describe('dev source checkout probes', () => {
       source: 'flag'
     });
     expect(
-      report.diagnostics.find(
-        (diagnostic) => diagnostic.id === 'real-claude'
-      )?.details
+      report.diagnostics.find((diagnostic) => diagnostic.id === 'real-claude')
+        ?.details
     ).toBe('/opt/claude/bin/claude');
   });
 
@@ -153,13 +152,11 @@ describe('dev source checkout probes', () => {
 
     expect(report.hasErrors).toBe(true);
     expect(
-      report.diagnostics.find((diagnostic) => diagnostic.id === 'bun')
-        ?.severity
+      report.diagnostics.find((diagnostic) => diagnostic.id === 'bun')?.severity
     ).toBe('error');
     expect(
-      report.diagnostics.find(
-        (diagnostic) => diagnostic.id === 'real-claude'
-      )?.severity
+      report.diagnostics.find((diagnostic) => diagnostic.id === 'real-claude')
+        ?.severity
     ).toBe('error');
     expect(renderDevSourceProbeReport(report, { dryRun: true })).toContain(
       'prerequisite-failed'
@@ -245,7 +242,9 @@ function createDevSourceFileSystem(
     directories,
     executableFiles,
     exists(path: string): boolean {
-      return files.has(path) || directories.has(path) || executableFiles.has(path);
+      return (
+        files.has(path) || directories.has(path) || executableFiles.has(path)
+      );
     },
     isDirectory(path: string): boolean {
       return directories.has(path);

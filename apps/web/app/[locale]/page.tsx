@@ -79,7 +79,10 @@ export default async function Home({
               </p>
             </div>
             <div className="flex flex-col gap-3 sm:flex-row">
-              <LandingPrimaryCta className="w-full sm:w-auto" href={dashboardHref}>
+              <LandingPrimaryCta
+                className="w-full sm:w-auto"
+                href={dashboardHref}
+              >
                 {t('hero.primaryCta')}
               </LandingPrimaryCta>
               <LandingSecondaryCta

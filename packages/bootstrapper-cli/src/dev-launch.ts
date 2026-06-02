@@ -121,18 +121,20 @@ export function renderDevLaunchDryRun(plan: DevLaunchPlan): string {
 }
 
 export function renderDevLaunchBoundarySummary(plan: DevLaunchPlan): string {
-  return [
-    'Teamem dev Claude launch',
-    `Real Claude: ${plan.command}`,
-    `Profile: ${plan.profile.profileName}`,
-    `Launch cwd: ${plan.cwd}`,
-    `Source root: ${plan.sourceRoot}`,
-    `Plugin source: ${plan.pluginRoot}`,
-    `Plugin data: ${plan.profile.pluginDataDir}`,
-    `Logs: ${plan.profile.logsDir}`,
-    `Channel source: ${plan.channelSource}`,
-    'Boundary: marketplace plugin identity teamem@teamem-alpha is ignored for this source-checkout launch.'
-  ].join('\n') + '\n';
+  return (
+    [
+      'Teamem dev Claude launch',
+      `Real Claude: ${plan.command}`,
+      `Profile: ${plan.profile.profileName}`,
+      `Launch cwd: ${plan.cwd}`,
+      `Source root: ${plan.sourceRoot}`,
+      `Plugin source: ${plan.pluginRoot}`,
+      `Plugin data: ${plan.profile.pluginDataDir}`,
+      `Logs: ${plan.profile.logsDir}`,
+      `Channel source: ${plan.channelSource}`,
+      'Boundary: marketplace plugin identity teamem@teamem-alpha is ignored for this source-checkout launch.'
+    ].join('\n') + '\n'
+  );
 }
 
 export function createNodeDevClaudeProcessRunner(): DevClaudeProcessRunner {

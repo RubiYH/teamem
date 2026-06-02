@@ -344,7 +344,9 @@ describe('session-start.sh offline notification delivery (slice #35)', () => {
   }, 30_000);
 
   it('stops after warning when explicit launcher Space fails validation despite project auto-on', () => {
-    const work = mkdtempSync(join(tmpdir(), 'teamem-sessstart-invalid-launch-'));
+    const work = mkdtempSync(
+      join(tmpdir(), 'teamem-sessstart-invalid-launch-')
+    );
     try {
       const { sentinel } = stageFakePlugin(
         work,

@@ -6,7 +6,10 @@ import {
   renderDevLaunchDryRun
 } from '../src/dev-launch.js';
 import type { DevProfilePaths } from '../src/dev-profiles.js';
-import type { DevSourceFileSystem, DevSourceResolution } from '../src/dev-source.js';
+import type {
+  DevSourceFileSystem,
+  DevSourceResolution
+} from '../src/dev-source.js';
 
 describe('buildDevLaunchPlan', () => {
   it('uses the real Claude binary, isolated profile env, local plugin, and strict MCP args', () => {
@@ -123,9 +126,7 @@ describe('buildDevLaunchPlan', () => {
     expect(dryRun).toContain(
       'Plugin data: /tmp/home/.teamem/dev-profiles/alice/plugin-data/teamem'
     );
-    expect(dryRun).toContain(
-      'Logs: /tmp/home/.teamem/dev-profiles/alice/logs'
-    );
+    expect(dryRun).toContain('Logs: /tmp/home/.teamem/dev-profiles/alice/logs');
     expect(dryRun).toContain('Channel source: server:teamem-channel');
     expect(dryRun).toContain(
       'Marketplace plugin ignored: teamem@teamem-alpha is not loaded for dev launch.'

@@ -42,9 +42,8 @@ describe('dev preflight', () => {
   });
 
   it('passes the checked health URL into the Bun probe', () => {
-    const result = createNodeDevServerHealthChecker().check(
-      'http://127.0.0.1:9'
-    );
+    const result =
+      createNodeDevServerHealthChecker().check('http://127.0.0.1:9');
 
     expect(result.ok).toBe(false);
     expect(result.checkedUrl).toBe('http://127.0.0.1:9/health');
