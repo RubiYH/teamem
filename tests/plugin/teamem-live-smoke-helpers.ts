@@ -1,7 +1,9 @@
 import { expect } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { readFile, stat } from 'node:fs/promises';
+import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   AmbiguousSpaceLabelError,
   SessionExpiredError,
@@ -15,17 +17,56 @@ import {
 import type {
   BootResult,
   HookTrace,
+  McpInstrumentationOptions,
   McpTrace,
   PromptResult,
   RunArtifacts
 } from '../../plugin-e2e-module/src/index.js';
 
 export type RuntimePrerequisite =
-  | { ok: true }
+  | {
+      ok: true;
+      selectedEntry: CredentialEntry;
+      preflightWhoami: RuntimeWhoamiEvidence;
+    }
   | {
       ok: false;
       reason: string;
     };
+
+export type RuntimeWhoamiEvidence = {
+  principal: string;
+  space_id: string;
+  label: string;
+};
+
+export type LiveRuntimeToolResponse<TData = unknown> = {
+  ok: true;
+  data: TData;
+};
+
+export const TEAMEM_MCP_ENV_PASSTHROUGH_KEYS = [
+  'CLAUDE_PLUGIN_OPTION_DEFAULT_SPACE',
+  'TEAMEM_CREDENTIALS',
+  'TEAMEM_SPACE',
+  'TEAMEM_SPACE_ID',
+  'TEAMEM_DEFAULT_SPACE',
+  'TEAMEM_CLAUDE_LAUNCH_INTENT',
+  'TEAMEM_CLAUDE_LAUNCH_SPACE'
+] as const;
+
+export const TEAMEM_MCP_INSTRUMENTATION_OPTIONS = {
+  include: ['teamem'],
+  mode: 'disable-non-included',
+  envPassthroughKeys: [...TEAMEM_MCP_ENV_PASSTHROUGH_KEYS]
+} satisfies McpInstrumentationOptions;
+
+const LIVE_INTERACTIVE_SMOKE_LOCK_DIR = join(
+  tmpdir(),
+  'teamem-live-interactive-smoke.lock'
+);
+const LIVE_INTERACTIVE_SMOKE_LOCK_TIMEOUT_MS = 15 * 60_000;
+const LIVE_INTERACTIVE_SMOKE_LOCK_STALE_MS = 30 * 60_000;
 
 export function initGitRepo(cwd: string): void {
   const init = spawnSync('git', ['init'], {
@@ -41,6 +82,60 @@ export function createLiveRuntimeEnv(): NodeJS.ProcessEnv {
   delete env.CLAUDE_PLUGIN_DATA;
 
   return env;
+}
+
+export async function withLiveInteractiveSmokeLock<T>(
+  label: string,
+  action: () => Promise<T>
+): Promise<T> {
+  const lockDir = await acquireLiveInteractiveSmokeLock(label);
+  try {
+    return await action();
+  } finally {
+    await rm(lockDir, { recursive: true, force: true });
+  }
+}
+
+export async function callLiveRuntimeTool<TData = unknown>(
+  entry: CredentialEntry,
+  toolName: string,
+  input: Record<string, unknown> = {},
+  timeoutMs = 5_000
+): Promise<LiveRuntimeToolResponse<TData>> {
+  const baseUrl = entry.server_url.replace(/\/$/, '');
+  const url = `${baseUrl}/tools/${toolName}`;
+  const response = await fetchWithTimeout(
+    url,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${entry.jwt}`
+      },
+      body: JSON.stringify(input)
+    },
+    timeoutMs
+  );
+
+  let body: unknown = null;
+  try {
+    body = await response.json();
+  } catch {
+    body = null;
+  }
+
+  if (!response.ok) {
+    throw new Error(
+      `Teamem runtime ${toolName} returned HTTP ${response.status}`
+    );
+  }
+  if (!isRuntimeToolResponse<TData>(body)) {
+    throw new Error(
+      `Teamem runtime ${toolName} returned an unexpected response`
+    );
+  }
+
+  return body;
 }
 
 export async function inspectRuntimePrerequisite(input: {
@@ -103,7 +198,16 @@ export async function inspectRuntimePrerequisite(input: {
     throw err;
   }
 
-  return preflightRuntimeWhoami(selectedEntry);
+  const preflightWhoami = await preflightRuntimeWhoami(selectedEntry);
+  if (!preflightWhoami.ok) {
+    return preflightWhoami;
+  }
+
+  return {
+    ok: true,
+    selectedEntry,
+    preflightWhoami: preflightWhoami.data
+  };
 }
 
 export async function expectOnlyTeamemMcpIsProxied(
@@ -183,6 +287,79 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function isRuntimeToolResponse<TData>(
+  value: unknown
+): value is LiveRuntimeToolResponse<TData> {
+  return isRecord(value) && value.ok === true && 'data' in value;
+}
+
+async function acquireLiveInteractiveSmokeLock(label: string): Promise<string> {
+  const startedAt = Date.now();
+  let lastOwner = '';
+
+  while (Date.now() - startedAt < LIVE_INTERACTIVE_SMOKE_LOCK_TIMEOUT_MS) {
+    try {
+      await mkdir(LIVE_INTERACTIVE_SMOKE_LOCK_DIR);
+      await writeFile(
+        join(LIVE_INTERACTIVE_SMOKE_LOCK_DIR, 'owner.json'),
+        JSON.stringify(
+          {
+            label,
+            pid: process.pid,
+            acquired_at: new Date().toISOString()
+          },
+          null,
+          2
+        )
+      );
+      return LIVE_INTERACTIVE_SMOKE_LOCK_DIR;
+    } catch (err) {
+      if (!isNodeErrorCode(err, 'EEXIST')) {
+        throw err;
+      }
+    }
+
+    lastOwner = await readFile(
+      join(LIVE_INTERACTIVE_SMOKE_LOCK_DIR, 'owner.json'),
+      'utf8'
+    ).catch(() => '');
+
+    const lockStats = await stat(LIVE_INTERACTIVE_SMOKE_LOCK_DIR).catch(
+      () => undefined
+    );
+    if (
+      lockStats &&
+      Date.now() - lockStats.mtimeMs > LIVE_INTERACTIVE_SMOKE_LOCK_STALE_MS
+    ) {
+      await rm(LIVE_INTERACTIVE_SMOKE_LOCK_DIR, {
+        recursive: true,
+        force: true
+      });
+      continue;
+    }
+
+    await delay(500);
+  }
+
+  throw new Error(
+    `Timed out waiting for live interactive smoke lock for ${label}. Last owner: ${
+      lastOwner.trim() || 'unknown'
+    }`
+  );
+}
+
+function isNodeErrorCode(err: unknown, code: string): boolean {
+  return (
+    err instanceof Error &&
+    'code' in err &&
+    (err as NodeJS.ErrnoException).code === code
+  );
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function formatCredentialSelectionError(err: unknown): string {
   if (err instanceof AmbiguousSpaceLabelError) {
     return err.message;
@@ -195,13 +372,7 @@ function formatCredentialSelectionError(err: unknown): string {
 
 function inspectSelectedEntryShape(entry: CredentialEntry): string | undefined {
   const record = entry as unknown as Record<string, unknown>;
-  for (const key of [
-    'space_id',
-    'label',
-    'server_url',
-    'jwt',
-    'member_name'
-  ]) {
+  for (const key of ['space_id', 'label', 'server_url', 'jwt', 'member_name']) {
     if (typeof record[key] !== 'string' || record[key] === '') {
       return `selected Teamem Space is missing ${key}`;
     }
@@ -212,9 +383,13 @@ function inspectSelectedEntryShape(entry: CredentialEntry): string | undefined {
   return undefined;
 }
 
-async function preflightRuntimeWhoami(
-  entry: CredentialEntry
-): Promise<RuntimePrerequisite> {
+async function preflightRuntimeWhoami(entry: CredentialEntry): Promise<
+  | { ok: true; data: RuntimeWhoamiEvidence }
+  | {
+      ok: false;
+      reason: string;
+    }
+> {
   const baseUrl = entry.server_url.replace(/\/$/, '');
   const url = `${baseUrl}/tools/teamem.whoami`;
   let response: Response;
@@ -255,7 +430,7 @@ async function preflightRuntimeWhoami(
     };
   }
 
-  return { ok: true };
+  return { ok: true, data: body.data };
 }
 
 async function fetchWithTimeout(
@@ -279,7 +454,9 @@ function formatPreflightError(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-function isWhoamiResponse(value: unknown): boolean {
+function isWhoamiResponse(
+  value: unknown
+): value is { ok: true; data: RuntimeWhoamiEvidence } {
   if (!isRecord(value) || value.ok !== true || !isRecord(value.data)) {
     return false;
   }

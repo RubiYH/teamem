@@ -25,6 +25,7 @@ pnpm-debug.log*
 data/
 .teamem/
 TEAMEM.md
+!tests/fixtures/demo-repository-template/TEAMEM.md
 .omc/
 .omx/
 .scratch/
