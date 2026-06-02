@@ -46,6 +46,7 @@ mkdirSync(invocationDir, { recursive: true });
 const startedAtMs = Date.now();
 const startedAt = new Date(startedAtMs);
 const messages = [];
+const pendingToolCalls = new Map();
 let stdin = '';
 let stdout = '';
 let stderr = '';
@@ -328,12 +329,14 @@ function recordMessage(raw, direction) {
     json && typeof json === 'object' && typeof json.method === 'string'
       ? json.method
       : undefined;
+  const metadata = extractMessageMetadata(json, direction);
   messages.push({
     serverName: args.serverName,
     direction,
     raw,
     json,
     method,
+    metadata,
     timestamp: new Date().toISOString(),
     offsetMs: Date.now() - startedAtMs,
     artifacts: {
@@ -344,6 +347,105 @@ function recordMessage(raw, direction) {
     }
   });
   writeLiveTrace();
+}
+
+function extractMessageMetadata(json, direction) {
+  if (!json || typeof json !== 'object') {
+    return undefined;
+  }
+
+  if (
+    direction === 'client-to-server' &&
+    json.method === 'tools/call' &&
+    json.params &&
+    typeof json.params === 'object' &&
+    typeof json.params.name === 'string'
+  ) {
+    const metadata = { toolName: json.params.name };
+    const requestId = jsonRpcIdKey(json.id);
+    if (requestId) {
+      pendingToolCalls.set(requestId, metadata);
+    }
+    return metadata;
+  }
+
+  if (direction !== 'server-to-client') {
+    return undefined;
+  }
+
+  const requestId = jsonRpcIdKey(json.id);
+  if (!requestId || !pendingToolCalls.has(requestId)) {
+    return undefined;
+  }
+
+  const requestMetadata = pendingToolCalls.get(requestId);
+  pendingToolCalls.delete(requestId);
+
+  return {
+    toolName: requestMetadata.toolName,
+    response: summarizeToolResponse(json)
+  };
+}
+
+function jsonRpcIdKey(value) {
+  if (typeof value === 'string' || typeof value === 'number') {
+    return `${typeof value}:${String(value)}`;
+  }
+  return undefined;
+}
+
+function summarizeToolResponse(json) {
+  const result = isRecord(json.result) ? json.result : undefined;
+  const parsedContentText = parseFirstTextContentJson(result);
+  const contentTextJsonKeys = objectKeys(parsedContentText);
+  const contentTextJsonDataKeys = objectKeys(
+    isRecord(parsedContentText?.data) ? parsedContentText.data : undefined
+  );
+  const hasError = Object.prototype.hasOwnProperty.call(json, 'error');
+  const resultIsError = result?.isError === true;
+  const contentIsError = parsedContentText?.ok === false;
+
+  return {
+    ok: !hasError && !resultIsError && !contentIsError,
+    hasResult: Object.prototype.hasOwnProperty.call(json, 'result'),
+    hasError,
+    isError: resultIsError || contentIsError,
+    resultKeys: objectKeys(result),
+    structuredContentKeys: objectKeys(
+      isRecord(result?.structuredContent) ? result.structuredContent : undefined
+    ),
+    contentTextJsonKeys,
+    contentTextJsonDataKeys,
+    errorKeys: objectKeys(isRecord(json.error) ? json.error : undefined)
+  };
+}
+
+function parseFirstTextContentJson(result) {
+  if (!result || !Array.isArray(result.content)) {
+    return undefined;
+  }
+
+  const textBlock = result.content.find(
+    (item) =>
+      isRecord(item) && item.type === 'text' && typeof item.text === 'string'
+  );
+  if (!textBlock) {
+    return undefined;
+  }
+
+  const parsed = parseJson(textBlock.text);
+  return isRecord(parsed) ? parsed : undefined;
+}
+
+function objectKeys(value) {
+  if (!isRecord(value)) {
+    return [];
+  }
+  return Object.keys(value).sort();
+}
+
+function isRecord(value) {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function resolveRedactionMode() {

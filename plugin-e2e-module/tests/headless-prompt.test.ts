@@ -69,6 +69,7 @@ describe('plugin-e2e-module headless prompt execution', () => {
             'auto',
             '--max-turns',
             '3',
+            '--',
             'first prompt'
           ]
         ],
@@ -88,6 +89,7 @@ describe('plugin-e2e-module headless prompt execution', () => {
             'auto',
             '--max-turns',
             '3',
+            '--',
             'second prompt'
           ]
         ]
@@ -126,6 +128,8 @@ describe('plugin-e2e-module headless prompt execution', () => {
         appendSystemPrompt: 'append text',
         model: 'claude-sonnet-4-6',
         maxBudgetUsd: 1.25,
+        useInstrumentedMcpConfig: true,
+        strictMcpConfig: true,
         maxTurns: 9
       });
 
@@ -141,22 +145,26 @@ describe('plugin-e2e-module headless prompt execution', () => {
       ).toBe(10_000);
       expect(promptCall?.args).not.toContain('--settings');
       expect(promptCall?.args).not.toContain('--isolation');
+      const mcpConfigPath =
+        result.command.args[
+          result.command.args.findIndex((arg) => arg === '--mcp-config') + 1
+        ];
+      if (!mcpConfigPath) {
+        throw new Error('Expected headless command to include --mcp-config.');
+      }
       expect(promptCall?.args).toEqual([
         '--plugin-dir',
         result.command.args.at(1) ?? '',
         '-p',
         '--output-format',
         'stream-json',
-            '--verbose',
-            '--include-hook-events',
+        '--verbose',
+        '--include-hook-events',
         '--permission-mode',
         'plan',
-        '--allowedTools',
-        'Read',
-        '--allowedTools',
-        'Bash(git status)',
-        '--disallowedTools',
-        'Edit',
+        '--mcp-config',
+        mcpConfigPath,
+        '--strict-mcp-config',
         '--setting-sources',
         'user,project',
         '--system-prompt',
@@ -169,8 +177,22 @@ describe('plugin-e2e-module headless prompt execution', () => {
         '1.25',
         '--max-turns',
         '9',
+        '--allowedTools',
+        'Read',
+        '--allowedTools',
+        'Bash(git status)',
+        '--disallowedTools',
+        'Edit',
+        '--',
         'option prompt'
       ]);
+      const mcpConfig = JSON.parse(await readFile(mcpConfigPath, 'utf8')) as {
+        mcpServers: Record<string, { env?: Record<string, string> }>;
+      };
+      expect(
+        mcpConfig.mcpServers['generic-fake'].env
+          ?.CLAUDE_PLUGIN_E2E_MCP_TRACE_DIR
+      ).toBe(result.artifacts.mcpTraceDir);
 
       const stringSourceResult = await tester.prompt('string source prompt', {
         settingSources: 'local'
@@ -415,9 +437,9 @@ describe('plugin-e2e-module headless prompt execution', () => {
       expect(
         await readFile(result.artifacts.rawStderrPath, 'utf8')
       ).not.toContain(stderrSecret);
-      expect(await readFile(result.artifacts.debugLogPath, 'utf8')).not.toContain(
-        stderrSecret
-      );
+      expect(
+        await readFile(result.artifacts.debugLogPath, 'utf8')
+      ).not.toContain(stderrSecret);
       expect(await readFile(result.artifacts.rawStdoutPath, 'utf8')).toBe(
         '[REDACTED]'
       );

@@ -8,12 +8,23 @@ import type {
   HookShellCommand,
   InstrumentedPlugin,
   McpInstrumentationOptions,
+  RedactionMode,
+  RunArtifacts,
   ValidatedPluginSource
 } from './types.js';
 
 const moduleDir = dirname(fileURLToPath(import.meta.url));
 const hookProxyRunnerPath = join(moduleDir, 'hook-proxy-runner.cjs');
 const mcpProxyRunnerPath = join(moduleDir, 'mcp-proxy-runner.cjs');
+const DEFAULT_MCP_SERVER_ENV_KEYS = [
+  'PATH',
+  'HOME',
+  'USERPROFILE',
+  'CLAUDE_PLUGIN_ROOT',
+  'CLAUDE_PLUGIN_DATA',
+  'CLAUDE_PROJECT_DIR',
+  'CLAUDE_SESSION_ID'
+] as const;
 
 export async function instrumentPlugin(input: {
   sourcePlugin: ValidatedPluginSource;
@@ -66,6 +77,63 @@ export async function instrumentPlugin(input: {
       )}`
     );
   }
+}
+
+export async function materializeRunMcpConfig(input: {
+  instrumentedPlugin: InstrumentedPlugin;
+  artifacts: Pick<RunArtifacts, 'dir' | 'mcpTraceDir'>;
+  env: NodeJS.ProcessEnv;
+  redactionMode: RedactionMode;
+  envPassthroughKeys?: readonly string[];
+}): Promise<InstrumentedPlugin> {
+  const sourceMcpPath = input.instrumentedPlugin.mcpPath;
+  if (!sourceMcpPath) {
+    return input.instrumentedPlugin;
+  }
+
+  const raw = await readFile(sourceMcpPath, 'utf8');
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    throw new PluginInstrumentationError(
+      `Unable to parse instrumented MCP config at ${sourceMcpPath}: ${formatUnknownError(
+        error
+      )}`
+    );
+  }
+
+  if (!isRecord(parsed) || !isRecord(parsed.mcpServers)) {
+    throw new PluginInstrumentationError(
+      `Instrumented MCP config must include an mcpServers object: ${sourceMcpPath}`
+    );
+  }
+
+  const runEnv = buildRunMcpServerEnv(input);
+  for (const [serverName, serverConfig] of Object.entries(parsed.mcpServers)) {
+    if (!isRecord(serverConfig)) {
+      throw new PluginInstrumentationError(
+        `MCP server ${serverName} must be an object in ${sourceMcpPath}`
+      );
+    }
+    const existingEnv = serverConfig.env;
+    if (existingEnv !== undefined && !isStringRecord(existingEnv)) {
+      throw new PluginInstrumentationError(
+        `MCP server ${serverName} env must be a string map in ${sourceMcpPath}`
+      );
+    }
+    serverConfig.env = {
+      ...(existingEnv ?? {}),
+      ...runEnv
+    };
+  }
+
+  const runMcpPath = join(input.artifacts.dir, 'mcp-config.json');
+  await writeFile(runMcpPath, `${JSON.stringify(parsed, null, 2)}\n`, 'utf8');
+  return {
+    ...input.instrumentedPlugin,
+    mcpPath: runMcpPath
+  };
 }
 
 async function rewriteMcp(
@@ -151,6 +219,40 @@ function readMcpArgs(
     );
   }
   return [...value];
+}
+
+function buildRunMcpServerEnv(input: {
+  artifacts: Pick<RunArtifacts, 'mcpTraceDir'>;
+  env: NodeJS.ProcessEnv;
+  redactionMode: RedactionMode;
+  envPassthroughKeys?: readonly string[];
+}): Record<string, string> {
+  return {
+    ...pickStringEnv(input.env, [
+      ...DEFAULT_MCP_SERVER_ENV_KEYS,
+      ...(input.envPassthroughKeys ?? [])
+    ]),
+    CLAUDE_PLUGIN_E2E_MCP_TRACE_DIR: input.artifacts.mcpTraceDir,
+    CLAUDE_PLUGIN_E2E_REDACTION_MODE: input.redactionMode,
+    ...(input.redactionMode === 'off' &&
+    process.env.CLAUDE_PLUGIN_E2E_ALLOW_UNREDACTED === '1'
+      ? { CLAUDE_PLUGIN_E2E_ALLOW_UNREDACTED: '1' }
+      : {})
+  };
+}
+
+function pickStringEnv(
+  env: NodeJS.ProcessEnv,
+  keys: readonly string[]
+): Record<string, string> {
+  return Object.fromEntries(
+    keys.flatMap((key) => {
+      const value = env[key];
+      return typeof value === 'string' && value.length > 0
+        ? [[key, value]]
+        : [];
+    })
+  );
 }
 
 function shouldProxyMcpServer(
@@ -275,6 +377,13 @@ function shellQuote(value: string): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isStringRecord(value: unknown): value is Record<string, string> {
+  return (
+    isRecord(value) &&
+    Object.values(value).every((field) => typeof field === 'string')
+  );
 }
 
 function formatUnknownError(error: unknown): string {

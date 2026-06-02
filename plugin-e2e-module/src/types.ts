@@ -29,6 +29,9 @@ export type ClaudeLaunchOptions = {
   appendSystemPrompt?: string;
   model?: string;
   maxBudgetUsd?: number | string;
+  mcpConfig?: string;
+  useInstrumentedMcpConfig?: boolean;
+  strictMcpConfig?: boolean;
 };
 
 export type HeadlessPromptOptions = ClaudeLaunchOptions & {
@@ -222,11 +225,28 @@ export type InteractiveSyntheticEvent =
       timestamp: string;
       exitCode: number | null;
       signal?: number;
+      source?: 'pty' | 'bridge';
+      pid?: number;
+      pidKind?: 'pty' | 'bridge';
+      bridgePid?: number;
+      ptyPid?: number;
     }
   | {
       type: 'close-step';
       timestamp: string;
-      step: 'exit-command' | 'ctrl-c' | 'kill';
+      step: 'exit-command' | 'ctrl-c' | 'kill' | 'force-kill';
+    }
+  | {
+      type: 'close-diagnostic';
+      timestamp: string;
+      step: 'exit-command' | 'ctrl-c' | 'kill' | 'force-kill';
+      ok: boolean;
+      pid: number;
+      pidKind: 'pty' | 'bridge';
+      bridgePid?: number;
+      ptyPid?: number;
+      signal?: string;
+      error?: string;
     };
 
 export type InteractiveSession = {
@@ -272,12 +292,32 @@ export type InteractivePtySpawnRequest = {
 
 export type InteractivePtyProcess = {
   pid: number;
+  processInfo?(): InteractivePtyProcessInfo;
   write(data: string | Buffer): void;
   kill(signal?: string): void;
+  forceKill?(signal?: string): void;
   onData(listener: (data: string) => void): { dispose(): void };
-  onExit(listener: (event: { exitCode: number; signal?: number }) => void): {
+  onExit(listener: (event: InteractivePtyExitEvent) => void): {
     dispose(): void;
   };
+};
+
+export type InteractivePtyProcessInfo = {
+  pid: number;
+  pidKind: 'pty' | 'bridge';
+  bridgePid?: number;
+  ptyPid?: number;
+};
+
+export type InteractivePtyExitEvent = {
+  exitCode: number | null;
+  signal?: number;
+  source?: 'pty' | 'bridge';
+  pid?: number;
+  pidKind?: 'pty' | 'bridge';
+  bridgePid?: number;
+  ptyPid?: number;
+  bridgeSignal?: NodeJS.Signals | null;
 };
 
 export type InteractivePtyAdapter = {
@@ -368,6 +408,7 @@ export type McpInstrumentationOptions = {
   include?: string[];
   exclude?: string[];
   mode?: 'proxy-only' | 'disable-non-included';
+  envPassthroughKeys?: string[];
 };
 
 export type McpTraceArtifacts = {
@@ -379,12 +420,30 @@ export type McpTraceArtifacts = {
 
 export type McpTraceMessageDirection = 'client-to-server' | 'server-to-client';
 
+export type McpTraceToolResponseMetadata = {
+  ok: boolean;
+  hasResult: boolean;
+  hasError: boolean;
+  isError: boolean;
+  resultKeys: string[];
+  structuredContentKeys: string[];
+  contentTextJsonKeys: string[];
+  contentTextJsonDataKeys: string[];
+  errorKeys: string[];
+};
+
+export type McpTraceMessageMetadata = {
+  toolName?: string;
+  response?: McpTraceToolResponseMetadata;
+};
+
 export type McpTraceMessage = {
   serverName: string;
   direction: McpTraceMessageDirection;
   raw: string;
   json?: unknown;
   method?: string;
+  metadata?: McpTraceMessageMetadata;
   timestamp: string;
   offsetMs: number;
   artifacts: McpTraceArtifacts;

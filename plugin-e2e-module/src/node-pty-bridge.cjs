@@ -42,6 +42,12 @@ rl.on('line', (line) => {
 
   if (message.type === 'kill') {
     pty.kill(typeof message.signal === 'string' ? message.signal : undefined);
+    return;
+  }
+
+  if (message.type === 'force-kill') {
+    pty.kill(typeof message.signal === 'string' ? message.signal : 'SIGKILL');
+    setTimeout(() => process.exit(1), 50).unref();
   }
 });
 
@@ -58,18 +64,25 @@ function spawnPty(request) {
     return;
   }
 
-  pty = spawn(request.command, Array.isArray(request.args) ? request.args : [], {
-    cwd: typeof request.cwd === 'string' ? request.cwd : undefined,
-    env: sanitizeEnv(request.env),
-    name: 'xterm-256color',
-    cols: 120,
-    rows: 40,
-    encoding: 'utf8'
-  });
+  pty = spawn(
+    request.command,
+    Array.isArray(request.args) ? request.args : [],
+    {
+      cwd: typeof request.cwd === 'string' ? request.cwd : undefined,
+      env: sanitizeEnv(request.env),
+      name: 'xterm-256color',
+      cols: 120,
+      rows: 40,
+      encoding: 'utf8'
+    }
+  );
+  send({ type: 'spawned', pid: pty.pid });
   pty.onData((data) => send({ type: 'data', data }));
   pty.onExit((event) => {
     send({
       type: 'exit',
+      source: 'pty',
+      pid: pty.pid,
       exitCode: event.exitCode,
       signal: event.signal
     });

@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { InteractiveProcessError, InteractiveTimeoutError } from './errors.js';
 import { withClaudeArgs } from './command.js';
 import { readHookTraces } from './hook-traces.js';
+import { materializeRunMcpConfig } from './instrumentation.js';
 import { buildClaudeLaunchOptionArgs } from './launch-options.js';
 import { readMcpTraces } from './mcp-traces.js';
 import { redactArtifactText, type ArtifactManager } from './artifacts.js';
@@ -13,10 +14,13 @@ import type {
   InteractiveKey,
   InteractiveLaunchOptions,
   InteractivePtyAdapter,
+  InteractivePtyExitEvent,
   InteractivePtyProcess,
+  InteractivePtyProcessInfo,
   InteractiveReadinessMatcher,
   InteractiveSession,
   InteractiveSyntheticEvent,
+  McpInstrumentationOptions,
   McpTrace,
   NormalizedClaudeCommand,
   RedactionMode,
@@ -66,6 +70,7 @@ export async function launchInteractiveRun(input: {
     interactiveCloseTimeoutMs: number;
     redactionMode: RedactionMode;
     ptyAdapter: InteractivePtyAdapter;
+    mcp: McpInstrumentationOptions;
   };
   instrumentedPlugin: InstrumentedPlugin;
   cleanupInstrumentedPlugin: (
@@ -76,11 +81,6 @@ export async function launchInteractiveRun(input: {
 }): Promise<InteractiveSession> {
   const artifacts =
     await input.artifactManager.createRunArtifacts('interactive');
-  const command = withClaudeArgs(input.normalized.claudeCommand, [
-    '--plugin-dir',
-    input.instrumentedPlugin.pluginDir,
-    ...buildClaudeLaunchOptionArgs(input.options)
-  ]);
   const env = {
     ...input.normalized.env,
     CLAUDE_PLUGIN_E2E_HOOK_TRACE_DIR: artifacts.hookTraceDir,
@@ -95,6 +95,18 @@ export async function launchInteractiveRun(input: {
       ? { CLAUDE_PLUGIN_E2E_ALLOW_UNREDACTED: '1' }
       : {})
   };
+  const launchPlugin = await materializeRunMcpConfig({
+    instrumentedPlugin: input.instrumentedPlugin,
+    artifacts,
+    env,
+    redactionMode: input.normalized.redactionMode,
+    envPassthroughKeys: input.normalized.mcp.envPassthroughKeys
+  });
+  const command = withClaudeArgs(input.normalized.claudeCommand, [
+    '--plugin-dir',
+    input.instrumentedPlugin.pluginDir,
+    ...buildClaudeLaunchOptionArgs(input.options, launchPlugin)
+  ]);
   const readinessTimeoutMs =
     input.options?.readinessTimeoutMs ??
     input.normalized.interactiveReadinessTimeoutMs;
@@ -276,6 +288,13 @@ export async function launchInteractiveRun(input: {
 function adaptNodePty(pty: IPty): InteractivePtyProcess {
   return {
     pid: pty.pid,
+    processInfo() {
+      return {
+        pid: pty.pid,
+        pidKind: 'pty',
+        ptyPid: pty.pid
+      };
+    },
     write(data) {
       pty.write(data);
     },
@@ -286,7 +305,15 @@ function adaptNodePty(pty: IPty): InteractivePtyProcess {
       return pty.onData((data) => listener(data));
     },
     onExit(listener) {
-      return pty.onExit((event) => listener(event));
+      return pty.onExit((event) =>
+        listener({
+          ...event,
+          source: 'pty',
+          pid: pty.pid,
+          pidKind: 'pty',
+          ptyPid: pty.pid
+        })
+      );
     }
   };
 }
@@ -304,9 +331,9 @@ function spawnViaNodePtyBridge(
     stdio: ['pipe', 'pipe', 'pipe']
   });
   const dataListeners = new Set<(data: string) => void>();
-  const exitListeners = new Set<
-    (event: { exitCode: number; signal?: number }) => void
-  >();
+  const exitListeners = new Set<(event: InteractivePtyExitEvent) => void>();
+  const bridgePid = child.pid ?? -1;
+  let ptyPid: number | undefined;
   let stdoutBuffer = '';
   let exited = false;
 
@@ -323,9 +350,17 @@ function spawnViaNodePtyBridge(
     }
   });
 
-  child.on('exit', (exitCode) => {
+  child.on('exit', (exitCode, signal) => {
     if (!exited) {
-      emitExit({ exitCode: exitCode ?? 1 });
+      emitExit({
+        exitCode: exitCode ?? 1,
+        source: 'bridge',
+        pid: bridgePid,
+        pidKind: 'bridge',
+        bridgePid,
+        ptyPid,
+        bridgeSignal: signal
+      });
     }
   });
 
@@ -340,7 +375,10 @@ function spawnViaNodePtyBridge(
   });
 
   return {
-    pid: child.pid ?? -1,
+    pid: bridgePid,
+    processInfo() {
+      return bridgeProcessInfo();
+    },
     write(data) {
       sendBridgeMessage({
         type: 'write',
@@ -356,6 +394,18 @@ function spawnViaNodePtyBridge(
       if (signal) {
         child.kill(signal as NodeJS.Signals);
       }
+    },
+    forceKill(signal = 'SIGKILL') {
+      if (child.exitCode !== null || child.signalCode !== null) {
+        return;
+      }
+
+      sendBridgeMessage({ type: 'force-kill', signal });
+      setTimeout(() => {
+        if (child.exitCode === null && child.signalCode === null) {
+          child.kill('SIGKILL');
+        }
+      }, 100).unref();
     },
     onData(listener) {
       dataListeners.add(listener);
@@ -394,16 +444,30 @@ function spawnViaNodePtyBridge(
       return;
     }
 
+    if (message.type === 'spawned' && typeof message.pid === 'number') {
+      ptyPid = message.pid;
+      return;
+    }
+
     if (message.type === 'exit') {
+      const messagePid = typeof message.pid === 'number' ? message.pid : ptyPid;
+      if (typeof messagePid === 'number') {
+        ptyPid = messagePid;
+      }
       emitExit({
-        exitCode:
-          typeof message.exitCode === 'number' ? message.exitCode : 0,
-        signal: typeof message.signal === 'number' ? message.signal : undefined
+        exitCode: typeof message.exitCode === 'number' ? message.exitCode : 0,
+        signal: typeof message.signal === 'number' ? message.signal : undefined,
+        source: message.source === 'bridge' ? 'bridge' : 'pty',
+        pid:
+          message.source === 'bridge' ? bridgePid : (messagePid ?? bridgePid),
+        pidKind: message.source === 'bridge' ? 'bridge' : 'pty',
+        bridgePid,
+        ptyPid
       });
     }
   }
 
-  function emitExit(event: { exitCode: number; signal?: number }): void {
+  function emitExit(event: InteractivePtyExitEvent): void {
     if (exited) {
       return;
     }
@@ -412,6 +476,23 @@ function spawnViaNodePtyBridge(
     for (const listener of exitListeners) {
       listener(event);
     }
+  }
+
+  function bridgeProcessInfo(): InteractivePtyProcessInfo {
+    if (typeof ptyPid === 'number') {
+      return {
+        pid: ptyPid,
+        pidKind: 'pty',
+        bridgePid,
+        ptyPid
+      };
+    }
+
+    return {
+      pid: bridgePid,
+      pidKind: 'bridge',
+      bridgePid
+    };
   }
 
   function sendBridgeMessage(message: unknown): void {
@@ -428,7 +509,7 @@ function createInteractiveState(pty: InteractivePtyProcess): {
   rawTranscript: string;
   events: InteractiveSyntheticEvent[];
   redactionValues: string[];
-  exit?: { exitCode: number; signal?: number };
+  exit?: InteractivePtyExitEvent;
   closed: boolean;
   dataDisposer: { dispose(): void };
   exitDisposer: { dispose(): void };
@@ -438,7 +519,7 @@ function createInteractiveState(pty: InteractivePtyProcess): {
     rawTranscript: '',
     events: [] as InteractiveSyntheticEvent[],
     redactionValues: [] as string[],
-    exit: undefined as { exitCode: number; signal?: number } | undefined,
+    exit: undefined as InteractivePtyExitEvent | undefined,
     closed: false,
     dataDisposer: { dispose() {} },
     exitDisposer: { dispose() {} }
@@ -453,12 +534,27 @@ function createInteractiveState(pty: InteractivePtyProcess): {
     });
   });
   state.exitDisposer = pty.onExit((event) => {
-    state.exit = event;
+    const processInfo = pty.processInfo?.();
+    const normalizedExit = {
+      ...event,
+      source: event.source ?? 'pty',
+      pid: event.pid ?? processInfo?.pid,
+      pidKind: event.pidKind ?? processInfo?.pidKind,
+      bridgePid: event.bridgePid ?? processInfo?.bridgePid,
+      ptyPid: event.ptyPid ?? processInfo?.ptyPid
+    };
+
+    state.exit = normalizedExit;
     state.events.push({
       type: 'exit',
       timestamp: new Date().toISOString(),
-      exitCode: event.exitCode,
-      signal: event.signal
+      exitCode: normalizedExit.exitCode,
+      signal: normalizedExit.signal,
+      source: normalizedExit.source,
+      pid: normalizedExit.pid,
+      pidKind: normalizedExit.pidKind,
+      bridgePid: normalizedExit.bridgePid,
+      ptyPid: normalizedExit.ptyPid
     });
   });
 
@@ -575,7 +671,7 @@ async function closeInteractivePty(
   closeTimeoutMs: number
 ): Promise<boolean> {
   if (state.exit) {
-    return true;
+    return isCleanPtyExit(state.exit);
   }
 
   state.events.push({
@@ -583,8 +679,10 @@ async function closeInteractivePty(
     timestamp: new Date().toISOString(),
     step: 'exit-command'
   });
-  await writeToPty(state, `/exit${ENTER}`, 'close');
-  if (await waitForExit(state, closeTimeoutMs)) {
+  if (
+    (await tryCloseWrite(state, `/exit${ENTER}`, 'exit-command')) &&
+    (await waitForExit(state, closeTimeoutMs))
+  ) {
     return true;
   }
 
@@ -593,8 +691,10 @@ async function closeInteractivePty(
     timestamp: new Date().toISOString(),
     step: 'ctrl-c'
   });
-  await writeToPty(state, CONTROL_C, 'close');
-  if (await waitForExit(state, closeTimeoutMs)) {
+  if (
+    (await tryCloseWrite(state, CONTROL_C, 'ctrl-c')) &&
+    (await waitForExit(state, closeTimeoutMs))
+  ) {
     return true;
   }
 
@@ -603,8 +703,96 @@ async function closeInteractivePty(
     timestamp: new Date().toISOString(),
     step: 'kill'
   });
-  state.pty.kill();
+  tryKillPty(state, 'kill');
+  if (await waitForExit(state, closeTimeoutMs)) {
+    return true;
+  }
+
+  if (typeof state.pty.forceKill !== 'function') {
+    return false;
+  }
+
+  state.events.push({
+    type: 'close-step',
+    timestamp: new Date().toISOString(),
+    step: 'force-kill'
+  });
+  tryKillPty(state, 'force-kill', 'SIGKILL');
   return waitForExit(state, closeTimeoutMs);
+}
+
+async function tryCloseWrite(
+  state: ReturnType<typeof createInteractiveState>,
+  data: string,
+  step: 'exit-command' | 'ctrl-c'
+): Promise<boolean> {
+  try {
+    await writeToPty(state, data, 'close');
+    recordCloseDiagnostic(state, {
+      step,
+      ok: true
+    });
+    return true;
+  } catch (error) {
+    recordCloseDiagnostic(state, {
+      step,
+      ok: false,
+      error: formatUnknownError(error)
+    });
+    return false;
+  }
+}
+
+function tryKillPty(
+  state: ReturnType<typeof createInteractiveState>,
+  step: 'kill' | 'force-kill',
+  signal?: string
+): void {
+  try {
+    if (step === 'force-kill') {
+      state.pty.forceKill?.(signal);
+    } else {
+      state.pty.kill(signal);
+    }
+    recordCloseDiagnostic(state, {
+      step,
+      ok: true,
+      signal
+    });
+  } catch (error) {
+    recordCloseDiagnostic(state, {
+      step,
+      ok: false,
+      signal,
+      error: formatUnknownError(error)
+    });
+  }
+}
+
+function recordCloseDiagnostic(
+  state: ReturnType<typeof createInteractiveState>,
+  diagnostic: {
+    step: 'exit-command' | 'ctrl-c' | 'kill' | 'force-kill';
+    ok: boolean;
+    signal?: string;
+    error?: string;
+  }
+): void {
+  const processInfo = state.pty.processInfo?.() ?? {
+    pid: state.pty.pid,
+    pidKind: 'pty' as const,
+    ptyPid: state.pty.pid
+  };
+
+  state.events.push({
+    type: 'close-diagnostic',
+    timestamp: new Date().toISOString(),
+    pid: processInfo.pid,
+    pidKind: processInfo.pidKind,
+    bridgePid: processInfo.bridgePid,
+    ptyPid: processInfo.ptyPid,
+    ...diagnostic
+  });
 }
 
 async function waitForExit(
@@ -612,7 +800,7 @@ async function waitForExit(
   timeoutMs: number
 ): Promise<boolean> {
   if (state.exit) {
-    return true;
+    return isCleanPtyExit(state.exit);
   }
 
   return new Promise((resolve) => {
@@ -623,9 +811,13 @@ async function waitForExit(
     const disposer = state.pty.onExit(() => {
       clearTimeout(timeout);
       disposer.dispose();
-      resolve(true);
+      resolve(state.exit ? isCleanPtyExit(state.exit) : false);
     });
   });
+}
+
+function isCleanPtyExit(event: InteractivePtyExitEvent): boolean {
+  return event.source !== 'bridge';
 }
 
 async function finalizeInteractiveSession(input: {
@@ -779,7 +971,11 @@ function createInteractiveSummary(input: {
       normalizedTranscriptBytes: Buffer.byteLength(input.normalizedTranscript),
       eventCount: input.events.length,
       hookTraceCount: input.hookTraces.length,
-      mcpTraceCount: input.mcpTraces.length
+      mcpTraceCount: input.mcpTraces.length,
+      closeDiagnostics: input.events.filter(
+        (event) =>
+          event.type === 'close-step' || event.type === 'close-diagnostic'
+      )
     }
   };
 }

@@ -9,6 +9,7 @@ import {
   createClaudePluginTester,
   nodePtyAdapter,
   type InteractivePtyAdapter,
+  type InteractivePtyExitEvent,
   type InteractivePtyProcess,
   type InteractivePtySpawnRequest,
   type ProcessRunRequest,
@@ -29,7 +30,7 @@ describe('plugin-e2e-module interactive PTY execution', () => {
     });
     let output = '';
 
-    const exit = await new Promise<{ exitCode: number; signal?: number }>(
+    const exit = await new Promise<InteractivePtyExitEvent>(
       (resolve, reject) => {
         const timeout = setTimeout(() => {
           pty.kill();
@@ -48,7 +49,16 @@ describe('plugin-e2e-module interactive PTY execution', () => {
     );
 
     expect(exit.exitCode).toBe(0);
+    expect(exit.source).toBe('pty');
+    expect(exit.pidKind).toBe('pty');
     expect(output).toContain('real-pty-output');
+    const processInfo = pty.processInfo?.();
+    expect(processInfo?.pidKind).toBe('pty');
+    expect(processInfo?.pid).toBe(processInfo?.ptyPid);
+    if (typeof processInfo?.bridgePid === 'number') {
+      expect(processInfo.pid).not.toBe(processInfo.bridgePid);
+      expect(exit.pid).not.toBe(processInfo.bridgePid);
+    }
   });
 
   it('types a namespaced slash command through the TTY and waits for visible response evidence', async () => {
@@ -72,10 +82,7 @@ describe('plugin-e2e-module interactive PTY execution', () => {
         processRunner: createFakeClaudeRunner([]),
         ptyAdapter: createFakePtyAdapter(ptySpawns, fakePty)
       });
-      const prompt = await tester.slashCommandPrompt(
-        'echo',
-        'issue 09 proof'
-      );
+      const prompt = await tester.slashCommandPrompt('echo', 'issue 09 proof');
 
       const session = await tester.launchInteractive({
         readiness: 'Ready',
@@ -211,6 +218,8 @@ describe('plugin-e2e-module interactive PTY execution', () => {
         appendSystemPrompt: 'append text',
         model: 'claude-sonnet-4-6',
         maxBudgetUsd: 1.25,
+        useInstrumentedMcpConfig: true,
+        strictMcpConfig: true,
         maxTurns: 99
       } as Parameters<typeof tester.launchInteractive>[0] & {
         maxTurns: number;
@@ -219,17 +228,23 @@ describe('plugin-e2e-module interactive PTY execution', () => {
       await session.close();
 
       expect(ptySpawns).toHaveLength(1);
+      const mcpConfigPath =
+        session.command.args[
+          session.command.args.findIndex((arg) => arg === '--mcp-config') + 1
+        ];
+      if (!mcpConfigPath) {
+        throw new Error(
+          'Expected interactive command to include --mcp-config.'
+        );
+      }
       expect(ptySpawns[0].args).toEqual([
         '--plugin-dir',
         session.command.args.at(1) ?? '',
         '--permission-mode',
         'bypassPermissions',
-        '--allowedTools',
-        'Read',
-        '--allowedTools',
-        'Bash(git status)',
-        '--disallowedTools',
-        'Edit',
+        '--mcp-config',
+        mcpConfigPath,
+        '--strict-mcp-config',
         '--setting-sources',
         'user,project',
         '--system-prompt',
@@ -239,8 +254,21 @@ describe('plugin-e2e-module interactive PTY execution', () => {
         '--model',
         'claude-sonnet-4-6',
         '--max-budget-usd',
-        '1.25'
+        '1.25',
+        '--allowedTools',
+        'Read',
+        '--allowedTools',
+        'Bash(git status)',
+        '--disallowedTools',
+        'Edit'
       ]);
+      const mcpConfig = JSON.parse(await readFile(mcpConfigPath, 'utf8')) as {
+        mcpServers: Record<string, { env?: Record<string, string> }>;
+      };
+      expect(
+        mcpConfig.mcpServers['generic-fake'].env
+          ?.CLAUDE_PLUGIN_E2E_MCP_TRACE_DIR
+      ).toBe(session.artifacts.mcpTraceDir);
       expect(ptySpawns[0].args).not.toContain('-p');
       expect(ptySpawns[0].args).not.toContain('option prompt');
       expect(ptySpawns[0].args).not.toContain('--max-turns');

@@ -17,8 +17,11 @@ import {
   TraceAssertionError
 } from './errors.js';
 import { expectHook, findHook, readHookTraces } from './hook-traces.js';
-import { instrumentPlugin } from './instrumentation.js';
-import { buildClaudeLaunchOptionArgs } from './launch-options.js';
+import {
+  instrumentPlugin,
+  materializeRunMcpConfig
+} from './instrumentation.js';
+import { buildHeadlessClaudeLaunchOptionArgs } from './launch-options.js';
 import {
   DEFAULT_INTERACTIVE_CLOSE_TIMEOUT_MS,
   DEFAULT_INTERACTIVE_READINESS_TIMEOUT_MS,
@@ -287,8 +290,17 @@ function normalizeMcpInstrumentationOptions(
   return {
     include: [...(options?.include ?? [])],
     exclude: [...(options?.exclude ?? [])],
-    mode: options?.mode ?? 'proxy-only'
+    mode: options?.mode ?? 'proxy-only',
+    envPassthroughKeys: normalizeEnvPassthroughKeys(options?.envPassthroughKeys)
   };
+}
+
+function normalizeEnvPassthroughKeys(keys: string[] | undefined): string[] {
+  return [
+    ...new Set(
+      (keys ?? []).map((key) => key.trim()).filter((key) => key.length > 0)
+    )
+  ];
 }
 
 function normalizeHookShell(
@@ -538,6 +550,22 @@ async function runHeadlessPrompt(
 ): Promise<PromptResult> {
   const instrumentedPlugin = await ensureInstrumentedPlugin();
   const artifacts = await artifactManager.createRunArtifacts('prompt');
+  const launchPlugin = await materializeRunMcpConfig({
+    instrumentedPlugin,
+    artifacts,
+    env: {
+      ...normalized.env,
+      CLAUDE_PLUGIN_E2E_MCP_TRACE_DIR: artifacts.mcpTraceDir,
+      CLAUDE_PLUGIN_E2E_FALLBACK_MCP_TRACE_DIR: instrumentedPlugin.mcpTraceDir,
+      [PROXY_REDACTION_MODE_ENV]: normalized.redactionMode,
+      ...(normalized.redactionMode === 'off' &&
+      process.env.CLAUDE_PLUGIN_E2E_ALLOW_UNREDACTED === '1'
+        ? { CLAUDE_PLUGIN_E2E_ALLOW_UNREDACTED: '1' }
+        : {})
+    },
+    redactionMode: normalized.redactionMode,
+    envPassthroughKeys: normalized.mcp.envPassthroughKeys
+  });
   const headlessArgs = [
     '--plugin-dir',
     instrumentedPlugin.pluginDir,
@@ -546,7 +574,8 @@ async function runHeadlessPrompt(
     'stream-json',
     '--verbose',
     '--include-hook-events',
-    ...buildHeadlessOptionArgs(options),
+    ...buildHeadlessOptionArgs(options, launchPlugin),
+    '--',
     prompt
   ];
   const command = withClaudeArgs(normalized.claudeCommand, headlessArgs);
@@ -673,12 +702,15 @@ async function runHeadlessPrompt(
   }
 }
 
-function buildHeadlessOptionArgs(options: HeadlessPromptOptions): string[] {
-  return [
-    ...buildClaudeLaunchOptionArgs(options),
-    '--max-turns',
-    String(options.maxTurns ?? DEFAULT_HEADLESS_MAX_TURNS)
-  ];
+function buildHeadlessOptionArgs(
+  options: HeadlessPromptOptions,
+  instrumentedPlugin: InstrumentedPlugin
+): string[] {
+  return buildHeadlessClaudeLaunchOptionArgs(
+    options,
+    instrumentedPlugin,
+    options.maxTurns ?? DEFAULT_HEADLESS_MAX_TURNS
+  );
 }
 
 async function assertBinaryExists(options: NormalizedOptions): Promise<void> {

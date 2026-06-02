@@ -117,7 +117,11 @@ describe('plugin-e2e-module MCP instrumentation', () => {
       );
       const fullTrace = (await readMcpTraces(traceDir))[0];
       expect(fullTrace.command).toBe('[REDACTED]');
-      expect(fullTrace.args).toEqual(['[REDACTED]', '[REDACTED]', '[REDACTED]']);
+      expect(fullTrace.args).toEqual([
+        '[REDACTED]',
+        '[REDACTED]',
+        '[REDACTED]'
+      ]);
       expect(fullTrace.placeholderExpansion).toEqual({
         supportedPattern: '${VAR}',
         unsupportedShellExpansion: true
@@ -187,7 +191,9 @@ describe('plugin-e2e-module MCP instrumentation', () => {
       const trace = (await readMcpTraces(traceDir))[0];
       expect(trace.command).toBe('[REDACTED]');
       expect(trace.args).toEqual(['[REDACTED]', '[REDACTED]']);
-      expect(await readTraceArtifactText(traceDir)).not.toContain(literalSecret);
+      expect(await readTraceArtifactText(traceDir)).not.toContain(
+        literalSecret
+      );
     } finally {
       await rm(artifactsDir, { recursive: true, force: true });
       await rm(sourceDir, { recursive: true, force: true });
@@ -381,8 +387,8 @@ describe('plugin-e2e-module MCP instrumentation', () => {
       const request = `${JSON.stringify({
         jsonrpc: '2.0',
         id: 2,
-        method: 'tools/list',
-        params: { token: secret }
+        method: 'tools/call',
+        params: { name: 'generic_safe_tool', arguments: { token: secret } }
       })}\n`;
 
       const run = await runConfiguredMcpServer({
@@ -410,15 +416,19 @@ describe('plugin-e2e-module MCP instrumentation', () => {
       expect(trace.partial).toBe(false);
       expect(trace.terminationReason).toBe('child-close');
       expect(trace.durationMs).toBeGreaterThanOrEqual(0);
-      expect(findMcpMessages(traces, 'tools/list')).toHaveLength(2);
-      const message = expectMcpMethod(traces, 'tools/list');
-      expect(message.method).toBe('tools/list');
+      expect(findMcpMessages(traces, 'tools/call')).toHaveLength(2);
+      const message = expectMcpMethod(traces, 'tools/call');
+      expect(message.method).toBe('tools/call');
+      expect(message.metadata).toEqual({ toolName: 'generic_safe_tool' });
       expect(message.raw).toBe('[REDACTED]');
       expect(message.json).toEqual({
         jsonrpc: '[REDACTED]',
         id: 2,
         method: '[REDACTED]',
-        params: { token: '[REDACTED]' }
+        params: {
+          name: '[REDACTED]',
+          arguments: { token: '[REDACTED]' }
+        }
       });
       expect(trace.environment).toEqual({
         redactionMode: 'safe',
@@ -440,6 +450,183 @@ describe('plugin-e2e-module MCP instrumentation', () => {
       await expect(stat(trace.artifacts.stderrPath)).resolves.toBeTruthy();
     } finally {
       await rm(artifactsDir, { recursive: true, force: true });
+    }
+  });
+
+  it('materializes MCP server env with generic defaults and caller passthrough only', async () => {
+    const artifactsDir = await mkdtemp(
+      join(tmpdir(), 'claude-plugin-e2e-mcp-env-passthrough-')
+    );
+
+    try {
+      const tester = createClaudePluginTester({
+        pluginDir: fakePluginDir,
+        artifactsDir,
+        cleanup: 'never',
+        mcp: {
+          envPassthroughKeys: ['CUSTOM_PLUGIN_ENV', 'CUSTOM_PLUGIN_ENV', '   ']
+        },
+        env: {
+          PATH: process.env.PATH,
+          HOME: '/generic/home',
+          CLAUDE_PROJECT_DIR: '/generic/project',
+          CUSTOM_PLUGIN_ENV: 'custom-plugin-value',
+          TEAMEM_CREDENTIALS: '/teamem/credentials.json',
+          SHOULD_NOT_PASS: 'not-allowlisted'
+        },
+        processRunner: createPromptRunnerThatInvokesMcp()
+      });
+
+      const result = await tester.prompt('env passthrough prompt', {
+        useInstrumentedMcpConfig: true
+      });
+      const mcpConfigPath =
+        result.command.args[
+          result.command.args.findIndex((arg) => arg === '--mcp-config') + 1
+        ];
+      if (!mcpConfigPath) {
+        throw new Error('Expected headless command to include --mcp-config.');
+      }
+
+      const config = JSON.parse(await readFile(mcpConfigPath, 'utf8')) as {
+        mcpServers: Record<string, { env?: Record<string, string> }>;
+      };
+      const serverEnv = config.mcpServers['generic-fake']?.env ?? {};
+
+      expect(serverEnv).toMatchObject({
+        PATH: process.env.PATH,
+        HOME: '/generic/home',
+        CLAUDE_PROJECT_DIR: '/generic/project',
+        CUSTOM_PLUGIN_ENV: 'custom-plugin-value',
+        CLAUDE_PLUGIN_E2E_MCP_TRACE_DIR: result.artifacts.mcpTraceDir,
+        CLAUDE_PLUGIN_E2E_REDACTION_MODE: 'safe'
+      });
+      expect(serverEnv).not.toHaveProperty('TEAMEM_CREDENTIALS');
+      expect(serverEnv).not.toHaveProperty('SHOULD_NOT_PASS');
+    } finally {
+      await rm(artifactsDir, { recursive: true, force: true });
+    }
+  });
+
+  it('attaches safe tool response metadata by correlating JSON-RPC ids', async () => {
+    const artifactsDir = await mkdtemp(
+      join(tmpdir(), 'claude-plugin-e2e-mcp-response-metadata-')
+    );
+    const sourceDir = await copyFakePlugin();
+    const secret = 'mcp-response-secret-must-not-leak';
+    const responderScript = join(sourceDir, 'scripts', 'mcp-responder.js');
+
+    try {
+      await writeFile(
+        responderScript,
+        [
+          "process.stdin.setEncoding('utf8');",
+          "let buffer = '';",
+          "process.stdin.on('data', (chunk) => {",
+          '  buffer += chunk;',
+          "  let newlineIndex = buffer.indexOf('\\n');",
+          '  while (newlineIndex >= 0) {',
+          '    const line = buffer.slice(0, newlineIndex);',
+          '    buffer = buffer.slice(newlineIndex + 1);',
+          '    if (line.length > 0) handleLine(line);',
+          "    newlineIndex = buffer.indexOf('\\n');",
+          '  }',
+          '});',
+          "process.stdin.on('end', () => process.exit(0));",
+          'function handleLine(line) {',
+          '  const request = JSON.parse(line);',
+          '  process.stdout.write(JSON.stringify({',
+          "    jsonrpc: '2.0',",
+          '    id: request.id,',
+          '    result: {',
+          '      structuredContent: { safe_key: true },',
+          '      content: [{',
+          "        type: 'text',",
+          '        text: JSON.stringify({',
+          '          ok: true,',
+          '          data: {',
+          '            current_plan: { title: process.env.SECRET_VALUE },',
+          '            active_claims: [],',
+          '            recent_decisions: [],',
+          '            active_risks: { open_blockers: [], standing_conflicts: [] },',
+          '            recent_progress: []',
+          '          }',
+          '        })',
+          '      }]',
+          '    }',
+          "  }) + '\\n');",
+          '}'
+        ].join('\n'),
+        'utf8'
+      );
+      await writeMcpConfig(sourceDir, {
+        mcpServers: {
+          responder: {
+            command: process.execPath,
+            args: [responderScript]
+          }
+        }
+      });
+      const tester = createClaudePluginTester({
+        pluginDir: sourceDir,
+        artifactsDir,
+        cleanup: 'never',
+        processRunner: createBootRunner()
+      });
+
+      const boot = await tester.boot();
+      const traceDir = join(artifactsDir, 'manual-mcp-response-traces');
+      const run = await runConfiguredMcpServer({
+        pluginDir: boot.instrumentedPlugin.pluginDir,
+        serverName: 'responder',
+        traceDir,
+        stdin: `${JSON.stringify({
+          jsonrpc: '2.0',
+          id: 'tool-call-1',
+          method: 'tools/call',
+          params: {
+            name: 'generic_safe_tool',
+            arguments: { token: secret }
+          }
+        })}\n`,
+        env: { SECRET_VALUE: secret }
+      });
+
+      expect(run.exitCode).toBe(0);
+      const traces = await readMcpTraces(traceDir);
+      const response = findMcpMessages(
+        traces,
+        (message) =>
+          message.direction === 'server-to-client' &&
+          message.metadata?.toolName === 'generic_safe_tool'
+      )[0];
+
+      expect(response).toBeDefined();
+      expect(response?.metadata).toEqual({
+        toolName: 'generic_safe_tool',
+        response: {
+          ok: true,
+          hasResult: true,
+          hasError: false,
+          isError: false,
+          resultKeys: ['content', 'structuredContent'],
+          structuredContentKeys: ['safe_key'],
+          contentTextJsonKeys: ['data', 'ok'],
+          contentTextJsonDataKeys: [
+            'active_claims',
+            'active_risks',
+            'current_plan',
+            'recent_decisions',
+            'recent_progress'
+          ],
+          errorKeys: []
+        }
+      });
+      expect(response?.raw).toBe('[REDACTED]');
+      expect(await readTraceArtifactText(traceDir)).not.toContain(secret);
+    } finally {
+      await rm(artifactsDir, { recursive: true, force: true });
+      await rm(sourceDir, { recursive: true, force: true });
     }
   });
 
@@ -702,7 +889,10 @@ describe('plugin-e2e-module MCP instrumentation', () => {
 });
 
 type McpConfig = {
-  mcpServers: Record<string, { command: string; args: string[] }>;
+  mcpServers: Record<
+    string,
+    { command: string; args: string[]; env?: Record<string, string> }
+  >;
 };
 
 async function copyFakePlugin(): Promise<string> {
