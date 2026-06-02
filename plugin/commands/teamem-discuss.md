@@ -1,6 +1,6 @@
 ---
 description: Send a discussion message directly to a teammate, the current Sprint, or the Space. Useful for negotiating claim handoffs, blocked-on requests, or sharing context.
-allowed-tools: mcp__teamem__post_message
+allowed-tools: mcp__teamem__teamem_post_message, mcp__plugin_teamem_teamem__teamem_post_message
 argument-hint: "<principal|*|**> -- <topic>"
 ---
 
@@ -21,7 +21,12 @@ Recipient mapping:
 
 For broadcasts, call the matching form exactly once.
 
-For `*` broadcasts, call `mcp__teamem__post_message` with:
+Tool naming:
+
+- In installed Teamem sessions, the canonical tool name is `mcp__teamem__teamem_post_message`.
+- In source-checkout local plugin sessions, Claude may expose the same Teamem tool with a plugin-scoped name ending in `_post_message`. If that plugin-scoped tool is available, call it instead of stopping. Do not report `mcp__teamem__teamem_post_message` as missing when an available Teamem `post_message` tool exists under a plugin-scoped name.
+
+For `*` broadcasts, call the available Teamem `post_message` tool (`mcp__teamem__teamem_post_message` in installed sessions) with:
 
 ```json
 {
@@ -29,7 +34,7 @@ For `*` broadcasts, call `mcp__teamem__post_message` with:
 }
 ```
 
-For `**` Space-wide escalation broadcasts, call `mcp__teamem__post_message` with:
+For `**` Space-wide escalation broadcasts, call the available Teamem `post_message` tool (`mcp__teamem__teamem_post_message` in installed sessions) with:
 
 ```json
 {
@@ -38,7 +43,7 @@ For `**` Space-wide escalation broadcasts, call `mcp__teamem__post_message` with
 }
 ```
 
-For direct sends, call `mcp__teamem__post_message` exactly once with:
+For direct sends, call the available Teamem `post_message` tool (`mcp__teamem__teamem_post_message` in installed sessions) exactly once with:
 
 ```json
 {

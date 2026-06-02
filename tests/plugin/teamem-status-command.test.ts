@@ -10,13 +10,13 @@ describe('/teamem-status command contract', () => {
     );
 
     expect(command).toContain('${CLAUDE_PLUGIN_ROOT}/bin/teamem-flag status');
-    expect(command).toContain('mcp__teamem__whoami');
-    expect(command).toContain('mcp__teamem__get_current_sprint');
+    expect(command).toContain('mcp__teamem__teamem_whoami');
+    expect(command).toContain('mcp__teamem__teamem_get_current_sprint');
     expect(command).toContain('Space label and id');
     expect(command).toContain('display name, slug, and `current_members`');
     expect(command).toContain('scope="self", view="current"');
     expect(command).toContain('scope="self", view="outside_current_context"');
-    expect(command).not.toContain('mcp__teamem__get_updates');
+    expect(command).not.toContain('mcp__teamem__teamem_get_updates');
     expect(command).toContain('recent_notifications');
     expect(command).toContain('recent routed notifications');
     expect(command).toContain('routing_reason');
@@ -24,7 +24,7 @@ describe('/teamem-status command contract', () => {
       'meta.cross_context_overlap_awareness.overlapping_claims'
     );
     expect(command).toContain('Do not render full overlap detail');
-    expect(command).toContain('Do not call `mcp__teamem__list_sprints`');
+    expect(command).toContain('Do not call `mcp__teamem__teamem_list_sprints`');
     expect(command).toContain(
       'archived Sprint inventory belongs in `/teamem-sprint list`'
     );

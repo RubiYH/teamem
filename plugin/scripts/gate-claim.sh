@@ -328,7 +328,7 @@ let d = "";
 process.stdin.on("data", c => d += c);
 process.stdin.on("end", () => process.stdout.write(createHash("sha1").update(d).digest("hex")));
 ' 2>/dev/null || echo "default")
-  PLUGIN_DATA_DIR="${CLAUDE_PLUGIN_DATA:-${HOME}/.cache/teamem}"
+  PLUGIN_DATA_DIR="${TEAMEM_DATA:-${CLAUDE_PLUGIN_DATA:-${HOME}/.cache/teamem}}"
   LAST_BRANCH_DIR="${PLUGIN_DATA_DIR}/last-branch"
   mkdir -p "$LAST_BRANCH_DIR" 2>/dev/null || true
   printf '%s' "$GIT_BRANCH" > "${LAST_BRANCH_DIR}/${REPO_HASH}" 2>/dev/null || true
