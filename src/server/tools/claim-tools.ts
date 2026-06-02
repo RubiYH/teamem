@@ -340,10 +340,12 @@ export function claimScope(
             if (storedClaimId) {
               // Probe the projection: is the prior claim still active?
               // Terminal evidence is `released_at IS NOT NULL` OR an
-              // expires_at in the past. PRD §150: on_commit/manual_only
-              // claims have NULL expires_at, so we cannot rely on the
-              // stored event's expires_at to decide terminality — we
-              // MUST consult the projection's released_at.
+              // expires_at in the past. If the projection row is missing,
+              // the stored claim is invisible to list_claims and must be
+              // treated as stale so recovery can acquire a fresh visible
+              // claim. PRD §150: on_commit/manual_only claims have NULL
+              // expires_at, so terminality must come from the projection
+              // whenever the projection exists.
               const priorClaimRow = ctx.db
                 .query(
                   'SELECT released_at, expires_at FROM claims WHERE claim_id = ?1'
@@ -357,8 +359,7 @@ export function claimScope(
                 ? priorClaimRow.released_at !== null ||
                   (priorClaimRow.expires_at !== null &&
                     new Date(priorClaimRow.expires_at).getTime() < nowMs)
-                : storedExpiresAt !== null &&
-                  new Date(storedExpiresAt).getTime() < nowMs;
+                : true;
               if (priorIsTerminal) {
                 // Prior claim is released or expired — allow fresh
                 // acquisition by salting the idempotency_key with the
