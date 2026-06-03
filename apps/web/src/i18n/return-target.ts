@@ -1,12 +1,12 @@
-import { routing, type Locale } from './routing';
+import { defaultLocale, supportedLocales, type Locale } from './locales';
 
 const localOrigin = 'https://teamem.local';
 const localeLikeSegment = /^[a-z]{2}(?:-[a-z]{2})?$/i;
 
 export function normalizeLocale(value: string): Locale {
-  return routing.locales.includes(value as Locale)
+  return supportedLocales.includes(value as Locale)
     ? (value as Locale)
-    : routing.defaultLocale;
+    : defaultLocale;
 }
 
 export function sanitizeReturnTarget(
@@ -67,5 +67,5 @@ export function rewriteLocaleSensitiveSearch(
 }
 
 function isLocale(value: string | undefined): value is Locale {
-  return routing.locales.includes(value as Locale);
+  return supportedLocales.includes(value as Locale);
 }
