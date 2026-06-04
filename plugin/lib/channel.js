@@ -23911,6 +23911,9 @@ async function startPolling(server, entry) {
   let cursor = null;
   try {
     cursor = readFileSync(CURSOR_FILE, "utf-8").trim() || null;
+    if (cursor) {
+      logInternal(`loaded cursor=${cursor}`);
+    }
   } catch {}
   const rateOk = createRateLimiter();
   async function pollOnce() {

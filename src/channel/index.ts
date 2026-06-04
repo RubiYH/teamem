@@ -347,6 +347,9 @@ async function startPolling(
   let cursor: string | null = null;
   try {
     cursor = readFileSync(CURSOR_FILE, 'utf-8').trim() || null;
+    if (cursor) {
+      logInternal(`loaded cursor=${cursor}`);
+    }
   } catch {
     /* fresh cursor */
   }
