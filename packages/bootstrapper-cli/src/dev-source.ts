@@ -1,4 +1,10 @@
-import { accessSync, constants, readFileSync, statSync } from 'node:fs';
+import {
+  accessSync,
+  constants,
+  readFileSync,
+  statSync,
+  writeFileSync
+} from 'node:fs';
 import { delimiter, join, resolve, sep } from 'node:path';
 
 import {
@@ -16,6 +22,7 @@ export interface DevSourceFileSystem {
   isReadableFile(path: string): boolean;
   isExecutableFile(path: string): boolean;
   readFile(path: string): string;
+  writeFile(path: string, content: string): void;
 }
 
 export interface DevSourceResolution {
@@ -89,6 +96,9 @@ export function createNodeDevSourceFileSystem(): DevSourceFileSystem {
     },
     readFile(path: string): string {
       return readFileSync(path, 'utf8');
+    },
+    writeFile(path: string, content: string): void {
+      writeFileSync(path, content, 'utf8');
     }
   };
 }

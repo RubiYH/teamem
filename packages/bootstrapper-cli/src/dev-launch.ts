@@ -40,6 +40,7 @@ export interface DevLaunchPlan {
   readonly sourceRoot: string;
   readonly pluginRoot: string;
   readonly channelSource: string;
+  readonly defaultSpaceId?: string;
   readonly profile: DevProfilePaths;
   readonly userArgs: readonly string[];
   readonly addedSessionName: boolean;
@@ -54,6 +55,7 @@ export function buildDevLaunchPlan(options: {
   readonly pathEnv?: string;
   readonly homeDir?: string;
   readonly fileSystem?: DevSourceFileSystem;
+  readonly defaultSpaceId?: string;
 }): DevLaunchPlan {
   const command = resolveRealClaudeExecutable({
     fileSystem: options.fileSystem as ClaudeLauncherFileSystem | undefined,
@@ -109,6 +111,7 @@ export function buildDevLaunchPlan(options: {
     sourceRoot: options.source.teamemRoot,
     pluginRoot: options.source.pluginRoot,
     channelSource: DEV_CHANNEL_SOURCE,
+    defaultSpaceId: options.defaultSpaceId,
     profile: options.profile,
     userArgs,
     addedSessionName: !hasUserProvidedSessionName(userArgs),
@@ -169,11 +172,14 @@ function renderDevLaunchPlan(plan: DevLaunchPlan, header: string): string {
     `Logs: ${plan.profile.logsDir}`,
     `Credentials: ${plan.profile.credentialsPath}`,
     `MCP config: ${plan.profile.mcpConfigPath}`,
+    plan.defaultSpaceId ? `Default Space: ${plan.defaultSpaceId}` : undefined,
     `Env keys: ${plan.envKeys.join(', ')}`,
     plan.addedSessionName
       ? `Session name: teamem-${plan.profile.profileName}`
       : 'Session name: preserved from user args'
-  ].join('\n');
+  ]
+    .filter((line): line is string => line !== undefined)
+    .join('\n');
 }
 
 function scrubInheritedProfileEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {

@@ -112,7 +112,8 @@ describe('buildDevLaunchPlan', () => {
       profile: profile(),
       claudeArgs: [],
       pathEnv: '/opt/claude/bin',
-      fileSystem: executableFileSystem(['/opt/claude/bin/claude'])
+      fileSystem: executableFileSystem(['/opt/claude/bin/claude']),
+      defaultSpaceId: 'space-default'
     });
 
     const dryRun = renderDevLaunchDryRun(plan);
@@ -127,6 +128,7 @@ describe('buildDevLaunchPlan', () => {
       'Plugin data: /tmp/home/.teamem/dev-profiles/alice/plugin-data/teamem'
     );
     expect(dryRun).toContain('Logs: /tmp/home/.teamem/dev-profiles/alice/logs');
+    expect(dryRun).toContain('Default Space: space-default');
     expect(dryRun).toContain('Channel source: server:teamem-channel');
     expect(dryRun).toContain(
       'Marketplace plugin ignored: teamem@teamem-alpha is not loaded for dev launch.'
@@ -184,6 +186,9 @@ function executableFileSystem(
     },
     readFile(path: string): string {
       throw new Error(`Unexpected read: ${path}`);
+    },
+    writeFile(path: string): void {
+      throw new Error(`Unexpected write: ${path}`);
     }
   };
 }

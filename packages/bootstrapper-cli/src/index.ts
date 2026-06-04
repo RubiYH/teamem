@@ -187,6 +187,7 @@ export {
   createNodeDevPluginBuilder,
   createNodeDevServerHealthChecker,
   hasDevBundleFreshnessFailure,
+  readDevProfileDefaultSpaceId,
   readDevProfileServerUrl,
   renderDevBundleFreshness,
   renderDevServerHealth,
@@ -196,6 +197,7 @@ export {
   type DevCredentialsReader,
   type DevPluginBuilder,
   type DevPluginBuildResult,
+  type DevProfileDefaultSpaceResult,
   type DevProfileServerUrlResult,
   type DevServerHealthChecker,
   type DevServerHealthResult

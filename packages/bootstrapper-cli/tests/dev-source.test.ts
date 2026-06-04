@@ -261,6 +261,9 @@ function createDevSourceFileSystem(
         throw new Error(`Missing file: ${path}`);
       }
       return value;
+    },
+    writeFile(path: string, content: string): void {
+      addFile(files, directories, path, content);
     }
   };
 }

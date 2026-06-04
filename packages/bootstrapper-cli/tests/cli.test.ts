@@ -1234,8 +1234,12 @@ describe('runCli', () => {
     expect(writes.join('')).toContain(
       'dry-run: profile MCP config would be written to /tmp/home/.teamem/dev-profiles/alice/mcp.json from /src/teamem/plugin/.mcp.json.'
     );
+    expect(writes.join('')).toContain(
+      'dry-run: launch workspace MCP config would be written to /src/teamem/.mcp.json with Teamem dev channel servers.'
+    );
     expect(writes.join('')).toContain('Teamem dev Claude launch plan');
     expect(writes.join('')).toContain('Command: /opt/claude/bin/claude');
+    expect(writes.join('')).not.toContain('--channels server:teamem-channel');
     expect(writes.join('')).toContain(
       '--dangerously-load-development-channels server:teamem-channel'
     );
@@ -1289,6 +1293,24 @@ describe('runCli', () => {
       directories: ['/tmp/home/.teamem/dev-profiles/alice'],
       files: ['/tmp/home/.teamem/dev-profiles/alice/credentials.json']
     });
+    const sourceFileSystem = createDevSourceFileSystem({
+      roots: ['/src/teamem'],
+      executableFiles: [
+        '/tmp/home/.teamem/bin/claude',
+        '/opt/claude/bin/claude'
+      ]
+    });
+    sourceFileSystem.writeFile(
+      '/work/launch-repo/.mcp.json',
+      `${JSON.stringify({
+        mcpServers: {
+          existing: {
+            command: 'node',
+            args: ['existing.js']
+          }
+        }
+      })}\n`
+    );
     const exitCode = runCli(
       [
         'dev',
@@ -1325,7 +1347,8 @@ describe('runCli', () => {
         },
         promptEnvironment: {
           isInteractive: () => false
-        }
+        },
+        devSourceFileSystem: sourceFileSystem
       })
     );
 
@@ -1383,6 +1406,28 @@ describe('runCli', () => {
     expect(JSON.stringify(runner.invocations[0]?.env)).not.toContain(
       '/tmp/home/.claude/plugins/cache/teamem-alpha'
     );
+    const launchWorkspaceMcp = JSON.parse(
+      sourceFileSystem.files.get('/work/launch-repo/.mcp.json') ?? '{}'
+    ) as {
+      mcpServers?: Record<string, { command?: string; args?: string[] }>;
+    };
+    expect(Object.keys(launchWorkspaceMcp.mcpServers ?? {})).toEqual([
+      'existing',
+      'teamem',
+      'teamem-channel'
+    ]);
+    expect(launchWorkspaceMcp.mcpServers?.existing).toEqual({
+      command: 'node',
+      args: ['existing.js']
+    });
+    expect(launchWorkspaceMcp.mcpServers?.teamem?.args).toEqual([
+      'run',
+      '/src/teamem/plugin/lib/bridge.js'
+    ]);
+    expect(launchWorkspaceMcp.mcpServers?.['teamem-channel']?.args).toEqual([
+      'run',
+      '/src/teamem/plugin/lib/channel.js'
+    ]);
   });
 
   it('checks profile server health before launching dev claude', () => {
@@ -5241,6 +5286,9 @@ function createDevSourceFileSystem(
         throw new Error(`Missing file: ${path}`);
       }
       return value;
+    },
+    writeFile(path: string, content: string): void {
+      addFile(directories, files, path, content);
     }
   };
 }

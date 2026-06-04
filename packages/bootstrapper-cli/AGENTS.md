@@ -52,6 +52,12 @@ Publishable npm package for the `teamem` CLI. This package is the first-run boot
   - `claude plugin install teamem@teamem-alpha --scope <scope>`
 - `teamem update` should refresh marketplace metadata before updating the plugin.
 - `teamem claude install`, `teamem claude status`, and `teamem claude uninstall` are the Teamem-aware Claude launcher lifecycle command family.
+- `teamem dev claude` launches the local source-checkout Channel server with
+  `--dangerously-load-development-channels server:teamem-channel`. During the
+  Claude Code Channels research preview, do not also pass
+  `--channels server:teamem-channel` for this local `server:` source; the
+  development flag is the load/activation path for non-allowlisted local
+  servers.
 - `teamem cc` is a compatibility error only. It must not launch Claude Code; it should point users toward `teamem claude install` and the prompt-based `claude` shim.
 
 ### Git Hook Contracts
