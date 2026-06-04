@@ -355,6 +355,17 @@ function extractMessageMetadata(json, direction) {
   }
 
   if (
+    typeof json.method === 'string' &&
+    json.method.startsWith('notifications/')
+  ) {
+    return {
+      notification: {
+        method: json.method
+      }
+    };
+  }
+
+  if (
     direction === 'client-to-server' &&
     json.method === 'tools/call' &&
     json.params &&

@@ -50,6 +50,11 @@ tests belong under `tests/plugin/`.
 - Keep runtime launch paths structured, not shell-string based. Claude commands,
   hook shell configuration, MCP child commands, and PTY launches should remain
   explicit command/argument arrays where the local design supports it.
+- Keep `channels` and `developmentChannels` generic. The module may accept
+  Channel server names, render Claude launch flags, proxy selected Channel MCP
+  servers, and capture raw `notifications/claude/channel` traces, but
+  product-specific routing semantics, recipient assertions, credential shapes,
+  and readiness policy belong in consumer tests such as `tests/plugin/`.
 - Keep headless mode aligned with the verified Claude Code print contract:
   `claude -p --output-format stream-json --verbose --include-hook-events`, with
   the prompt passed as a CLI argument.
@@ -120,6 +125,10 @@ bun run lint
   fake plugin fixture to prove behavior without Teamem runtime state.
 - Teamem-specific assertions, environment gates, and live runtime prerequisites
   are consumers of this module and should remain under `tests/plugin/`.
+- Channel assertions follow the same boundary: module tests should prove
+  structured Channel launch options and raw MCP notification capture with fake
+  plugins; Teamem Channels delivery matrices and transcript expectations stay in
+  Teamem consumer tests.
 - Consumer suites that need product env in proxied MCP children should define
   their own `envPassthroughKeys` constants beside their tests. The module should
   only provide the generic mechanism and safe default process keys.

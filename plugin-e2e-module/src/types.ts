@@ -21,9 +21,15 @@ export type ClaudePermissionMode =
   | 'bypassPermissions';
 
 export type ClaudeLaunchOptions = {
+  useSourcePluginDir?: boolean;
+  sessionName?: string;
+  includePermissionMode?: boolean;
+  includeRunInstrumentationEnv?: boolean;
   permissionMode?: ClaudePermissionMode;
   allowedTools?: string[];
   disallowedTools?: string[];
+  channels?: ClaudeChannel[];
+  developmentChannels?: ClaudeDevelopmentChannel[];
   settingSources?: string | string[];
   systemPrompt?: string;
   appendSystemPrompt?: string;
@@ -33,6 +39,12 @@ export type ClaudeLaunchOptions = {
   useInstrumentedMcpConfig?: boolean;
   strictMcpConfig?: boolean;
 };
+
+export type ClaudeChannel = {
+  server: string;
+};
+
+export type ClaudeDevelopmentChannel = ClaudeChannel;
 
 export type HeadlessPromptOptions = ClaudeLaunchOptions & {
   maxTurns?: number;
@@ -435,6 +447,9 @@ export type McpTraceToolResponseMetadata = {
 export type McpTraceMessageMetadata = {
   toolName?: string;
   response?: McpTraceToolResponseMetadata;
+  notification?: {
+    method: string;
+  };
 };
 
 export type McpTraceMessage = {

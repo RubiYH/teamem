@@ -566,9 +566,12 @@ async function runHeadlessPrompt(
     redactionMode: normalized.redactionMode,
     envPassthroughKeys: normalized.mcp.envPassthroughKeys
   });
+  const pluginDir = options.useSourcePluginDir
+    ? instrumentedPlugin.sourcePluginDir
+    : instrumentedPlugin.pluginDir;
   const headlessArgs = [
     '--plugin-dir',
-    instrumentedPlugin.pluginDir,
+    pluginDir,
     '-p',
     '--output-format',
     'stream-json',

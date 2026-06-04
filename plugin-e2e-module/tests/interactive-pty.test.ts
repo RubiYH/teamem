@@ -190,6 +190,52 @@ describe('plugin-e2e-module interactive PTY execution', () => {
     }
   });
 
+  it('can launch the source plugin dir when dev-path parity is required', async () => {
+    const ptySpawns: InteractivePtySpawnRequest[] = [];
+    const fakePty = new FakePty({ readinessText: 'Ready\n' });
+    const artifactsDir = await mkdtemp(
+      join(tmpdir(), 'claude-plugin-e2e-interactive-source-plugin-')
+    );
+
+    try {
+      const tester = createClaudePluginTester({
+        pluginDir: fakePluginDir,
+        artifactsDir,
+        cleanup: 'never',
+        processRunner: createFakeClaudeRunner([]),
+        ptyAdapter: createFakePtyAdapter(ptySpawns, fakePty)
+      });
+
+      const session = await tester.launchInteractive({
+        readiness: 'Ready',
+        readinessTimeoutMs: 20,
+        closeTimeoutMs: 20,
+        useSourcePluginDir: true,
+        includePermissionMode: false,
+        includeRunInstrumentationEnv: false
+      });
+      fakePty.exitOnWrite('/exit\r', 0);
+      await session.close();
+
+      expect(ptySpawns).toHaveLength(1);
+      expect(
+        ptySpawns[0].args[ptySpawns[0].args.indexOf('--plugin-dir') + 1]
+      ).toBe(fakePluginDir);
+      expect(session.command.args).toContain(fakePluginDir);
+      expect(session.command.args.join(' ')).not.toContain(
+        'instrumented-plugin-workspace'
+      );
+      expect(session.command.args).not.toContain('--permission-mode');
+      expect(
+        Object.keys(ptySpawns[0].env).filter((key) =>
+          key.startsWith('CLAUDE_PLUGIN_E2E_')
+        )
+      ).toEqual([]);
+    } finally {
+      await rm(artifactsDir, { recursive: true, force: true });
+    }
+  });
+
   it('passes interactive Claude launch options through without headless-only flags', async () => {
     const ptySpawns: InteractivePtySpawnRequest[] = [];
     const fakePty = new FakePty({ readinessText: 'Ready\n' });
@@ -214,10 +260,16 @@ describe('plugin-e2e-module interactive PTY execution', () => {
         allowedTools: ['Read', 'Bash(git status)'],
         disallowedTools: ['Edit'],
         settingSources: ['user', 'project'],
-        systemPrompt: 'system text',
-        appendSystemPrompt: 'append text',
+        systemPrompt: '--token sk-safe-summary-system',
+        appendSystemPrompt: '--secret append-safe-summary',
         model: 'claude-sonnet-4-6',
         maxBudgetUsd: 1.25,
+        sessionName: 'generic-session',
+        channels: [{ server: 'modern-channel' }],
+        developmentChannels: [
+          { server: 'generic-channel' },
+          { server: 'literal;rm -rf /' }
+        ],
         useInstrumentedMcpConfig: true,
         strictMcpConfig: true,
         maxTurns: 99
@@ -248,13 +300,21 @@ describe('plugin-e2e-module interactive PTY execution', () => {
         '--setting-sources',
         'user,project',
         '--system-prompt',
-        'system text',
+        '--token sk-safe-summary-system',
         '--append-system-prompt',
-        'append text',
+        '--secret append-safe-summary',
         '--model',
         'claude-sonnet-4-6',
         '--max-budget-usd',
         '1.25',
+        '--dangerously-load-development-channels',
+        'server:generic-channel',
+        '--dangerously-load-development-channels',
+        'server:literal;rm -rf /',
+        '--channels',
+        'server:modern-channel',
+        '--name',
+        'generic-session',
         '--allowedTools',
         'Read',
         '--allowedTools',
@@ -274,6 +334,84 @@ describe('plugin-e2e-module interactive PTY execution', () => {
       expect(ptySpawns[0].args).not.toContain('--max-turns');
       expect(ptySpawns[0].args).not.toContain('--settings');
       expect(ptySpawns[0].args).not.toContain('--isolation');
+      const summary = JSON.parse(
+        await readFile(session.artifacts.summaryPath, 'utf8')
+      ) as {
+        command: { args: string[] };
+        launch: {
+          argv: string[];
+          flags: string[];
+          channels: Array<{
+            kind: 'server';
+            name: string;
+            argv: string[];
+          }>;
+          developmentChannels: Array<{
+            kind: 'server';
+            name: string;
+            argv: string[];
+          }>;
+        };
+      };
+      expect(summary.command.args).toContain(
+        '--dangerously-load-development-channels'
+      );
+      expect(summary.command.args).toContain('--channels');
+      expect(summary.command.args).toContain('--strict-mcp-config');
+      expect(summary.command.args).toContain('--setting-sources');
+      expect(summary.command.args).toContain('--system-prompt');
+      expect(summary.command.args).toContain('--append-system-prompt');
+      expect(summary.command.args).toContain('--name');
+      expect(summary.command.args).not.toContain(
+        '--token sk-safe-summary-system'
+      );
+      expect(summary.command.args).not.toContain(
+        '--secret append-safe-summary'
+      );
+      expect(summary.command.args).not.toContain('server:modern-channel');
+      expect(summary.command.args).not.toContain('server:generic-channel');
+      expect(summary.command.args).not.toContain('server:literal;rm -rf /');
+      expect(summary.launch.argv).toContain('--channels');
+      expect(summary.launch.argv).toContain(
+        '--dangerously-load-development-channels'
+      );
+      expect(summary.launch.argv).not.toContain(
+        '--token sk-safe-summary-system'
+      );
+      expect(summary.launch.argv).not.toContain('--secret append-safe-summary');
+      expect(summary.launch.argv).not.toContain('server:modern-channel');
+      expect(summary.launch.argv).not.toContain('server:generic-channel');
+      expect(summary.launch.flags).toContain('--plugin-dir');
+      expect(summary.launch.flags).toContain('--name');
+      expect(summary.launch.flags).toContain('--mcp-config');
+      expect(summary.launch.flags).toContain('--strict-mcp-config');
+      expect(summary.launch.flags).toContain(
+        '--dangerously-load-development-channels'
+      );
+      expect(summary.launch.flags).toContain('--channels');
+      expect(summary.launch.flags).toContain('--allowedTools');
+      expect(summary.launch.flags).toContain('--disallowedTools');
+      expect(summary.launch.flags).toContain('--permission-mode');
+      expect(summary.launch.flags).toContain('--model');
+      expect(summary.launch.channels).toEqual([
+        {
+          kind: 'server',
+          name: '[REDACTED]',
+          argv: ['--channels', '[REDACTED]']
+        }
+      ]);
+      expect(summary.launch.developmentChannels).toEqual([
+        {
+          kind: 'server',
+          name: '[REDACTED]',
+          argv: ['--dangerously-load-development-channels', '[REDACTED]']
+        },
+        {
+          kind: 'server',
+          name: '[REDACTED]',
+          argv: ['--dangerously-load-development-channels', '[REDACTED]']
+        }
+      ]);
     } finally {
       await rm(artifactsDir, { recursive: true, force: true });
     }

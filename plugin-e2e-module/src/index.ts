@@ -25,6 +25,8 @@ export {
 export { compareVersions, parseVersion } from './version.js';
 export type {
   BootResult,
+  ClaudeChannel,
+  ClaudeDevelopmentChannel,
   CleanupMode,
   ClaudeCommand,
   ClaudePermissionMode,

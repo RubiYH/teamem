@@ -31,16 +31,12 @@ first real consumer. The delivered branch history is:
   `TEAMEM_CLAUDE_PLUGIN_INTERACTIVE_PERMISSION_MODE`, while keeping `auto` as
   the default and failing fast for unsupported modes.
 
-The current live Teamem coverage is intentionally small: plugin load, runtime
-`/teamem:teamem-whoami`, interactive `/teamem:teamem-whoami`, and an
-interactive permission-mode override smoke. Broader command flows such as
-`/teamem:teamem-status`, permission-prompt choreography, reporters, custom
-matchers, package publishing, and `assistantReport` remain deferred.
-
-The next useful tracked slice is a broader, headless `/teamem:teamem-status`
-live smoke. That should stay opt-in, assert MCP and process evidence rather
-than assistant wording, and continue to proxy only the core `teamem` MCP server
-until channel-specific behavior is intentionally brought into scope.
+The current live Teamem coverage includes plugin load, runtime
+`/teamem:teamem-whoami`, interactive `/teamem:teamem-whoami`, an interactive
+permission-mode override smoke, multi-profile durable Teamem flows, and a
+focused opt-in Channels live slice in the Teamem consumer tests. Broader command
+flows such as reporters, custom matchers, package publishing, and
+`assistantReport` remain deferred.
 
 ## Public API
 
@@ -92,9 +88,25 @@ runner integrations: `expectText(...)`, `expectHook(...)`,
 
 Key options include structured `claudeCommand`, `claudeBin`, `cwd`,
 `minClaudeVersion`, `hookShell`, MCP include/exclude filters, artifact cleanup,
-redaction, launch pass-through options, and boot/headless/interactive timeouts.
-Permission mode, allowed/disallowed tools, setting sources, prompts, model,
-turns, and budget are pass-throughs to Claude Code.
+redaction, launch pass-through options, generic `channels` /
+`developmentChannels`, and
+boot/headless/interactive timeouts. Permission mode, allowed/disallowed tools,
+setting sources, prompts, model, turns, and budget are pass-throughs to Claude
+Code.
+
+`channels` is the generic launch hook for approved Claude Code Channel servers.
+Each entry is rendered as structured Claude CLI arguments such as
+`--channels plugin:<name>@<marketplace>` while preserving command/argument
+arrays for inspection. `developmentChannels` is the launch hook for local
+development Channel server sources that require
+`--dangerously-load-development-channels server:<name>`; during the Claude Code
+Channels research preview, local non-allowlisted `server:` entries use that
+development flag instead of a matching `--channels server:<name>` entry. The
+module treats Channel servers like launch mechanics and traceable MCP traffic:
+it can start Claude with a requested Channel server, proxy the selected Channel
+MCP server, and capture raw `notifications/claude/channel` evidence in
+artifacts. It does not interpret Teamem principals, Teamem discussion commands,
+Space or Sprint routing, or recipient semantics.
 
 ## Test Author Workflow
 
@@ -110,6 +122,11 @@ turns, and budget are pass-throughs to Claude Code.
 6. Preserve artifacts only when needed for debugging; safe redaction is the
    default and unredacted artifacts require
    `CLAUDE_PLUGIN_E2E_ALLOW_UNREDACTED=1`.
+
+For Channels consumers, keep the same split: the module can launch Claude with
+generic `channels` / `developmentChannels` and preserve raw Channel/MCP traces,
+while the consumer test owns domain-specific launch planning, readiness waits,
+routing assertions, and failure classification.
 
 ## Plugin Boundaries
 
@@ -163,6 +180,13 @@ Current Teamem consumer tiers under `tests/plugin/` prove:
   slash command, emit terminal transcript evidence, and produce MCP trace
   evidence through the core Teamem proxy. This is gated separately from
   headless tests.
+- L5 Channels live smoke: when Alice, Bob, and Carol profile credentials are
+  available and every live gate is explicitly enabled, real Claude Code sessions
+  launch with the `teamem-channel` development Channel server. The Teamem
+  consumer asserts direct-to-Bob, `*` no-Sprint Space broadcast, and `**`
+  explicit Space-wide broadcast behavior from channel MCP trace notifications,
+  recipient notification logs, and rendered TTY transcript markers. Durable
+  `read_thread` visibility remains separate fallback/runtime-history coverage.
 
 Module self-tests use the generic fake plugin fixture in
 `plugin-e2e-module/fixtures/`. They prove module behavior without Teamem runtime
@@ -186,13 +210,13 @@ The following are intentionally unsupported in v1:
 - `assistantReport` as an assertion source.
 - Terminal cell-grid rendering with an xterm emulator.
 - Screenshots or browser-style visual testing.
-- Teamem Channels rendering as a first PoC target.
-- Multi-persona Teamem scenarios.
+- Product-specific Channels semantics inside the module.
 
 `assistantReport` is a v2 supplemental path only. If added later, it may help
 debug or summarize a run from inside the assistant session, but it must not be a
 v1 assertion source. V1 correctness comes from process output, terminal
-transcripts, hook traces, MCP traces, command inventory, and artifacts.
+transcripts, hook traces, MCP traces, command inventory, raw Channel
+notifications, and artifacts.
 
 Fixture helper abstractions also remain deferred. Add them only after repeated
 Teamem consumer tests prove a concrete need that direct `cwd`, `pluginDir`, and

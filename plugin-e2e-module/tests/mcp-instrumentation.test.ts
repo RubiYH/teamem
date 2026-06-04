@@ -763,6 +763,86 @@ describe('plugin-e2e-module MCP instrumentation', () => {
     }
   });
 
+  it('captures development channel server notifications as structured MCP messages', async () => {
+    const artifactsDir = await mkdtemp(
+      join(tmpdir(), 'claude-plugin-e2e-mcp-channel-notification-')
+    );
+    const sourceDir = await copyFakePlugin();
+    const channelScript = join(
+      sourceDir,
+      'scripts',
+      'mcp-channel-notification.js'
+    );
+
+    try {
+      await writeFile(
+        channelScript,
+        [
+          'process.stdout.write(JSON.stringify({',
+          "  jsonrpc: '2.0',",
+          "  method: 'notifications/claude/channel',",
+          '  params: {',
+          "    channel: 'generic-channel',",
+          "    body: 'generic notification body'",
+          '  }',
+          "}) + '\\n');",
+          'process.stdin.resume();',
+          "process.stdin.on('end', () => process.exit(0));"
+        ].join('\n'),
+        'utf8'
+      );
+      await writeMcpConfig(sourceDir, {
+        mcpServers: {
+          channelServer: {
+            command: process.execPath,
+            args: [channelScript]
+          }
+        }
+      });
+      const tester = createClaudePluginTester({
+        pluginDir: sourceDir,
+        artifactsDir,
+        cleanup: 'never',
+        processRunner: createBootRunner()
+      });
+
+      const boot = await tester.boot();
+      const traceDir = join(artifactsDir, 'manual-mcp-channel-traces');
+      const run = await runConfiguredMcpServer({
+        pluginDir: boot.instrumentedPlugin.pluginDir,
+        serverName: 'channelServer',
+        traceDir,
+        stdin: ''
+      });
+
+      expect(run.exitCode).toBe(0);
+      const traces = await readMcpTraces(traceDir);
+      const notification = findMcpMessages(
+        traces,
+        'notifications/claude/channel'
+      )[0];
+
+      expect(notification).toBeDefined();
+      expect(notification?.serverName).toBe('channelServer');
+      expect(notification?.direction).toBe('server-to-client');
+      expect(notification?.metadata).toEqual({
+        notification: { method: 'notifications/claude/channel' }
+      });
+      expect(notification?.raw).toBe('[REDACTED]');
+      expect(notification?.json).toEqual({
+        jsonrpc: '[REDACTED]',
+        method: '[REDACTED]',
+        params: {
+          channel: '[REDACTED]',
+          body: '[REDACTED]'
+        }
+      });
+    } finally {
+      await rm(artifactsDir, { recursive: true, force: true });
+      await rm(sourceDir, { recursive: true, force: true });
+    }
+  });
+
   it('keeps final MCP trace reads strict while allowing polling to ignore transient parse errors', async () => {
     const traceDir = await mkdtemp(
       join(tmpdir(), 'claude-plugin-e2e-mcp-malformed-trace-')

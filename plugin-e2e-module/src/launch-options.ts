@@ -30,8 +30,7 @@ function buildNonVariadicLaunchOptionArgs(
   instrumentedPlugin?: Pick<InstrumentedPlugin, 'mcpPath'>
 ): string[] {
   return [
-    '--permission-mode',
-    options.permissionMode ?? DEFAULT_CLAUDE_PERMISSION_MODE,
+    ...buildPermissionModeArgs(options),
     ...buildMcpConfigArgs(options, instrumentedPlugin),
     ...appendStringOption(
       '--setting-sources',
@@ -47,7 +46,21 @@ function buildNonVariadicLaunchOptionArgs(
       options.maxBudgetUsd === undefined
         ? undefined
         : String(options.maxBudgetUsd)
-    )
+    ),
+    ...buildDevelopmentChannelArgs(options),
+    ...buildChannelArgs(options),
+    ...appendStringOption('--name', options.sessionName)
+  ];
+}
+
+function buildPermissionModeArgs(options: ClaudeLaunchOptions): string[] {
+  if (options.includePermissionMode === false) {
+    return [];
+  }
+
+  return [
+    '--permission-mode',
+    options.permissionMode ?? DEFAULT_CLAUDE_PERMISSION_MODE
   ];
 }
 
@@ -83,4 +96,22 @@ function appendRepeatedStringOption(flag: string, values?: string[]): string[] {
 
 function appendStringOption(flag: string, value?: string): string[] {
   return value === undefined ? [] : [flag, value];
+}
+
+function buildDevelopmentChannelArgs(options: ClaudeLaunchOptions): string[] {
+  return (
+    options.developmentChannels?.flatMap((channel) => [
+      '--dangerously-load-development-channels',
+      `server:${channel.server}`
+    ]) ?? []
+  );
+}
+
+function buildChannelArgs(options: ClaudeLaunchOptions): string[] {
+  return (
+    options.channels?.flatMap((channel) => [
+      '--channels',
+      `server:${channel.server}`
+    ]) ?? []
+  );
 }

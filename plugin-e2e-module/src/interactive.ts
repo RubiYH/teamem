@@ -36,6 +36,22 @@ const DEFAULT_READINESS_MATCHER: InteractiveReadinessMatcher = (transcript) =>
 const CONTROL_C = '\x03';
 const ENTER = '\r';
 const PROXY_REDACTION_MODE_ENV = 'CLAUDE_PLUGIN_E2E_REDACTION_MODE';
+const VALUE_LAUNCH_FLAGS = new Set([
+  '--plugin-dir',
+  '--name',
+  '--permission-mode',
+  '--mcp-config',
+  '--setting-sources',
+  '--system-prompt',
+  '--append-system-prompt',
+  '--model',
+  '--max-budget-usd',
+  '--channels',
+  '--dangerously-load-development-channels',
+  '--allowedTools',
+  '--disallowedTools'
+]);
+const BOOLEAN_LAUNCH_FLAGS = new Set(['--strict-mcp-config']);
 
 export const nodePtyAdapter: InteractivePtyAdapter = {
   spawn(request) {
@@ -83,17 +99,14 @@ export async function launchInteractiveRun(input: {
     await input.artifactManager.createRunArtifacts('interactive');
   const env = {
     ...input.normalized.env,
-    CLAUDE_PLUGIN_E2E_HOOK_TRACE_DIR: artifacts.hookTraceDir,
-    CLAUDE_PLUGIN_E2E_FALLBACK_HOOK_TRACE_DIR:
-      input.instrumentedPlugin.hookTraceDir,
-    CLAUDE_PLUGIN_E2E_MCP_TRACE_DIR: artifacts.mcpTraceDir,
-    CLAUDE_PLUGIN_E2E_FALLBACK_MCP_TRACE_DIR:
-      input.instrumentedPlugin.mcpTraceDir,
-    [PROXY_REDACTION_MODE_ENV]: input.normalized.redactionMode,
-    ...(input.normalized.redactionMode === 'off' &&
-    process.env.CLAUDE_PLUGIN_E2E_ALLOW_UNREDACTED === '1'
-      ? { CLAUDE_PLUGIN_E2E_ALLOW_UNREDACTED: '1' }
-      : {})
+    ...buildRunInstrumentationEnv({
+      include: input.options?.includeRunInstrumentationEnv !== false,
+      hookTraceDir: artifacts.hookTraceDir,
+      fallbackHookTraceDir: input.instrumentedPlugin.hookTraceDir,
+      mcpTraceDir: artifacts.mcpTraceDir,
+      fallbackMcpTraceDir: input.instrumentedPlugin.mcpTraceDir,
+      redactionMode: input.normalized.redactionMode
+    })
   };
   const launchPlugin = await materializeRunMcpConfig({
     instrumentedPlugin: input.instrumentedPlugin,
@@ -102,9 +115,12 @@ export async function launchInteractiveRun(input: {
     redactionMode: input.normalized.redactionMode,
     envPassthroughKeys: input.normalized.mcp.envPassthroughKeys
   });
+  const pluginDir = input.options?.useSourcePluginDir
+    ? input.instrumentedPlugin.sourcePluginDir
+    : input.instrumentedPlugin.pluginDir;
   const command = withClaudeArgs(input.normalized.claudeCommand, [
     '--plugin-dir',
-    input.instrumentedPlugin.pluginDir,
+    pluginDir,
     ...buildClaudeLaunchOptionArgs(input.options, launchPlugin)
   ]);
   const readinessTimeoutMs =
@@ -283,6 +299,30 @@ export async function launchInteractiveRun(input: {
   };
 
   return session;
+}
+
+function buildRunInstrumentationEnv(input: {
+  include: boolean;
+  hookTraceDir: string;
+  fallbackHookTraceDir: string;
+  mcpTraceDir: string;
+  fallbackMcpTraceDir: string;
+  redactionMode: RedactionMode;
+}): NodeJS.ProcessEnv {
+  if (!input.include) {
+    return {};
+  }
+  return {
+    CLAUDE_PLUGIN_E2E_HOOK_TRACE_DIR: input.hookTraceDir,
+    CLAUDE_PLUGIN_E2E_FALLBACK_HOOK_TRACE_DIR: input.fallbackHookTraceDir,
+    CLAUDE_PLUGIN_E2E_MCP_TRACE_DIR: input.mcpTraceDir,
+    CLAUDE_PLUGIN_E2E_FALLBACK_MCP_TRACE_DIR: input.fallbackMcpTraceDir,
+    [PROXY_REDACTION_MODE_ENV]: input.redactionMode,
+    ...(input.redactionMode === 'off' &&
+    process.env.CLAUDE_PLUGIN_E2E_ALLOW_UNREDACTED === '1'
+      ? { CLAUDE_PLUGIN_E2E_ALLOW_UNREDACTED: '1' }
+      : {})
+  };
 }
 
 function adaptNodePty(pty: IPty): InteractivePtyProcess {
@@ -915,7 +955,8 @@ async function writeInteractiveArtifacts(input: {
         ...input,
         rawTranscript,
         events,
-        normalizedTranscript
+        normalizedTranscript,
+        redactionMode: input.redactionMode
       })
     )
   ]);
@@ -939,15 +980,32 @@ function createInteractiveSummary(input: {
     errorCode?: string;
     errorReason?: string;
   };
+  redactionMode: RedactionMode;
 }): unknown {
   return {
     runId: input.artifacts.runId,
     kind: 'interactive',
     command: {
-      command: input.command.command,
-      args: input.command.args
+      command: redactLaunchValue(input.command.command, input.redactionMode),
+      args: redactLaunchArgs(input.command.args, input.redactionMode)
     },
-    cwd: input.cwd,
+    launch: {
+      argv: [
+        redactLaunchValue(input.command.command, input.redactionMode),
+        ...redactLaunchArgs(input.command.args, input.redactionMode)
+      ],
+      flags: summarizeLaunchFlags(input.command.args),
+      channels: summarizeChannels(
+        input.command.args,
+        input.redactionMode,
+        '--channels'
+      ),
+      developmentChannels: summarizeDevelopmentChannels(
+        input.command.args,
+        input.redactionMode
+      )
+    },
+    cwd: redactOptionalLaunchValue(input.cwd, input.redactionMode),
     exitStatus: input.exitStatus,
     timing: {
       startedAt: input.startedAt.toISOString(),
@@ -978,6 +1036,92 @@ function createInteractiveSummary(input: {
       )
     }
   };
+}
+
+function summarizeLaunchFlags(args: string[]): string[] {
+  const flags: string[] = [];
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (BOOLEAN_LAUNCH_FLAGS.has(arg)) {
+      flags.push(arg);
+      continue;
+    }
+    if (VALUE_LAUNCH_FLAGS.has(arg)) {
+      flags.push(arg);
+      index += 1;
+    }
+  }
+  return flags;
+}
+
+function summarizeDevelopmentChannels(
+  args: string[],
+  redactionMode: RedactionMode
+): Array<{ kind: 'server'; name: string; argv: string[] }> {
+  return summarizeChannels(
+    args,
+    redactionMode,
+    '--dangerously-load-development-channels'
+  );
+}
+
+function summarizeChannels(
+  args: string[],
+  redactionMode: RedactionMode,
+  flag: '--channels' | '--dangerously-load-development-channels'
+): Array<{ kind: 'server'; name: string; argv: string[] }> {
+  const channels: Array<{ kind: 'server'; name: string; argv: string[] }> = [];
+  for (let index = 0; index < args.length; index += 1) {
+    if (args[index] !== flag) {
+      continue;
+    }
+    const value = args[index + 1];
+    if (!value?.startsWith('server:')) {
+      continue;
+    }
+    channels.push({
+      kind: 'server',
+      name: redactLaunchValue(value.slice('server:'.length), redactionMode),
+      argv: [flag, redactLaunchValue(value, redactionMode)]
+    });
+  }
+  return channels;
+}
+
+function redactLaunchArgs(args: string[], mode: RedactionMode): string[] {
+  if (mode === 'off') {
+    return [...args];
+  }
+
+  const redactedArgs: string[] = [];
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (BOOLEAN_LAUNCH_FLAGS.has(arg)) {
+      redactedArgs.push(arg);
+      continue;
+    }
+    if (VALUE_LAUNCH_FLAGS.has(arg)) {
+      redactedArgs.push(arg);
+      if (index + 1 < args.length) {
+        redactedArgs.push(redactLaunchValue(args[index + 1], mode));
+        index += 1;
+      }
+      continue;
+    }
+    redactedArgs.push(redactLaunchValue(arg, mode));
+  }
+  return redactedArgs;
+}
+
+function redactOptionalLaunchValue(
+  value: string | undefined,
+  mode: RedactionMode
+): string | undefined {
+  return value === undefined ? undefined : redactLaunchValue(value, mode);
+}
+
+function redactLaunchValue(value: string, mode: RedactionMode): string {
+  return redactArtifactText(value, mode);
 }
 
 export function normalizeTranscript(value: string): string {
