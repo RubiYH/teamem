@@ -15,97 +15,108 @@ const REQUIRED_PACKED_FILES = [
   'dist/update-executor.js',
   'dist/git-hooks.js'
 ] as const;
+const PACKAGE_ARTIFACT_TIMEOUT_MS = 30_000;
 
 describe('package artifact', () => {
-  it('only publishes the built CLI artifact set', () => {
-    const build = spawnSync('bun', ['run', 'build'], {
-      cwd: PACKAGE_ROOT,
-      encoding: 'utf8'
-    });
-    expect(build.status).toBe(0);
+  it(
+    'only publishes the built CLI artifact set',
+    () => {
+      const build = spawnSync('bun', ['run', 'build'], {
+        cwd: PACKAGE_ROOT,
+        encoding: 'utf8'
+      });
+      expect(build.status).toBe(0);
 
-    const packageJson = JSON.parse(readFileSync(PACKAGE_JSON_PATH, 'utf8')) as {
-      bin?: Record<string, string>;
-    };
-    expect(packageJson.bin?.teamem).toBe('./dist/bin/teamem.js');
-    expect(
-      readFileSync(
-        join(PACKAGE_ROOT, 'dist', 'bin', 'teamem.js'),
-        'utf8'
-      ).split('\n')[0]
-    ).toBe('#!/usr/bin/env bun');
+      const packageJson = JSON.parse(
+        readFileSync(PACKAGE_JSON_PATH, 'utf8')
+      ) as {
+        bin?: Record<string, string>;
+      };
+      expect(packageJson.bin?.teamem).toBe('./dist/bin/teamem.js');
+      expect(
+        readFileSync(
+          join(PACKAGE_ROOT, 'dist', 'bin', 'teamem.js'),
+          'utf8'
+        ).split('\n')[0]
+      ).toBe('#!/usr/bin/env bun');
 
-    const pack = runNpm(['pack', '--dry-run', '--json']);
-    expect(pack.status).toBe(0);
-
-    const [artifact] = JSON.parse(pack.stdout) as Array<{
-      files: Array<{ path: string }>;
-    }>;
-    expect(artifact).toBeDefined();
-
-    const packedFiles = artifact.files.map((entry) => entry.path).sort();
-    expect(packedFiles).toEqual(
-      expect.arrayContaining([...REQUIRED_PACKED_FILES])
-    );
-    expect(
-      packedFiles.some((path) => path.startsWith('dist/cc-launcher.'))
-    ).toBe(false);
-    expect(packedFiles.some((path) => path.startsWith('src/'))).toBe(false);
-    expect(packedFiles.some((path) => path.startsWith('tests/'))).toBe(false);
-    expect(
-      packedFiles.some(
-        (path) => path.endsWith('.ts') && !path.endsWith('.d.ts')
-      )
-    ).toBe(false);
-  });
-
-  it('installs the packed tarball into an isolated prefix with a working teamem binary', () => {
-    const sandboxRoot = mkdtempSync(
-      join(tmpdir(), 'teamem-bootstrapper-pack-')
-    );
-    const packDestination = join(sandboxRoot, 'pack');
-    const installPrefix = join(sandboxRoot, 'prefix');
-
-    try {
-      mkdirSync(packDestination, { recursive: true });
-
-      const pack = runNpm([
-        'pack',
-        '--json',
-        '--pack-destination',
-        packDestination
-      ]);
+      const pack = runNpm(['pack', '--dry-run', '--json']);
       expect(pack.status).toBe(0);
 
       const [artifact] = JSON.parse(pack.stdout) as Array<{
-        filename: string;
+        files: Array<{ path: string }>;
       }>;
-      expect(artifact?.filename).toBeTruthy();
+      expect(artifact).toBeDefined();
 
-      const tarballPath = join(packDestination, artifact.filename);
-      const install = runNpm([
-        'install',
-        '--global',
-        '--prefix',
-        installPrefix,
-        tarballPath
-      ]);
-      expect(install.status).toBe(0);
+      const packedFiles = artifact.files.map((entry) => entry.path).sort();
+      expect(packedFiles).toEqual(
+        expect.arrayContaining([...REQUIRED_PACKED_FILES])
+      );
+      expect(
+        packedFiles.some((path) => path.startsWith('dist/cc-launcher.'))
+      ).toBe(false);
+      expect(packedFiles.some((path) => path.startsWith('src/'))).toBe(false);
+      expect(packedFiles.some((path) => path.startsWith('tests/'))).toBe(false);
+      expect(
+        packedFiles.some(
+          (path) => path.endsWith('.ts') && !path.endsWith('.d.ts')
+        )
+      ).toBe(false);
+    },
+    PACKAGE_ARTIFACT_TIMEOUT_MS
+  );
 
-      const binaryPath = join(installPrefix, 'bin', 'teamem');
-      const help = spawnSync(binaryPath, ['--help'], {
-        cwd: installPrefix,
-        encoding: 'utf8'
-      });
+  it(
+    'installs the packed tarball into an isolated prefix with a working teamem binary',
+    () => {
+      const sandboxRoot = mkdtempSync(
+        join(tmpdir(), 'teamem-bootstrapper-pack-')
+      );
+      const packDestination = join(sandboxRoot, 'pack');
+      const installPrefix = join(sandboxRoot, 'prefix');
 
-      expect(help.status).toBe(0);
-      expect(help.stdout).toContain('Usage:');
-      expect(help.stdout).toContain('teamem <command> [options]');
-      expect(help.stderr).toBe('');
-    } finally {
-      rmSync(sandboxRoot, { recursive: true, force: true });
-    }
-  });
+      try {
+        mkdirSync(packDestination, { recursive: true });
+
+        const pack = runNpm([
+          'pack',
+          '--json',
+          '--pack-destination',
+          packDestination
+        ]);
+        expect(pack.status).toBe(0);
+
+        const [artifact] = JSON.parse(pack.stdout) as Array<{
+          filename: string;
+        }>;
+        expect(artifact?.filename).toBeTruthy();
+
+        const tarballPath = join(packDestination, artifact.filename);
+        const install = runNpm([
+          'install',
+          '--global',
+          '--prefix',
+          installPrefix,
+          tarballPath
+        ]);
+        expect(install.status).toBe(0);
+
+        const binaryPath = join(installPrefix, 'bin', 'teamem');
+        const help = spawnSync(binaryPath, ['--help'], {
+          cwd: installPrefix,
+          encoding: 'utf8'
+        });
+
+        expect(help.status).toBe(0);
+        expect(help.stdout).toContain('Usage:');
+        expect(help.stdout).toContain('teamem <command> [options]');
+        expect(help.stderr).toBe('');
+      } finally {
+        rmSync(sandboxRoot, { recursive: true, force: true });
+      }
+    },
+    PACKAGE_ARTIFACT_TIMEOUT_MS
+  );
 });
 
 function runNpm(args: readonly string[]) {
