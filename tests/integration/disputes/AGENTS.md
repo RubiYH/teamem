@@ -5,13 +5,19 @@
 
 ## Purpose
 
-Tests for Mode 6.C dispute negotiation: payload derivation, event side-tagging, and agent-facing helper functions. Verifies that dispute_opened and discussion_posted move events carry the fields needed for auto-negotiator agents to determine their role (opener vs target) without re-querying the server.
+Tests for Mode 6.C dispute negotiation compatibility: payload derivation,
+event side-tagging, and deferred/future agent-facing helper functions. Verifies
+that `dispute_opened` and `discussion_posted` move events carry the fields
+needed for auto-negotiator routing to determine opener vs. target without
+re-querying the server. The current plugin runtime does not attach
+watcher/negotiator Notification agents; normal file-claim conflicts stay on the
+queue-first path.
 
 ## Key Files
 
 | File | Description |
 |------|-------------|
-| `payload-side-derivation.test.ts` | F22 regression — dispute_opened and move events include opened_by + target_principal for agent routing |
+| `payload-side-derivation.test.ts` | F22 regression — dispute_opened and move events include opened_by + target_principal for deferred/future agent routing |
 
 ## For AI Agents
 
@@ -19,7 +25,7 @@ Tests for Mode 6.C dispute negotiation: payload derivation, event side-tagging, 
 
 - Tests drive real server tools (`openDispute`, `disputePostMove`) against in-memory SQLite.
 - Reads emitted events from the event store and asserts payload structure.
-- Uses `deriveDisputeSide(whoami, payload)` helper to verify agent can compute its role.
+- Uses `deriveDisputeSide(whoami, payload)` helper to verify a future/deferred agent can compute its role.
 - Tests both opener (bob) and target (alice) perspectives.
 
 ### Testing Requirements
@@ -27,7 +33,7 @@ Tests for Mode 6.C dispute negotiation: payload derivation, event side-tagging, 
 - Every dispute_opened event MUST carry `opened_by` and `target_principal` in payload.
 - Every discussion_posted event with a dispute_move MUST carry both fields (not just dispute_opened).
 - `deriveDisputeSide()` must return non-null side for both opener and target when called with real server payloads.
-- Schema must match agent expectations; missing fields break auto-negotiator silent drops.
+- Schema must match the deferred agent-routing expectation; missing fields would break future auto-negotiator routing.
 
 ### Common Patterns
 

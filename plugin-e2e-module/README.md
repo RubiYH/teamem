@@ -185,8 +185,11 @@ Current Teamem consumer tiers under `tests/plugin/` prove:
   launch with the `teamem-channel` development Channel server. The Teamem
   consumer asserts direct-to-Bob, `*` no-Sprint Space broadcast, and `**`
   explicit Space-wide broadcast behavior from channel MCP trace notifications,
-  recipient notification logs, and rendered TTY transcript markers. Durable
-  `read_thread` visibility remains separate fallback/runtime-history coverage.
+  recipient notification logs, and rendered TTY transcript markers. It also
+  proves queue-first file-claim conflicts remain Channel-quiet, and that real
+  decision and gotcha slash commands render to passive online teammates through
+  Channels without Alice sender echo. Durable `read_thread` visibility remains
+  separate fallback/runtime-history coverage.
 
 Module self-tests use the generic fake plugin fixture in
 `plugin-e2e-module/fixtures/`. They prove module behavior without Teamem runtime

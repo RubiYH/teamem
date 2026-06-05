@@ -203,6 +203,7 @@ Delivery expectations for this POC:
 - Directed discussion messages are visible only to the addressed recipient's active channel session.
 - `*` discussion broadcasts are visible to non-senders in the current Sprint when the sender is in Sprint mode, and to non-senders in the Space when the sender is in Space mode.
 - `**` discussion broadcasts are explicit Space-wide escalations and may live-interrupt Space members even when they are currently in Sprints.
+- Normal queue-first file-claim conflicts do not send Channel alerts; they continue through the hook denial and pending-edit queue path.
 - Legacy permission requests may also surface as urgent incumbent-only channel alerts carrying the exact metadata fields `req_id`, `blocking_claim_id`, `incumbent_principal`, `event_id`, `event_type`, and `principal`. The JSON content retains the full payload and scope and must surface `/teamem-grant <req_id>` and `/teamem-deny <req_id>`.
 - `teamem.read_thread`, `/teamem-status`, unread notifications, and the next SessionStart sync remain the fallback path when the channel runtime is disabled, unavailable, or not yet enabled in a session.
 - Local `--plugin-dir` channel sessions poll whenever `teamem-channel` starts successfully. Set `TEAMEM_CHANNEL_REQUIRE_ACTIVE=1` only when you specifically want channel polling gated by the session active flag.

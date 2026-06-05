@@ -66,6 +66,7 @@ The Claude Code plugin distribution for Teamem. This directory contains the mark
 - **Command component hygiene**: Do not put `AGENTS.md` or other non-command markdown files directly in `commands/`; Claude plugin validation treats every markdown file there as a command component. Keep command guidance in this file.
 - **Subagent prompt format**: Each `.md` file in `agents/` is a complete Claude prompt (not a skill). Do not put `AGENTS.md` or other non-agent markdown files directly in `agents/`; Claude plugin validation treats every markdown file there as an agent component.
 - **Channels proof points**: For channel smoke tests, `channel.log` plus `notifications.log` prove the plugin polled and emitted. They do not prove Claude Code rendered the event; `/mcp`, startup flags, org policy, and Claude debug logs own that layer.
+- **Channels conflict boundary**: Normal queue-first file-claim conflicts stay on the hook denial and pending-edit queue path. Do not document or implement ordinary conflict Channel alerts unless the product decision changes; legacy/internal `permission_requested` Channel alerts are a separate compatibility path.
 - **Space Rules replica**: `TEAMEM.md` is the user-visible local replica and is gitignored. It should be created/rewritten only through `/teamem-rule init`, `/teamem-rule update`, and the `SessionStart` managed-block sync; do not document `snapshot.json` as a required user artifact.
 
 ### Pre-Commit Checklist

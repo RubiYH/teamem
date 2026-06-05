@@ -5,13 +5,20 @@
 
 ## Purpose
 
-Tests for the Claude Code Channels POC: polling updates, discussion message routing, and cursor priming. Verifies that `discussion_posted` events are delivered to directed recipients and that broadcasts are delivered only to non-senders. The experimental reply helper is postponed, so channel tests should not expect a `teamem_reply` tool.
+Tests for the Claude Code Channels POC: polling updates, event routing, cursor
+priming, and channel-relevant tool payload contracts. Verifies that directed
+discussion and direct gotcha events reach only recipients, broadcasts reach
+non-senders, decision lifecycle events preserve full text for online teammates,
+gotcha notices stay compact, and legacy permission alerts keep their incumbent
+metadata. The experimental reply helper is postponed, so channel tests should
+not expect a `teamem_reply` tool.
 
 ## Key Files
 
 | File | Description |
 |------|-------------|
-| `channel-server.test.ts` | Polling schema + recipient filtering, update filtering |
+| `channel-server.test.ts` | Polling schema, cursor priming, recipient filtering, discussion/permission/decision/gotcha channel emission |
+| `decision-tool-bindings.test.ts` | Decision tool binding and session-sync replay payload contracts for channel-visible decision lifecycle events |
 
 ## For AI Agents
 
@@ -23,8 +30,10 @@ Tests for the Claude Code Channels POC: polling updates, discussion message rout
 
 ### Testing Requirements
 
-- discussion_posted events addressed to the local principal MUST appear in polled updates.
-- Broadcast events (`recipient_principal: null`) MUST emit to non-senders and MUST NOT emit to the sender.
+- `discussion_posted` events addressed to the local principal MUST appear in polled updates.
+- Broadcast discussion and gotcha events MUST emit to non-senders and MUST NOT emit to the sender.
+- Decision lifecycle broadcasts MUST preserve full title/body text in channel-visible payloads.
+- Gotcha notices MUST omit full body text and carry enough compact metadata for recipients to fetch details.
 - Empty channel cursors MUST prime to the latest event without replaying old notifications.
 
 ### Common Patterns
