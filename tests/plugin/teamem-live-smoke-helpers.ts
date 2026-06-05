@@ -80,6 +80,7 @@ export function createLiveRuntimeEnv(): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env };
 
   delete env.CLAUDE_PLUGIN_DATA;
+  delete env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC;
 
   return env;
 }
@@ -126,7 +127,7 @@ export async function callLiveRuntimeTool<TData = unknown>(
 
   if (!response.ok) {
     throw new Error(
-      `Teamem runtime ${toolName} returned HTTP ${response.status}`
+      `Teamem runtime ${toolName} returned HTTP ${response.status}: ${formatRuntimeResponseBody(body)}`
     );
   }
   if (!isRuntimeToolResponse<TData>(body)) {
@@ -291,6 +292,16 @@ function isRuntimeToolResponse<TData>(
   value: unknown
 ): value is LiveRuntimeToolResponse<TData> {
   return isRecord(value) && value.ok === true && 'data' in value;
+}
+
+function formatRuntimeResponseBody(body: unknown): string {
+  if (typeof body === 'string') return body;
+  if (body === null || body === undefined) return String(body);
+  try {
+    return JSON.stringify(body);
+  } catch {
+    return String(body);
+  }
 }
 
 async function acquireLiveInteractiveSmokeLock(label: string): Promise<string> {

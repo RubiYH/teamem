@@ -8,7 +8,7 @@ export function isClaudeInteractivePromptReady(transcript: string): boolean {
 
   return (
     /(^|\n)[^\S\n]*[>›❯][^\S\n]*(?=\n|$)/.test(normalized) ||
-    /\btry ["'].*["']/i.test(normalized)
+    /\btry\s*["'].*["']/i.test(normalized)
   );
 }
 
@@ -188,7 +188,7 @@ function findClaudeStartupPromptIndices(compactTranscript: string): {
     ),
     bypassPermissions: compactTranscript.lastIndexOf('bypasspermissionsmode'),
     developmentChannels: compactTranscript.lastIndexOf(
-      'warning:loadingdevelopmentchannels'
+      'iamusingthisforlocaldevelopment'
     )
   };
 }

@@ -17,7 +17,9 @@ export type TeamemChannelsEvidenceLayer =
   | 'stale evidence'
   | 'notification log'
   | 'rendered transcript'
-  | 'negative-recipient filtering';
+  | 'body-leakage'
+  | 'negative-recipient filtering'
+  | 'sender-echo';
 
 export type TeamemChannelsDeliveryScope = 'direct' | 'space' | 'sprint';
 
@@ -32,12 +34,17 @@ export type TeamemChannelsEvidenceExpectation = {
   readonly runId: string;
   readonly caseName: TeamemChannelsSplitCase | string;
   readonly marker: string;
+  readonly eventType?: string;
   readonly eventId: string;
-  readonly threadId: string;
-  readonly messageId: string;
+  readonly threadId?: string;
+  readonly messageId?: string;
   readonly senderPrincipal: string;
   readonly recipientPrincipal: string;
-  readonly deliveryScope: TeamemChannelsDeliveryScope;
+  readonly deliveryScope?: TeamemChannelsDeliveryScope;
+  readonly requiredPayloadText?: readonly string[];
+  readonly requiredRenderedText?: readonly string[];
+  readonly forbiddenPayloadText?: readonly string[];
+  readonly forbiddenRenderedText?: readonly string[];
 };
 
 export type TeamemChannelsTraceCheckpoint = {
@@ -112,9 +119,30 @@ export type TeamemChannelsRecipientReceiptEvidence = {
   readonly renderedTranscript: TeamemChannelsRenderedTranscriptEvidence;
 };
 
+export type TeamemChannelsNegativeMarkerExpectation = {
+  readonly runId: string;
+  readonly caseName: TeamemChannelsSplitCase | string;
+  readonly marker: string;
+  readonly eventTypes: readonly string[];
+};
+
 type TeamemChannelsTransportCandidate =
   | ({ readonly kind: 'match' } & TeamemChannelsTransportEvidence)
   | { readonly kind: 'stale'; readonly reason: string };
+
+type TeamemChannelsNoRecipientEvidenceInput = {
+  readonly persona: TeamemChannelsPersona;
+  readonly expected: TeamemChannelsEvidenceExpectation;
+  readonly traces?: readonly McpTrace[];
+  readonly notificationLog?: string;
+  readonly rawTranscript?: string;
+  readonly normalizedTranscript?: string;
+  readonly traceCheckpoint?: TeamemChannelsTraceCheckpoint;
+  readonly notificationCheckpoint?: TeamemChannelsNotificationCheckpoint;
+  readonly transcriptCheckpoint?: TeamemChannelsTranscriptCheckpoint;
+  readonly allowedTranscriptMarkerEchoes?: readonly string[];
+  readonly artifacts?: TeamemChannelsArtifactPaths;
+};
 
 export function createTeamemChannelsTranscriptCheckpoint(input: {
   readonly rawTranscript: string;
@@ -189,6 +217,12 @@ export function findTeamemChannelTransportEvidence(input: {
         if (staleReason) {
           return [{ kind: 'stale' as const, reason: staleReason }];
         }
+
+        assertNoForbiddenPayloadText(envelope, input.expected, {
+          layer: 'channel transport',
+          artifacts: input.artifacts,
+          checkpoint: input.checkpoint
+        });
 
         if (!matchesExpectedEnvelope(envelope, input.expected)) {
           return [
@@ -285,6 +319,13 @@ export function findTeamemNotificationLogEvidence(input: {
     const line = lines[index]?.trim();
     if (!line) continue;
     const envelope = parseNotificationLogEnvelope(line);
+    if (envelope && matchesExpectedEnvelopeIdentity(envelope, input.expected)) {
+      assertNoForbiddenPayloadText(envelope, input.expected, {
+        layer: 'notification log',
+        artifacts: input.artifacts,
+        checkpoint: input.checkpoint
+      });
+    }
     if (envelope && matchesExpectedEnvelope(envelope, input.expected)) {
       return { lineIndex: index, envelope };
     }
@@ -381,8 +422,15 @@ export function findTeamemRenderedTranscriptEvidence(input: {
   assertRenderedTranscriptNotificationEvidence(input);
 
   const rawSegment = input.rawTranscript.slice(input.checkpoint.rawOffset);
+  assertNoForbiddenRenderedText(rawSegment, input.expected, {
+    artifacts: input.artifacts,
+    checkpoint: input.checkpoint
+  });
   const rawIndex = rawSegment.indexOf(input.expected.marker);
-  if (rawIndex >= 0) {
+  if (
+    rawIndex >= 0 &&
+    segmentIncludesRenderedText(rawSegment, input.expected)
+  ) {
     return {
       source: 'raw',
       renderKind: 'marker',
@@ -395,8 +443,15 @@ export function findTeamemRenderedTranscriptEvidence(input: {
   const normalizedSegment = input.normalizedTranscript.slice(
     input.checkpoint.normalizedOffset
   );
+  assertNoForbiddenRenderedText(normalizedSegment, input.expected, {
+    artifacts: input.artifacts,
+    checkpoint: input.checkpoint
+  });
   const normalizedIndex = normalizedSegment.indexOf(input.expected.marker);
-  if (normalizedIndex >= 0) {
+  if (
+    normalizedIndex >= 0 &&
+    segmentIncludesRenderedText(normalizedSegment, input.expected)
+  ) {
     return {
       source: 'normalized',
       renderKind: 'marker',
@@ -406,7 +461,10 @@ export function findTeamemRenderedTranscriptEvidence(input: {
     };
   }
 
-  const rawChannelSourceIndex = findRenderedChannelSourceIndex(rawSegment);
+  const rawChannelSourceIndex = findRenderedChannelSourceIndex(
+    rawSegment,
+    input.expected
+  );
   if (rawChannelSourceIndex >= 0) {
     return {
       source: 'raw',
@@ -417,8 +475,10 @@ export function findTeamemRenderedTranscriptEvidence(input: {
     };
   }
 
-  const normalizedChannelSourceIndex =
-    findRenderedChannelSourceIndex(normalizedSegment);
+  const normalizedChannelSourceIndex = findRenderedChannelSourceIndex(
+    normalizedSegment,
+    input.expected
+  );
   if (normalizedChannelSourceIndex >= 0) {
     return {
       source: 'normalized',
@@ -448,11 +508,32 @@ export function findTeamemRenderedTranscriptEvidence(input: {
     );
   }
 
+  const rawStaleForbiddenIndex = findForbiddenTextIndex(
+    input.rawTranscript.slice(0, input.checkpoint.rawOffset),
+    input.expected.forbiddenRenderedText
+  );
+  const normalizedStaleForbiddenIndex = findForbiddenTextIndex(
+    input.normalizedTranscript.slice(0, input.checkpoint.normalizedOffset),
+    input.expected.forbiddenRenderedText
+  );
+  if (rawStaleForbiddenIndex >= 0 || normalizedStaleForbiddenIndex >= 0) {
+    throw new TeamemChannelsEvidenceError(
+      'stale evidence',
+      `rendered transcript body marker existed only before checkpoint for ${input.expected.recipientPrincipal}`,
+      contextForExpectation(input.expected, {
+        artifacts: input.artifacts,
+        checkpoint: input.checkpoint
+      })
+    );
+  }
+
   const rawStaleChannelSourceIndex = findRenderedChannelSourceIndex(
-    input.rawTranscript.slice(0, input.checkpoint.rawOffset)
+    input.rawTranscript.slice(0, input.checkpoint.rawOffset),
+    input.expected
   );
   const normalizedStaleChannelSourceIndex = findRenderedChannelSourceIndex(
-    input.normalizedTranscript.slice(0, input.checkpoint.normalizedOffset)
+    input.normalizedTranscript.slice(0, input.checkpoint.normalizedOffset),
+    input.expected
   );
   if (
     rawStaleChannelSourceIndex >= 0 ||
@@ -478,20 +559,111 @@ export function findTeamemRenderedTranscriptEvidence(input: {
   );
 }
 
-export function assertTeamemNegativeRecipientEvidence(input: {
-  readonly persona: TeamemChannelsPersona;
-  readonly expected: TeamemChannelsEvidenceExpectation;
-  readonly traces?: readonly McpTrace[];
-  readonly notificationLog?: string;
-  readonly rawTranscript?: string;
-  readonly normalizedTranscript?: string;
-  readonly traceCheckpoint?: TeamemChannelsTraceCheckpoint;
-  readonly notificationCheckpoint?: TeamemChannelsNotificationCheckpoint;
-  readonly transcriptCheckpoint?: TeamemChannelsTranscriptCheckpoint;
-  readonly allowedTranscriptMarkerEchoes?: readonly string[];
-  readonly artifacts?: TeamemChannelsArtifactPaths;
-}): void {
-  assertExpectedMarkerIdentity(input.expected, 'negative-recipient filtering', {
+function segmentIncludesRenderedText(
+  segment: string,
+  expected: TeamemChannelsEvidenceExpectation
+): boolean {
+  return (expected.requiredRenderedText ?? []).every((text) =>
+    segment.includes(text)
+  );
+}
+
+function assertNoForbiddenPayloadText(
+  envelope: TeamemChannelEnvelope,
+  expected: TeamemChannelsEvidenceExpectation,
+  context: {
+    readonly layer: 'channel transport' | 'notification log';
+    readonly artifacts?: TeamemChannelsArtifactPaths;
+    readonly checkpoint?: Partial<
+      TeamemChannelsTraceCheckpoint & TeamemChannelsNotificationCheckpoint
+    >;
+  }
+): void {
+  const forbidden = findForbiddenText(
+    envelopeTextHaystack(envelope),
+    expected.forbiddenPayloadText
+  );
+  if (!forbidden) return;
+  throw new TeamemChannelsEvidenceError(
+    'body-leakage',
+    `${context.layer} included forbidden compact-notice body text "${forbidden}" for ${expected.recipientPrincipal}`,
+    contextForExpectation(expected, {
+      artifacts: context.artifacts,
+      checkpoint: context.checkpoint
+    })
+  );
+}
+
+function assertNoForbiddenRenderedText(
+  segment: string,
+  expected: TeamemChannelsEvidenceExpectation,
+  context: {
+    readonly artifacts?: TeamemChannelsArtifactPaths;
+    readonly checkpoint?: TeamemChannelsTranscriptCheckpoint;
+  }
+): void {
+  const forbidden = findForbiddenText(segment, expected.forbiddenRenderedText);
+  if (!forbidden) return;
+  throw new TeamemChannelsEvidenceError(
+    'body-leakage',
+    `rendered transcript included forbidden compact-notice body text "${forbidden}" for ${expected.recipientPrincipal}`,
+    contextForExpectation(expected, {
+      artifacts: context.artifacts,
+      checkpoint: context.checkpoint
+    })
+  );
+}
+
+function findForbiddenText(
+  haystack: string,
+  forbiddenText?: readonly string[]
+): string | undefined {
+  return forbiddenText?.find(
+    (text) => text.length > 0 && haystack.includes(text)
+  );
+}
+
+function findForbiddenTextIndex(
+  haystack: string,
+  forbiddenText?: readonly string[]
+): number {
+  return (
+    forbiddenText?.reduce((found, text) => {
+      if (found >= 0 || text.length === 0) return found;
+      return haystack.indexOf(text);
+    }, -1) ?? -1
+  );
+}
+
+export function assertTeamemNegativeRecipientEvidence(
+  input: TeamemChannelsNoRecipientEvidenceInput
+): void {
+  assertTeamemNoRecipientEvidence(input, {
+    layer: 'negative-recipient filtering',
+    subject: 'non-recipient'
+  });
+}
+
+export function assertTeamemNoSenderEchoEvidence(
+  input: TeamemChannelsNoRecipientEvidenceInput
+): void {
+  assertTeamemNoRecipientEvidence(input, {
+    layer: 'sender-echo',
+    subject: 'sender'
+  });
+}
+
+function assertTeamemNoRecipientEvidence(
+  input: TeamemChannelsNoRecipientEvidenceInput,
+  options: {
+    readonly layer: Extract<
+      TeamemChannelsEvidenceLayer,
+      'negative-recipient filtering' | 'sender-echo'
+    >;
+    readonly subject: string;
+  }
+): void {
+  assertExpectedMarkerIdentity(input.expected, options.layer, {
     persona: input.persona,
     artifacts: input.artifacts,
     checkpoint: {
@@ -523,8 +695,8 @@ export function assertTeamemNegativeRecipientEvidence(input: {
     )
   ) {
     throw new TeamemChannelsEvidenceError(
-      'negative-recipient filtering',
-      `unexpected channel transport evidence for non-recipient ${input.persona}`,
+      options.layer,
+      `unexpected channel transport evidence for ${options.subject} ${input.persona}`,
       context
     );
   }
@@ -541,8 +713,8 @@ export function assertTeamemNegativeRecipientEvidence(input: {
       })
     ) {
       throw new TeamemChannelsEvidenceError(
-        'negative-recipient filtering',
-        `unexpected notification log evidence for non-recipient ${input.persona}`,
+        options.layer,
+        `unexpected notification log evidence for ${options.subject} ${input.persona}`,
         context
       );
     }
@@ -567,12 +739,153 @@ export function assertTeamemNegativeRecipientEvidence(input: {
         allowedEchoes: input.allowedTranscriptMarkerEchoes
       });
     if (
-      rawWithoutAllowedEcho.includes(input.expected.marker) ||
-      normalizedWithoutAllowedEcho.includes(input.expected.marker)
+      containsExpectedMarkerRender(rawWithoutAllowedEcho, input.expected) ||
+      containsExpectedMarkerRender(normalizedWithoutAllowedEcho, input.expected)
     ) {
       throw new TeamemChannelsEvidenceError(
-        'negative-recipient filtering',
-        `unexpected rendered marker for non-recipient ${input.persona}`,
+        options.layer,
+        `unexpected rendered marker for ${options.subject} ${input.persona}`,
+        context
+      );
+    }
+  }
+}
+
+export function assertTeamemNoChannelEvidenceForMarker(input: {
+  readonly persona: TeamemChannelsPersona | string;
+  readonly expected: TeamemChannelsNegativeMarkerExpectation;
+  readonly traces?: readonly McpTrace[];
+  readonly notificationLog?: string;
+  readonly rawTranscript?: string;
+  readonly normalizedTranscript?: string;
+  readonly traceCheckpoint?: TeamemChannelsTraceCheckpoint;
+  readonly notificationCheckpoint?: TeamemChannelsNotificationCheckpoint;
+  readonly transcriptCheckpoint?: TeamemChannelsTranscriptCheckpoint;
+  readonly allowedTranscriptMarkerEchoes?: readonly string[];
+  readonly artifacts?: TeamemChannelsArtifactPaths;
+}): void {
+  assertNegativeMarkerIdentity(input.expected, 'negative-recipient filtering', {
+    persona: input.persona,
+    artifacts: input.artifacts,
+    checkpoint: {
+      ...input.traceCheckpoint,
+      ...input.notificationCheckpoint,
+      ...input.transcriptCheckpoint
+    }
+  });
+
+  const context = contextForNegativeMarker(input.expected, {
+    persona: input.persona,
+    artifacts: input.artifacts,
+    checkpoint: {
+      ...input.traceCheckpoint,
+      ...input.notificationCheckpoint,
+      ...input.transcriptCheckpoint
+    }
+  });
+
+  const matchingTrace = input.traces
+    ?.flatMap((trace) => trace.messages)
+    .find((message) =>
+      isMatchingChannelMarkerMessage({
+        message,
+        expected: input.expected,
+        checkpoint: input.traceCheckpoint
+      })
+    );
+  if (matchingTrace) {
+    throw new TeamemChannelsEvidenceError(
+      'channel transport',
+      `unexpected fresh Channel MCP trace for ${input.persona}`,
+      context
+    );
+  }
+
+  const staleTrace = input.traces
+    ?.flatMap((trace) => trace.messages)
+    .find((message) =>
+      isMatchingChannelMarkerMessage({
+        message,
+        expected: input.expected
+      })
+    );
+  if (staleTrace) {
+    throw new TeamemChannelsEvidenceError(
+      'stale evidence',
+      `Channel MCP trace for ${input.persona} matched marker only before checkpoint`,
+      context
+    );
+  }
+
+  if (input.notificationLog) {
+    const minLine = input.notificationCheckpoint?.lineOffset ?? 0;
+    const lines = input.notificationLog.split(/\r?\n/);
+    for (let index = minLine; index < lines.length; index += 1) {
+      const envelope = parseNotificationLogEnvelope(lines[index]?.trim() ?? '');
+      if (envelope && matchesNegativeMarkerEnvelope(envelope, input.expected)) {
+        throw new TeamemChannelsEvidenceError(
+          'notification log',
+          `unexpected fresh notification-log envelope for ${input.persona}`,
+          context
+        );
+      }
+    }
+    for (let index = 0; index < minLine; index += 1) {
+      const envelope = parseNotificationLogEnvelope(lines[index]?.trim() ?? '');
+      if (envelope && matchesNegativeMarkerEnvelope(envelope, input.expected)) {
+        throw new TeamemChannelsEvidenceError(
+          'stale evidence',
+          `notification-log envelope for ${input.persona} matched marker only before checkpoint`,
+          context
+        );
+      }
+    }
+  }
+
+  if (input.transcriptCheckpoint) {
+    const rawSegment =
+      input.rawTranscript?.slice(input.transcriptCheckpoint.rawOffset) ?? '';
+    const normalizedSegment =
+      input.normalizedTranscript?.slice(
+        input.transcriptCheckpoint.normalizedOffset
+      ) ?? '';
+    const rawWithoutAllowedEcho = removeSingleAllowedTranscriptMarkerEcho({
+      segment: rawSegment,
+      marker: input.expected.marker,
+      allowedEchoes: input.allowedTranscriptMarkerEchoes
+    });
+    const normalizedWithoutAllowedEcho =
+      removeSingleAllowedTranscriptMarkerEcho({
+        segment: normalizedSegment,
+        marker: input.expected.marker,
+        allowedEchoes: input.allowedTranscriptMarkerEchoes
+      });
+    if (
+      containsNegativeMarkerRender(rawWithoutAllowedEcho, input.expected) ||
+      containsNegativeMarkerRender(normalizedWithoutAllowedEcho, input.expected)
+    ) {
+      throw new TeamemChannelsEvidenceError(
+        'rendered transcript',
+        `unexpected fresh rendered Channel evidence for ${input.persona}`,
+        context
+      );
+    }
+
+    const staleRaw = input.rawTranscript?.slice(
+      0,
+      input.transcriptCheckpoint.rawOffset
+    );
+    const staleNormalized = input.normalizedTranscript?.slice(
+      0,
+      input.transcriptCheckpoint.normalizedOffset
+    );
+    if (
+      containsNegativeMarkerRender(staleRaw ?? '', input.expected) ||
+      containsNegativeMarkerRender(staleNormalized ?? '', input.expected)
+    ) {
+      throw new TeamemChannelsEvidenceError(
+        'stale evidence',
+        `rendered transcript for ${input.persona} matched marker only before checkpoint`,
         context
       );
     }
@@ -584,30 +897,86 @@ function removeSingleAllowedTranscriptMarkerEcho(input: {
   readonly marker: string;
   readonly allowedEchoes?: readonly string[];
 }): string {
-  const candidates = (input.allowedEchoes ?? [])
-    .filter((echo) => echo.length > 0 && echo.includes(input.marker))
-    .flatMap((echo) => {
-      const exactIndex = input.segment.indexOf(echo);
-      const exactCandidates =
-        exactIndex >= 0 ? [{ echo, index: exactIndex }] : [];
-      const wrappedEcho = findWrappedTranscriptMarkerEcho({
-        segment: input.segment,
-        marker: input.marker,
-        echo
-      });
-      return wrappedEcho ? [...exactCandidates, wrappedEcho] : exactCandidates;
-    })
-    .sort((left, right) => {
-      if (left.index !== right.index) return left.index - right.index;
-      return right.echo.length - left.echo.length;
-    });
-  const firstEcho = candidates[0];
-  if (!firstEcho) return input.segment;
+  const allowedEchoes = input.allowedEchoes ?? [];
+  const usedAllowedEchoes = new Set<number>();
+  let segment = input.segment;
 
+  for (let count = 0; count < allowedEchoes.length; count += 1) {
+    const candidates = allowedEchoes
+      .flatMap((echo, allowedIndex) => {
+        if (
+          usedAllowedEchoes.has(allowedIndex) ||
+          echo.length === 0 ||
+          !echo.includes(input.marker)
+        ) {
+          return [];
+        }
+        return findAllowedTranscriptMarkerEchoCandidates({
+          segment,
+          marker: input.marker,
+          echo,
+          allowedIndex
+        });
+      })
+      .sort((left, right) => {
+        if (left.index !== right.index) return left.index - right.index;
+        return right.echo.length - left.echo.length;
+      });
+    const firstEcho = candidates[0];
+    if (!firstEcho) break;
+
+    segment = [
+      segment.slice(0, firstEcho.index),
+      segment.slice(firstEcho.index + firstEcho.echo.length)
+    ].join('');
+    usedAllowedEchoes.add(firstEcho.allowedIndex);
+  }
+
+  return segment;
+}
+
+type TranscriptMarkerEchoCandidate = {
+  readonly echo: string;
+  readonly index: number;
+  readonly allowedIndex: number;
+};
+
+function findAllowedTranscriptMarkerEchoCandidates(input: {
+  readonly segment: string;
+  readonly marker: string;
+  readonly echo: string;
+  readonly allowedIndex: number;
+}): TranscriptMarkerEchoCandidate[] {
+  const exactIndex = input.segment.indexOf(input.echo);
+  const exactCandidates =
+    exactIndex >= 0
+      ? [
+          {
+            echo: input.echo,
+            index: exactIndex,
+            allowedIndex: input.allowedIndex
+          }
+        ]
+      : [];
+  const wrappedEcho = findWrappedTranscriptMarkerEcho({
+    segment: input.segment,
+    marker: input.marker,
+    echo: input.echo
+  });
+  const slashCommandEcho = findSlashCommandMarkerEcho({
+    segment: input.segment,
+    marker: input.marker,
+    echo: input.echo
+  });
   return [
-    input.segment.slice(0, firstEcho.index),
-    input.segment.slice(firstEcho.index + firstEcho.echo.length)
-  ].join('');
+    ...exactCandidates,
+    ...(wrappedEcho
+      ? [{ ...wrappedEcho, allowedIndex: input.allowedIndex }]
+      : []),
+    ...(slashCommandEcho
+      ? [{ ...slashCommandEcho, allowedIndex: input.allowedIndex }]
+      : [])
+  ];
 }
 
 function findWrappedTranscriptMarkerEcho(input: {
@@ -628,6 +997,38 @@ function findWrappedTranscriptMarkerEcho(input: {
   if (!match || match.index === undefined) return null;
 
   return { echo: match[0], index: match.index };
+}
+
+function findSlashCommandMarkerEcho(input: {
+  readonly segment: string;
+  readonly marker: string;
+  readonly echo: string;
+}): { readonly echo: string; readonly index: number } | null {
+  if (!input.echo.includes('/teamem') || !input.echo.includes(input.marker)) {
+    return null;
+  }
+
+  let searchFrom = 0;
+  while (searchFrom < input.segment.length) {
+    const markerIndex = input.segment.indexOf(input.marker, searchFrom);
+    if (markerIndex < 0) return null;
+    const prefixStart = Math.max(0, markerIndex - 512);
+    const prefix = input.segment.slice(prefixStart, markerIndex);
+    const slashIndex = prefix.lastIndexOf('/teamem');
+    if (slashIndex >= 0) {
+      const index = prefixStart + slashIndex;
+      const echo = input.segment.slice(
+        index,
+        markerIndex + input.marker.length
+      );
+      if (!echo.includes('teamem-channel:')) {
+        return { echo, index };
+      }
+    }
+    searchFrom = markerIndex + input.marker.length;
+  }
+
+  return null;
 }
 
 function escapeRegExp(value: string): string {
@@ -764,13 +1165,43 @@ function isMatchingChannelTraceMessage(input: {
   const meta = notification.params.meta;
   return (
     meta.event_id === expected.eventId &&
-    meta.thread_id === expected.threadId &&
-    meta.message_id === expected.messageId &&
+    matchesOptionalMeta(meta, 'event_type', expected.eventType) &&
+    matchesOptionalMeta(meta, 'thread_id', expected.threadId) &&
+    matchesOptionalMeta(meta, 'message_id', expected.messageId) &&
     meta.principal === expected.senderPrincipal &&
-    meta.recipient_principal === expectedChannelMetaRecipient(expected) &&
-    meta.delivery_scope === expected.deliveryScope &&
+    matchesOptionalMeta(
+      meta,
+      'recipient_principal',
+      expectedChannelMetaRecipient(expected)
+    ) &&
+    matchesOptionalMeta(meta, 'delivery_scope', expected.deliveryScope) &&
     matchesExpectedEnvelope(envelope, expected)
   );
+}
+
+function isMatchingChannelMarkerMessage(input: {
+  readonly message: McpTraceMessage;
+  readonly expected: TeamemChannelsNegativeMarkerExpectation;
+  readonly checkpoint?: TeamemChannelsTraceCheckpoint;
+}): boolean {
+  const { message, expected, checkpoint } = input;
+  if (message.method !== 'notifications/claude/channel') return false;
+  if (
+    checkpoint?.offsetMs !== undefined &&
+    message.offsetMs < checkpoint.offsetMs
+  ) {
+    return false;
+  }
+  if (
+    checkpoint?.timestamp &&
+    Date.parse(message.timestamp) < Date.parse(checkpoint.timestamp)
+  ) {
+    return false;
+  }
+  const notification = parseChannelNotification(message.json);
+  if (!notification) return false;
+  const envelope = parseChannelEnvelope(notification.params.content);
+  return envelope ? matchesNegativeMarkerEnvelope(envelope, expected) : false;
 }
 
 function traceStaleReason(input: {
@@ -859,11 +1290,28 @@ function matchesExpectedEnvelope(
   expected: TeamemChannelsEvidenceExpectation
 ): boolean {
   if (!matchesExpectedEnvelopeIdentity(envelope, expected)) return false;
+  if (expected.requiredPayloadText) {
+    const haystack = envelopeTextHaystack(envelope);
+    return expected.requiredPayloadText.every((text) =>
+      haystack.includes(text)
+    );
+  }
   const payload = isRecord(envelope.payload) ? envelope.payload : {};
   return (
     typeof payload.body === 'string' &&
     String(payload.body).includes(expected.marker)
   );
+}
+
+function envelopeTextHaystack(envelope: TeamemChannelEnvelope): string {
+  const payload = isRecord(envelope.payload) ? envelope.payload : {};
+  return JSON.stringify({
+    payload,
+    summary: envelope.summary,
+    event_type: envelope.event_type,
+    principal: envelope.principal,
+    scope: envelope.scope
+  });
 }
 
 function matchesExpectedEnvelopeIdentity(
@@ -872,7 +1320,9 @@ function matchesExpectedEnvelopeIdentity(
 ): boolean {
   if (envelope.event_id !== expected.eventId) return false;
   if (envelope.principal !== expected.senderPrincipal) return false;
-  if (envelope.event_type !== 'discussion_posted') return false;
+  const expectedEventType = expected.eventType ?? 'discussion_posted';
+  if (envelope.event_type !== expectedEventType) return false;
+  if (expectedEventType !== 'discussion_posted') return true;
   const payload = isRecord(envelope.payload) ? envelope.payload : {};
   if (
     expected.deliveryScope === 'direct' &&
@@ -896,11 +1346,16 @@ function matchesExpectedChannelRouting(input: {
   const { meta } = input.notification.params;
   return (
     meta.event_id === input.expected.eventId &&
-    meta.thread_id === input.expected.threadId &&
-    meta.message_id === input.expected.messageId &&
+    matchesOptionalMeta(meta, 'event_type', input.expected.eventType) &&
+    matchesOptionalMeta(meta, 'thread_id', input.expected.threadId) &&
+    matchesOptionalMeta(meta, 'message_id', input.expected.messageId) &&
     meta.principal === input.expected.senderPrincipal &&
-    meta.recipient_principal === expectedChannelMetaRecipient(input.expected) &&
-    meta.delivery_scope === input.expected.deliveryScope &&
+    matchesOptionalMeta(
+      meta,
+      'recipient_principal',
+      expectedChannelMetaRecipient(input.expected)
+    ) &&
+    matchesOptionalMeta(meta, 'delivery_scope', input.expected.deliveryScope) &&
     matchesExpectedEnvelopeIdentity(input.envelope, input.expected)
   );
 }
@@ -970,24 +1425,119 @@ function assertRenderedTranscriptNotificationEvidence(input: {
 
 function expectedChannelMetaRecipient(
   expected: TeamemChannelsEvidenceExpectation
-): string {
+): string | undefined {
+  if (!expected.deliveryScope) return undefined;
   if (expected.deliveryScope === 'direct') return expected.recipientPrincipal;
   if (expected.deliveryScope === 'space') return 'space';
   return 'sprint';
 }
 
-function findRenderedChannelSourceIndex(segment: string): number {
+function matchesOptionalMeta(
+  meta: Record<string, string>,
+  key: string,
+  expected: string | undefined
+): boolean {
+  return expected === undefined || meta[key] === expected;
+}
+
+function findRenderedChannelSourceIndex(
+  segment: string,
+  expected: TeamemChannelsEvidenceExpectation
+): number {
   let searchFrom = 0;
   while (searchFrom < segment.length) {
-    const index = segment.indexOf('teamem-channel:', searchFrom);
-    if (index < 0) return -1;
-    const renderedLine = segment.slice(index, index + 512);
-    if (renderedLine.includes('teamem.peer_event')) {
+    const peerEventIndex = segment.indexOf('teamem.peer_event', searchFrom);
+    if (peerEventIndex < 0) return -1;
+    const index = Math.max(0, peerEventIndex - 64);
+    const renderedLine = segment.slice(index, peerEventIndex + 512);
+    if (
+      hasRenderedChannelSourcePrefix(renderedLine) &&
+      !renderedLine.includes(expected.marker)
+    ) {
       return index;
     }
-    searchFrom = index + 'teamem-channel:'.length;
+    searchFrom = peerEventIndex + 'teamem.peer_event'.length;
   }
   return -1;
+}
+
+function containsNegativeMarkerRender(
+  segment: string,
+  expected: TeamemChannelsNegativeMarkerExpectation
+): boolean {
+  return findRenderedChannelMarkerSourceIndex(segment, expected) >= 0;
+}
+
+function containsExpectedMarkerRender(
+  segment: string,
+  expected: TeamemChannelsEvidenceExpectation
+): boolean {
+  return findRenderedExpectedChannelMarkerSourceIndex(segment, expected) >= 0;
+}
+
+function findRenderedExpectedChannelMarkerSourceIndex(
+  segment: string,
+  expected: TeamemChannelsEvidenceExpectation
+): number {
+  let searchFrom = 0;
+  while (searchFrom < segment.length) {
+    const peerEventIndex = segment.indexOf('teamem.peer_event', searchFrom);
+    if (peerEventIndex < 0) return -1;
+    const index = Math.max(0, peerEventIndex - 64);
+    const renderedLine = segment.slice(index, peerEventIndex + 1024);
+    if (
+      hasRenderedChannelSourcePrefix(renderedLine) &&
+      renderedLine.includes(expected.marker) &&
+      (!expected.eventType || renderedLine.includes(expected.eventType))
+    ) {
+      return index;
+    }
+    searchFrom = peerEventIndex + 'teamem.peer_event'.length;
+  }
+  return -1;
+}
+
+function findRenderedChannelMarkerSourceIndex(
+  segment: string,
+  expected: TeamemChannelsNegativeMarkerExpectation
+): number {
+  let searchFrom = 0;
+  while (searchFrom < segment.length) {
+    const peerEventIndex = segment.indexOf('teamem.peer_event', searchFrom);
+    if (peerEventIndex < 0) return -1;
+    const index = Math.max(0, peerEventIndex - 64);
+    const renderedLine = segment.slice(index, peerEventIndex + 1024);
+    if (
+      hasRenderedChannelSourcePrefix(renderedLine) &&
+      renderedLine.includes(expected.marker) &&
+      expected.eventTypes.some((eventType) => renderedLine.includes(eventType))
+    ) {
+      return index;
+    }
+    searchFrom = peerEventIndex + 'teamem.peer_event'.length;
+  }
+  return -1;
+}
+
+function hasRenderedChannelSourcePrefix(renderedLine: string): boolean {
+  return (
+    renderedLine.includes('channel:') ||
+    renderedLine.includes('chanel:') ||
+    renderedLine.includes('channe:') ||
+    renderedLine.includes('teamem-cha') ||
+    renderedLine.includes('tamem-cha') ||
+    renderedLine.includes('tame-cha')
+  );
+}
+
+function matchesNegativeMarkerEnvelope(
+  envelope: TeamemChannelEnvelope,
+  expected: TeamemChannelsNegativeMarkerExpectation
+): boolean {
+  return (
+    expected.eventTypes.includes(envelope.event_type) &&
+    JSON.stringify(envelope).includes(expected.marker)
+  );
 }
 
 function contextForExpectation(
@@ -1006,6 +1556,52 @@ function contextForExpectation(
     artifacts: options.artifacts,
     checkpoint: options.checkpoint
   };
+}
+
+function contextForNegativeMarker(
+  expected: TeamemChannelsNegativeMarkerExpectation,
+  options: {
+    readonly persona?: TeamemChannelsPersona | string;
+    readonly artifacts?: TeamemChannelsArtifactPaths;
+    readonly checkpoint?: TeamemChannelsEvidenceContext['checkpoint'];
+  } = {}
+): TeamemChannelsEvidenceContext {
+  return {
+    runId: expected.runId,
+    caseName: expected.caseName,
+    persona: options.persona,
+    marker: expected.marker,
+    artifacts: options.artifacts,
+    checkpoint: options.checkpoint
+  };
+}
+
+function assertNegativeMarkerIdentity(
+  expected: TeamemChannelsNegativeMarkerExpectation,
+  layer: TeamemChannelsEvidenceLayer,
+  options: {
+    readonly persona?: TeamemChannelsPersona | string;
+    readonly artifacts?: TeamemChannelsArtifactPaths;
+    readonly checkpoint?: TeamemChannelsEvidenceContext['checkpoint'];
+  } = {}
+): void {
+  const missingIdentity: string[] = [];
+  if (!expected.marker.includes(expected.runId)) {
+    missingIdentity.push('run id');
+  }
+  if (!expected.marker.includes(String(expected.caseName))) {
+    missingIdentity.push('case');
+  }
+  if (expected.eventTypes.length === 0) {
+    missingIdentity.push('event types');
+  }
+  if (missingIdentity.length === 0) return;
+
+  throw new TeamemChannelsEvidenceError(
+    layer,
+    `expected negative marker must include ${missingIdentity.join(' and ')}`,
+    contextForNegativeMarker(expected, options)
+  );
 }
 
 function renderArtifacts(input: {

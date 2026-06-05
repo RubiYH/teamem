@@ -13,6 +13,8 @@ import {
   TeamemChannelsEvidenceError,
   assertTeamemChannelTransportEvidence,
   assertTeamemNegativeRecipientEvidence,
+  assertTeamemNoChannelEvidenceForMarker,
+  assertTeamemNoSenderEchoEvidence,
   assertTeamemNotificationLogEvidence,
   assertTeamemRenderedTranscriptEvidence,
   assertTeamemRecipientReceipt,
@@ -64,6 +66,232 @@ describe('Teamem Channels evidence assertions', () => {
       message_id: 'msg-direct-bob',
       body: expect.stringContaining(markerFor('run-1', 'direct'))
     });
+  });
+
+  it('matches decision broadcasts by event metadata and required full payload text', () => {
+    const expected = decisionExpectation({
+      runId: 'run-1',
+      marker: markerFor('run-1', 'decision-live', 'body'),
+      recipientPrincipal: 'bob',
+      title: 'Decision title marker-run-1-decision-live-title',
+      body: 'Decision body marker-run-1-decision-live-body with full rationale'
+    });
+    const trace = fakeTrace([
+      fakeDecisionChannelMessage({
+        expected: { ...expected, eventId: 'evt-other-decision' },
+        offsetMs: 100
+      }),
+      fakeDecisionChannelMessage({ expected, offsetMs: 125 })
+    ]);
+    const notificationEvidence = {
+      lineIndex: 2,
+      envelope: decisionChannelEnvelope(expected)
+    };
+
+    const transport = findTeamemChannelTransportEvidence({
+      traces: [trace],
+      expected
+    });
+    expect(transport.envelope.event_type).toBe('decision_published');
+    expect(transport.envelope.payload).toMatchObject({
+      decision_id: 'dec-marker-run-1-decision-live-body',
+      title: 'Decision title marker-run-1-decision-live-title',
+      body: 'Decision body marker-run-1-decision-live-body with full rationale',
+      version: 1
+    });
+
+    expect(
+      findTeamemNotificationLogEvidence({
+        log: JSON.stringify(decisionChannelEnvelope(expected)),
+        expected
+      }).envelope.event_type
+    ).toBe('decision_published');
+
+    expect(
+      findTeamemRenderedTranscriptEvidence({
+        rawTranscript: [
+          'ready',
+          `teamem-channel:${JSON.stringify(decisionChannelEnvelope(expected))}`
+        ].join('\n'),
+        normalizedTranscript: 'ready',
+        expected,
+        checkpoint: {
+          rawOffset: 'ready\n'.length,
+          normalizedOffset: 'ready'.length
+        },
+        notificationEvidence
+      })
+    ).toMatchObject({ source: 'raw', renderKind: 'marker' });
+
+    expect(
+      findTeamemRenderedTranscriptEvidence({
+        rawTranscript: [
+          'ready',
+          'teamem-channel:{"name":"teamem.peer_event","route":"peer","principal":"ali…'
+        ].join('\n'),
+        normalizedTranscript: 'ready',
+        expected,
+        checkpoint: {
+          rawOffset: 'ready\n'.length,
+          normalizedOffset: 'ready'.length
+        },
+        notificationEvidence
+      })
+    ).toMatchObject({ source: 'raw', renderKind: 'channel-source' });
+
+    expect(
+      findTeamemRenderedTranscriptEvidence({
+        rawTranscript: [
+          'ready',
+          '←tame-channel:{"name":"teamem.peer_event","route":"peer","principal":"ali…'
+        ].join('\n'),
+        normalizedTranscript: 'ready',
+        expected,
+        checkpoint: {
+          rawOffset: 'ready\n'.length,
+          normalizedOffset: 'ready'.length
+        },
+        notificationEvidence
+      })
+    ).toMatchObject({ source: 'raw', renderKind: 'channel-source' });
+
+    expect(
+      findTeamemRenderedTranscriptEvidence({
+        rawTranscript: 'ready',
+        normalizedTranscript: [
+          'ready',
+          '←tamem-chanel:{"name":"teamem.peer_event","route":"peer","principal":"ali…'
+        ].join('\n'),
+        expected,
+        checkpoint: {
+          rawOffset: 'ready'.length,
+          normalizedOffset: 'ready\n'.length
+        },
+        notificationEvidence
+      })
+    ).toMatchObject({ source: 'normalized', renderKind: 'channel-source' });
+
+    expect(() =>
+      findTeamemRenderedTranscriptEvidence({
+        rawTranscript: [
+          'ready',
+          `teamem-channel:${JSON.stringify(
+            decisionChannelEnvelope({ ...expected, body: 'truncated body' })
+          )}`
+        ].join('\n'),
+        normalizedTranscript: 'ready',
+        expected,
+        checkpoint: {
+          rawOffset: 'ready\n'.length,
+          normalizedOffset: 'ready'.length
+        },
+        notificationEvidence
+      })
+    ).toThrow(/rendered transcript/);
+  });
+
+  it('matches compact gotcha notices and rejects full body leakage', () => {
+    const expected = gotchaExpectation({
+      runId: 'run-1',
+      summaryMarker: markerFor('run-1', 'gotcha-live', 'summary'),
+      bodyMarker: markerFor('run-1', 'gotcha-live', 'body'),
+      recipientPrincipal: 'bob'
+    });
+    const trace = fakeTrace([
+      fakeGotchaChannelMessage({ expected, offsetMs: 125 })
+    ]);
+    const notificationEvidence = {
+      lineIndex: 2,
+      envelope: gotchaChannelEnvelope(expected)
+    };
+
+    const transport = findTeamemChannelTransportEvidence({
+      traces: [trace],
+      expected
+    });
+    expect(transport.envelope.event_type).toBe('finding_shared');
+    expect(transport.envelope.payload).toMatchObject({
+      finding_id: 'finding-marker-run-1-gotcha-live-summary',
+      kind: 'gotcha',
+      version: 1,
+      summary: expected.summary,
+      severity: 'warning',
+      tags: ['teamem-smoke', 'gotcha-live']
+    });
+    expect(JSON.stringify(transport.envelope)).not.toContain(
+      expected.bodyMarker
+    );
+
+    expect(
+      findTeamemNotificationLogEvidence({
+        log: JSON.stringify(gotchaChannelEnvelope(expected)),
+        expected
+      }).envelope.payload
+    ).toMatchObject({ summary: expected.summary });
+
+    expect(
+      findTeamemRenderedTranscriptEvidence({
+        rawTranscript: [
+          'ready',
+          `teamem-channel:${JSON.stringify(gotchaChannelEnvelope(expected))}`
+        ].join('\n'),
+        normalizedTranscript: 'ready',
+        expected,
+        checkpoint: {
+          rawOffset: 'ready\n'.length,
+          normalizedOffset: 'ready'.length
+        },
+        notificationEvidence
+      })
+    ).toMatchObject({ source: 'raw', renderKind: 'marker' });
+
+    const leakingEnvelope = gotchaChannelEnvelope({
+      ...expected,
+      includeBodyLeak: true
+    });
+    expectEvidenceLayer(
+      () =>
+        findTeamemChannelTransportEvidence({
+          traces: [
+            fakeTrace([
+              fakeGotchaChannelMessage({
+                expected: { ...expected, includeBodyLeak: true },
+                offsetMs: 125
+              })
+            ])
+          ],
+          expected
+        }),
+      'body-leakage'
+    );
+    expectEvidenceLayer(
+      () =>
+        findTeamemNotificationLogEvidence({
+          log: JSON.stringify(leakingEnvelope),
+          expected
+        }),
+      'body-leakage'
+    );
+    expectEvidenceLayer(
+      () =>
+        findTeamemRenderedTranscriptEvidence({
+          rawTranscript: [
+            'ready',
+            `teamem-channel:${JSON.stringify(leakingEnvelope)}`
+          ].join('\n'),
+          normalizedTranscript: 'ready',
+          expected,
+          checkpoint: {
+            rawOffset: 'ready\n'.length,
+            normalizedOffset: 'ready'.length
+          },
+          notificationEvidence: {
+            lineIndex: 2,
+            envelope: leakingEnvelope
+          }
+        }),
+      'body-leakage'
+    );
   });
 
   it('binds evidence to run and case through the marker instead of fake metadata', () => {
@@ -593,16 +821,313 @@ describe('Teamem Channels evidence assertions', () => {
       })
     ).not.toThrow();
 
+    const compactPromptEcho = [
+      `${prefix}/teamem:teamem-discussbob--humantext`,
+      expected.marker
+    ].join('\n');
     expect(() =>
       assertTeamemNegativeRecipientEvidence({
         persona: 'alice',
         expected,
-        rawTranscript: `${wrappedPromptEcho}\nrendered ${body}`,
-        normalizedTranscript: `${wrappedPromptEcho}\nrendered ${body}`,
+        rawTranscript: compactPromptEcho,
+        normalizedTranscript: compactPromptEcho,
+        transcriptCheckpoint: checkpoint,
+        allowedTranscriptMarkerEchoes: [directPrompt, body]
+      })
+    ).not.toThrow();
+
+    expect(() =>
+      assertTeamemNegativeRecipientEvidence({
+        persona: 'alice',
+        expected,
+        rawTranscript: [
+          compactPromptEcho,
+          `teamem-channel:${JSON.stringify(channelEnvelope(expected))}`
+        ].join('\n'),
+        normalizedTranscript: compactPromptEcho,
         transcriptCheckpoint: checkpoint,
         allowedTranscriptMarkerEchoes: [directPrompt, body]
       })
     ).toThrow(/negative-recipient filtering/);
+  });
+
+  it('classifies Alice sender-echo transport, log, and render failures as sender-echo', () => {
+    const expected = decisionExpectation({
+      runId: 'run-1',
+      marker: markerFor('run-1', 'decision-live', 'sender-echo'),
+      recipientPrincipal: 'alice',
+      title: 'Decision title marker-run-1-decision-live-sender-echo',
+      body: 'Decision body marker-run-1-decision-live-sender-echo'
+    });
+    const checkpoint: TeamemChannelsTranscriptCheckpoint = {
+      rawOffset: 'ready\n'.length,
+      normalizedOffset: 'ready\n'.length
+    };
+
+    expectEvidenceLayer(
+      () =>
+        assertTeamemNoSenderEchoEvidence({
+          persona: 'alice',
+          expected,
+          traces: [
+            fakeTrace([fakeDecisionChannelMessage({ expected, offsetMs: 25 })])
+          ],
+          traceCheckpoint: { offsetMs: 10 }
+        }),
+      'sender-echo'
+    );
+
+    expectEvidenceLayer(
+      () =>
+        assertTeamemNoSenderEchoEvidence({
+          persona: 'alice',
+          expected,
+          notificationLog: JSON.stringify(decisionChannelEnvelope(expected)),
+          notificationCheckpoint: { lineOffset: 0 }
+        }),
+      'sender-echo'
+    );
+
+    expectEvidenceLayer(
+      () =>
+        assertTeamemNoSenderEchoEvidence({
+          persona: 'alice',
+          expected,
+          rawTranscript: [
+            'ready',
+            `teamem-channel:${JSON.stringify(decisionChannelEnvelope(expected))}`
+          ].join('\n'),
+          normalizedTranscript: 'ready\n',
+          transcriptCheckpoint: checkpoint
+        }),
+      'sender-echo'
+    );
+  });
+
+  it('allows Alice prompt/body echoes in sender-echo assertions', () => {
+    const expected = decisionExpectation({
+      runId: 'run-1',
+      marker: markerFor('run-1', 'decision-live', 'allowed-echo'),
+      recipientPrincipal: 'alice',
+      title: 'Decision title marker-run-1-decision-live-allowed-echo',
+      body: 'Decision body marker-run-1-decision-live-allowed-echo'
+    });
+    const prefix = 'ready\n';
+    const prompt = `/teamem-decide ${expected.title} -- ${expected.body} --kind=process`;
+
+    expect(() =>
+      assertTeamemNoSenderEchoEvidence({
+        persona: 'alice',
+        expected,
+        rawTranscript: `${prefix}${prompt}`,
+        normalizedTranscript: `${prefix}${expected.body}`,
+        transcriptCheckpoint: {
+          rawOffset: prefix.length,
+          normalizedOffset: prefix.length
+        },
+        allowedTranscriptMarkerEchoes: [prompt, expected.title, expected.body]
+      })
+    ).not.toThrow();
+
+    const wrappedPrompt = [
+      `${prefix}/teamem:teamem-decide ${expected.title}`,
+      `-- ${expected.body}`,
+      '--kind=process'
+    ].join('\n');
+    expect(() =>
+      assertTeamemNoSenderEchoEvidence({
+        persona: 'alice',
+        expected,
+        rawTranscript: wrappedPrompt,
+        normalizedTranscript: wrappedPrompt,
+        transcriptCheckpoint: {
+          rawOffset: prefix.length,
+          normalizedOffset: prefix.length
+        },
+        allowedTranscriptMarkerEchoes: [prompt, expected.title, expected.body]
+      })
+    ).not.toThrow();
+  });
+
+  it('rejects fresh non-discussion Channel transport/log/render evidence by marker', () => {
+    const expected = negativeMarkerExpectation({
+      runId: 'run-1',
+      caseName: 'claim-conflict',
+      marker: markerFor('run-1', 'claim-conflict', 'quiet'),
+      eventTypes: ['scope_claimed', 'conflict_queued', 'permission_requested']
+    });
+
+    expect(() =>
+      assertTeamemNoChannelEvidenceForMarker({
+        persona: 'alice',
+        expected,
+        traces: [
+          fakeTrace([
+            fakeMarkerChannelMessage({
+              expected,
+              eventType: 'conflict_queued',
+              offsetMs: 50
+            })
+          ])
+        ],
+        traceCheckpoint: { offsetMs: 10 },
+        artifacts: { channelTracePath: '/tmp/trace.json' }
+      })
+    ).toThrow(/channel transport: unexpected fresh Channel MCP trace/);
+
+    expect(() =>
+      assertTeamemNoChannelEvidenceForMarker({
+        persona: 'bob',
+        expected,
+        notificationLog: JSON.stringify(
+          markerChannelEnvelope({
+            expected,
+            eventType: 'scope_claimed'
+          })
+        ),
+        notificationCheckpoint: { lineOffset: 0 },
+        artifacts: { notificationLogPath: '/tmp/notifications.log' }
+      })
+    ).toThrow(/notification log: unexpected fresh notification-log envelope/);
+
+    expect(() =>
+      assertTeamemNoChannelEvidenceForMarker({
+        persona: 'carol',
+        expected,
+        rawTranscript: [
+          'checkpoint',
+          `teamem-channel:${JSON.stringify(
+            markerChannelEnvelope({
+              expected,
+              eventType: 'permission_requested'
+            })
+          )}`
+        ].join('\n'),
+        normalizedTranscript: 'checkpoint',
+        transcriptCheckpoint: {
+          rawOffset: 'checkpoint\n'.length,
+          normalizedOffset: 'checkpoint'.length
+        },
+        artifacts: { rawTranscriptPath: '/tmp/raw.txt' }
+      })
+    ).toThrow(/rendered transcript: unexpected fresh rendered Channel/);
+
+    expect(() =>
+      assertTeamemNoChannelEvidenceForMarker({
+        persona: 'carol',
+        expected,
+        rawTranscript: 'checkpoint',
+        normalizedTranscript: [
+          'checkpoint',
+          `←tamem-chanel:${JSON.stringify(
+            markerChannelEnvelope({
+              expected,
+              eventType: 'permission_requested'
+            })
+          )}`
+        ].join('\n'),
+        transcriptCheckpoint: {
+          rawOffset: 'checkpoint'.length,
+          normalizedOffset: 'checkpoint\n'.length
+        },
+        artifacts: { normalizedTranscriptPath: '/tmp/normalized.txt' }
+      })
+    ).toThrow(/rendered transcript: unexpected fresh rendered Channel/);
+  });
+
+  it('classifies non-discussion marker evidence before checkpoints as stale', () => {
+    const expected = negativeMarkerExpectation({
+      runId: 'run-1',
+      caseName: 'claim-conflict',
+      marker: markerFor('run-1', 'claim-conflict', 'stale'),
+      eventTypes: ['scope_claimed', 'conflict_queued']
+    });
+    const staleRender = `teamem-channel:${JSON.stringify(
+      markerChannelEnvelope({ expected, eventType: 'conflict_queued' })
+    )}`;
+
+    expect(() =>
+      assertTeamemNoChannelEvidenceForMarker({
+        persona: 'alice',
+        expected,
+        traces: [
+          fakeTrace([
+            fakeMarkerChannelMessage({
+              expected,
+              eventType: 'scope_claimed',
+              offsetMs: 5
+            })
+          ])
+        ],
+        traceCheckpoint: { offsetMs: 10 }
+      })
+    ).toThrow(/stale evidence: Channel MCP trace/);
+
+    expect(() =>
+      assertTeamemNoChannelEvidenceForMarker({
+        persona: 'bob',
+        expected,
+        notificationLog: `${JSON.stringify(
+          markerChannelEnvelope({ expected, eventType: 'conflict_queued' })
+        )}\n`,
+        notificationCheckpoint: { lineOffset: 1 }
+      })
+    ).toThrow(/stale evidence: notification-log envelope/);
+
+    expect(() =>
+      assertTeamemNoChannelEvidenceForMarker({
+        persona: 'carol',
+        expected,
+        rawTranscript: staleRender,
+        normalizedTranscript: '',
+        transcriptCheckpoint: {
+          rawOffset: staleRender.length,
+          normalizedOffset: 0
+        }
+      })
+    ).toThrow(/stale evidence: rendered transcript/);
+  });
+
+  it('allows one prompt echo for conflict markers but rejects a second rendered occurrence', () => {
+    const expected = negativeMarkerExpectation({
+      runId: 'run-1',
+      caseName: 'claim-conflict',
+      marker: markerFor('run-1', 'claim-conflict', 'echo'),
+      eventTypes: ['conflict_queued']
+    });
+    const checkpoint = 'ready\n';
+    const prompt = `Attempt to edit src/features/${expected.marker}.ts`;
+
+    expect(() =>
+      assertTeamemNoChannelEvidenceForMarker({
+        persona: 'bob',
+        expected,
+        rawTranscript: `${checkpoint}${prompt}`,
+        normalizedTranscript: `${checkpoint}${prompt}`,
+        transcriptCheckpoint: {
+          rawOffset: checkpoint.length,
+          normalizedOffset: checkpoint.length
+        },
+        allowedTranscriptMarkerEchoes: [prompt]
+      })
+    ).not.toThrow();
+
+    const renderedChannel = `teamem-channel:${JSON.stringify(
+      markerChannelEnvelope({ expected, eventType: 'conflict_queued' })
+    )}`;
+    expect(() =>
+      assertTeamemNoChannelEvidenceForMarker({
+        persona: 'bob',
+        expected,
+        rawTranscript: `${checkpoint}${prompt}\n${renderedChannel}`,
+        normalizedTranscript: `${checkpoint}${prompt}\n${renderedChannel}`,
+        transcriptCheckpoint: {
+          rawOffset: checkpoint.length,
+          normalizedOffset: checkpoint.length
+        },
+        allowedTranscriptMarkerEchoes: [prompt]
+      })
+    ).toThrow(/rendered transcript/);
   });
 
   it('asserts full recipient receipt from fake artifacts', async () => {
@@ -705,6 +1230,115 @@ function expectation(
   };
 }
 
+function decisionExpectation(input: {
+  readonly runId: string;
+  readonly marker: string;
+  readonly recipientPrincipal: string;
+  readonly title: string;
+  readonly body: string;
+}): TeamemChannelsEvidenceExpectation & {
+  readonly title: string;
+  readonly body: string;
+} {
+  return {
+    runId: input.runId,
+    caseName: 'decision-live',
+    marker: input.marker,
+    eventType: 'decision_published',
+    eventId: 'evt-decision-live',
+    senderPrincipal: 'alice',
+    recipientPrincipal: input.recipientPrincipal,
+    requiredPayloadText: [
+      input.marker,
+      input.title,
+      input.body,
+      'dec-marker-run-1-decision-live-body',
+      '"version":1'
+    ],
+    requiredRenderedText: [
+      input.marker,
+      input.title,
+      input.body,
+      'dec-marker-run-1-decision-live-body',
+      'decision_published',
+      'alice'
+    ],
+    title: input.title,
+    body: input.body
+  };
+}
+
+function gotchaExpectation(input: {
+  readonly runId: string;
+  readonly summaryMarker: string;
+  readonly bodyMarker: string;
+  readonly recipientPrincipal: string;
+}): TeamemChannelsEvidenceExpectation & {
+  readonly summary: string;
+  readonly bodyMarker: string;
+  readonly includeBodyLeak?: boolean;
+} {
+  const findingId = 'finding-marker-run-1-gotcha-live-summary';
+  const summary = `Gotcha summary ${input.summaryMarker}`;
+  return {
+    runId: input.runId,
+    caseName: 'gotcha-live',
+    marker: input.summaryMarker,
+    eventType: 'finding_shared',
+    eventId: 'evt-gotcha-live',
+    senderPrincipal: 'alice',
+    recipientPrincipal: input.recipientPrincipal,
+    requiredPayloadText: [
+      input.summaryMarker,
+      summary,
+      findingId,
+      'gotcha',
+      'warning',
+      'teamem-smoke',
+      'gotcha-live',
+      '"version":1',
+      'alice'
+    ],
+    requiredRenderedText: [
+      input.summaryMarker,
+      summary,
+      findingId,
+      'finding_shared',
+      'gotcha',
+      'warning',
+      'alice'
+    ],
+    forbiddenPayloadText: [input.bodyMarker],
+    forbiddenRenderedText: [input.bodyMarker],
+    summary,
+    bodyMarker: input.bodyMarker
+  };
+}
+
+function negativeMarkerExpectation(input: {
+  readonly runId: string;
+  readonly caseName: string;
+  readonly marker: string;
+  readonly eventTypes: readonly string[];
+}) {
+  return input;
+}
+
+function expectEvidenceLayer(
+  action: () => void,
+  layer: TeamemChannelsEvidenceError['layer']
+): void {
+  try {
+    action();
+  } catch (error) {
+    expect(error).toBeInstanceOf(TeamemChannelsEvidenceError);
+    expect((error as TeamemChannelsEvidenceError).layer).toBe(layer);
+    expect((error as Error).message).toStartWith(`${layer}:`);
+    return;
+  }
+  throw new Error(`Expected ${layer} evidence error`);
+}
+
 function markerFor(runId: string, caseName: string, suffix?: string): string {
   return ['marker', runId, caseName, suffix].filter(Boolean).join('-');
 }
@@ -768,6 +1402,92 @@ function fakeChannelMessage(input: {
   };
 }
 
+function fakeDecisionChannelMessage(input: {
+  readonly expected: ReturnType<typeof decisionExpectation>;
+  readonly offsetMs: number;
+}): McpTraceMessage {
+  const json = createClaudeChannelNotification({
+    event_id: input.expected.eventId,
+    event_type: 'decision_published',
+    principal: input.expected.senderPrincipal,
+    payload: decisionPayload(input.expected)
+  });
+  return {
+    serverName: 'teamem-channel',
+    direction: 'server-to-client',
+    raw: JSON.stringify(json),
+    json,
+    method: 'notifications/claude/channel',
+    metadata: {
+      notification: { method: 'notifications/claude/channel' }
+    },
+    timestamp: new Date(input.offsetMs).toISOString(),
+    offsetMs: input.offsetMs,
+    artifacts: artifacts('/tmp/teamem-channel-decision-trace.json')
+  };
+}
+
+function fakeGotchaChannelMessage(input: {
+  readonly expected: ReturnType<typeof gotchaExpectation>;
+  readonly offsetMs: number;
+}): McpTraceMessage {
+  const json = createClaudeChannelNotification({
+    event_id: input.expected.eventId,
+    event_type: 'finding_shared',
+    principal: input.expected.senderPrincipal,
+    delivery_scope: 'space',
+    payload: gotchaPayload(input.expected)
+  });
+  if (input.expected.includeBodyLeak) {
+    json.params.content = JSON.stringify(gotchaChannelEnvelope(input.expected));
+  }
+  return {
+    serverName: 'teamem-channel',
+    direction: 'server-to-client',
+    raw: JSON.stringify(json),
+    json,
+    method: 'notifications/claude/channel',
+    metadata: {
+      notification: { method: 'notifications/claude/channel' }
+    },
+    timestamp: new Date(input.offsetMs).toISOString(),
+    offsetMs: input.offsetMs,
+    artifacts: artifacts('/tmp/teamem-channel-gotcha-trace.json')
+  };
+}
+
+function fakeMarkerChannelMessage(input: {
+  readonly expected: ReturnType<typeof negativeMarkerExpectation>;
+  readonly eventType: string;
+  readonly offsetMs: number;
+}): McpTraceMessage {
+  const json = createClaudeChannelNotification({
+    event_id: `evt-${input.eventType}`,
+    event_type: input.eventType,
+    principal: 'alice',
+    delivery_scope: 'space',
+    recipient_principals: [],
+    scope: { paths: [`src/features/${input.expected.marker}.ts`] },
+    payload: {
+      intent: `intent ${input.expected.marker}`,
+      blocking_claim_id: `claim-${input.expected.marker}`
+    }
+  });
+  return {
+    serverName: 'teamem-channel',
+    direction: 'server-to-client',
+    raw: JSON.stringify(json),
+    json,
+    method: 'notifications/claude/channel',
+    metadata: {
+      notification: { method: 'notifications/claude/channel' }
+    },
+    timestamp: new Date(input.offsetMs).toISOString(),
+    offsetMs: input.offsetMs,
+    artifacts: artifacts('/tmp/teamem-channel-trace.json')
+  };
+}
+
 function channelEnvelope(
   expected: TeamemChannelsEvidenceExpectation
 ): TeamemChannelEnvelope {
@@ -789,6 +1509,92 @@ function channelEnvelope(
       }
     }).params.content
   ) as TeamemChannelEnvelope;
+}
+
+function markerChannelEnvelope(input: {
+  readonly expected: ReturnType<typeof negativeMarkerExpectation>;
+  readonly eventType: string;
+}): TeamemChannelEnvelope {
+  return JSON.parse(
+    createClaudeChannelNotification({
+      event_id: `evt-${input.eventType}`,
+      event_type: input.eventType,
+      principal: 'alice',
+      delivery_scope: 'space',
+      recipient_principals: [],
+      scope: { paths: [`src/features/${input.expected.marker}.ts`] },
+      payload: {
+        intent: `intent ${input.expected.marker}`,
+        blocking_claim_id: `claim-${input.expected.marker}`
+      }
+    }).params.content
+  ) as TeamemChannelEnvelope;
+}
+
+function decisionChannelEnvelope(
+  expected: ReturnType<typeof decisionExpectation>
+): TeamemChannelEnvelope {
+  return JSON.parse(
+    createClaudeChannelNotification({
+      event_id: expected.eventId,
+      event_type: 'decision_published',
+      principal: expected.senderPrincipal,
+      payload: decisionPayload(expected)
+    }).params.content
+  ) as TeamemChannelEnvelope;
+}
+
+function gotchaChannelEnvelope(
+  expected: ReturnType<typeof gotchaExpectation>
+): TeamemChannelEnvelope {
+  const envelope = JSON.parse(
+    createClaudeChannelNotification({
+      event_id: expected.eventId,
+      event_type: 'finding_shared',
+      principal: expected.senderPrincipal,
+      delivery_scope: 'space',
+      payload: gotchaPayload(expected)
+    }).params.content
+  ) as TeamemChannelEnvelope;
+  if (expected.includeBodyLeak) {
+    envelope.payload = {
+      ...(envelope.payload ?? {}),
+      body: `Full gotcha body ${expected.bodyMarker}`
+    };
+  }
+  return envelope;
+}
+
+function decisionPayload(expected: ReturnType<typeof decisionExpectation>) {
+  return {
+    decision_id: 'dec-marker-run-1-decision-live-body',
+    title: expected.title,
+    body: expected.body,
+    summary: expected.body,
+    kind: 'process',
+    status: 'open',
+    version: 1
+  };
+}
+
+function gotchaPayload(expected: ReturnType<typeof gotchaExpectation>) {
+  return {
+    finding_id: 'finding-marker-run-1-gotcha-live-summary',
+    kind: 'gotcha',
+    lifecycle: 'persistent',
+    status: 'open',
+    version: 1,
+    summary: expected.summary,
+    ...(expected.includeBodyLeak
+      ? { body: `Full gotcha body ${expected.bodyMarker}` }
+      : {}),
+    paths: ['src/gotcha-live.ts'],
+    tags: ['teamem-smoke', 'gotcha-live'],
+    recipient_principals: [],
+    severity: 'warning',
+    refs: { paths: ['src/gotcha-live.ts'] },
+    expires_at: null
+  };
 }
 
 function artifacts(tracePath: string) {

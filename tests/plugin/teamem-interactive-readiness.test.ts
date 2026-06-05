@@ -27,6 +27,15 @@ describe('Teamem interactive Claude startup readiness', () => {
     ).toBeFalse();
   });
 
+  it('recognizes development Channels prompt when the TTY drops heading characters', () => {
+    const lossyPrompt = developmentChannelsPrompt.replace(
+      'WARNING: Loading development channels',
+      'WARNING: Loading developmen channels'
+    );
+
+    expect(isClaudeDevelopmentChannelsSafetyPrompt(lossyPrompt)).toBeTrue();
+  });
+
   it('recognizes the project MCP server safety prompt', () => {
     expect(isClaudeProjectMcpServersSafetyPrompt(projectMcpServersPrompt)).toBe(
       true
@@ -35,6 +44,14 @@ describe('Teamem interactive Claude startup readiness', () => {
       isClaudeInteractiveReadyOrSafetyPrompt(projectMcpServersPrompt)
     ).toBeTrue();
     expect(isClaudeInteractivePromptReady(projectMcpServersPrompt)).toBeFalse();
+  });
+
+  it('recognizes compact rendered Claude welcome prompt examples', () => {
+    expect(
+      isClaudeInteractivePromptReady(
+        ['Claude Code v2.1.165', '❯ Try"fix typecheck errors"'].join('\n')
+      )
+    ).toBeTrue();
   });
 
   it('uses the latest startup prompt so stale prompts are not reaccepted', () => {

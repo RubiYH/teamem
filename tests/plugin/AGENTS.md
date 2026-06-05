@@ -42,6 +42,8 @@ Claude Code plugin tests that verify the integration between the bridge, git hoo
 | `teamem-channels-session-planner.ts` | L5 Channels gate, profile, launch-parity, split-case, and readiness planning helpers |
 | `teamem-channels-evidence.ts` | L5 Channels evidence assertions for channel MCP traces, recipient notification logs, rendered channel-source transcript evidence, and negative recipients |
 | `teamem-channels-direct-smoke.test.ts` | Opt-in L5 live Channels smoke covering direct, `*`, and `**` discussion delivery with Alice/Bob/Carol sessions |
+| `teamem-channels-claim-conflict-smoke.test.ts` | Opt-in L5 live Channels smoke proving normal file-claim conflicts stay queue-first and Channel-quiet |
+| `teamem-channels-knowledge-smoke.test.ts` | Opt-in L5 live Channels smoke covering real decision and gotcha slash-command delivery to passive recipients without Alice echo |
 | `teamem-setup-no-source-tree.test.ts` | `/teamem-setup` CLI fallback (no source tree) |
 | `teamem-space-no-source-tree.test.ts` | `/teamem-space` CLI fallback (no source tree) |
 | `teamem-onboarding-no-source-tree.test.ts` | `/teamem-onboarding` CLI fallback (no source tree) |
@@ -65,10 +67,16 @@ Claude Code plugin tests that verify the integration between the bridge, git hoo
 - L5 Channels tests add Carol to the multi-profile set. Every live Channels run
   requires Alice, Bob, and Carol developer-owned profile credentials, with Carol
   resolved from `TEAMEM_CAROL_PROFILE` or the default `carol` profile.
-- L5 Channels scenarios are exact and intentionally split: direct to Bob, `*`
-  no-Sprint Space broadcast, and `**` explicit Space-wide broadcast. In this
-  no-Sprint setup both broadcast forms must deliver Space-wide to Bob and Carol,
-  while Alice receives no sender echo.
+- L5 Channels scenarios are exact and intentionally split. Direct discussion
+  smokes cover direct to Bob, `*` no-Sprint Space broadcast, and `**` explicit
+  Space-wide broadcast. In this no-Sprint setup both broadcast forms must
+  deliver Space-wide to Bob and Carol, while Alice receives no sender echo.
+- L5 Channels knowledge smokes prove Alice's real decision and gotcha slash
+  commands are recorded through MCP/runtime evidence and rendered to passive Bob
+  and Carol through Channels, while Alice receives no sender echo.
+- L5 Channels quiet conflict smokes prove normal Space-mode file-claim conflicts
+  remain queue-first through hook/runtime evidence and do not create Channel
+  alerts or permission-request regressions.
 - Every L5 Channels split case launches fresh Alice, Bob, and Carol Claude Code
   sessions. Workspace/artifact reuse is an explicit local/debug option only and
   must keep unique markers plus timing or offset filters so old evidence cannot
