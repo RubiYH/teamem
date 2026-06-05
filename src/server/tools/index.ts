@@ -28,6 +28,7 @@ import {
   updateSpaceRules
 } from './space-rules-tools.js';
 import { postMessage, readThread } from './discussion-tools.js';
+import { raiseBlocker, resolveBlocker } from './blocker-tools.js';
 import { updateCoordPref } from './coord-pref-tool.js';
 import { queuePendingEdit, clearQueue } from './queue-tools.js';
 import {
@@ -48,6 +49,16 @@ import {
   updateDisputeTerminations
 } from './dispute-tools.js';
 import { spaceLeave, spaceKick, spaceRotateCode } from './space-tools.js';
+import {
+  createSprint,
+  joinSprint,
+  leaveSprint,
+  getCurrentSprint,
+  listSprints,
+  archiveSprint,
+  reopenSprint,
+  getSprintHistory
+} from './sprint-tools.js';
 
 export type { ClaimScopeTestHooks, SessionSyncResponse } from './context.js';
 export { DEFAULT_PERMISSION_REQUEST_TIMEOUT_MS } from './context.js';
@@ -92,6 +103,10 @@ export function createTeamemTools(deps: ToolDeps) {
       postMessage(ctx, input),
     readThread: (input: Parameters<typeof readThread>[1]) =>
       readThread(ctx, input),
+    raiseBlocker: (input: Parameters<typeof raiseBlocker>[1]) =>
+      raiseBlocker(ctx, input),
+    resolveBlocker: (input: Parameters<typeof resolveBlocker>[1]) =>
+      resolveBlocker(ctx, input),
     updateCoordPref: (input: Parameters<typeof updateCoordPref>[1]) =>
       updateCoordPref(ctx, input),
     shareFinding: (input: Parameters<typeof shareFinding>[1]) =>
@@ -140,7 +155,23 @@ export function createTeamemTools(deps: ToolDeps) {
       input: Parameters<typeof resumeClaimsForBranch>[1]
     ) => resumeClaimsForBranch(ctx, input),
     listClaims: (input: Parameters<typeof listClaims>[1]) =>
-      listClaims(ctx, input)
+      listClaims(ctx, input),
+    createSprint: (input: Parameters<typeof createSprint>[1]) =>
+      createSprint(ctx, input),
+    joinSprint: (input: Parameters<typeof joinSprint>[1]) =>
+      joinSprint(ctx, input),
+    leaveSprint: (input: Parameters<typeof leaveSprint>[1]) =>
+      leaveSprint(ctx, input),
+    getCurrentSprint: (input: Parameters<typeof getCurrentSprint>[1]) =>
+      getCurrentSprint(ctx, input),
+    listSprints: (input: Parameters<typeof listSprints>[1]) =>
+      listSprints(ctx, input),
+    archiveSprint: (input: Parameters<typeof archiveSprint>[1]) =>
+      archiveSprint(ctx, input),
+    reopenSprint: (input: Parameters<typeof reopenSprint>[1]) =>
+      reopenSprint(ctx, input),
+    getSprintHistory: (input: Parameters<typeof getSprintHistory>[1]) =>
+      getSprintHistory(ctx, input)
   };
 }
 

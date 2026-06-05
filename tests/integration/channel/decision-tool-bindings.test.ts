@@ -18,6 +18,8 @@ describe('decision tool bindings', () => {
         data: {
           event_id: '01JDECISIONLIFECYCLE0000000',
           decision_id: 'dec-1',
+          sprint_id: null,
+          context: 'space',
           lifecycle_event:
             name === 'teamem.supersede_decision'
               ? 'decision_superseded'

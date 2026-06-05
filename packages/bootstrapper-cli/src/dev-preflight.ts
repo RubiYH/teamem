@@ -74,6 +74,10 @@ export type DevProfileServerUrlResult =
   | { readonly ok: true; readonly serverUrl: string }
   | { readonly ok: false; readonly message: string };
 
+export type DevProfileDefaultSpaceResult =
+  | { readonly ok: true; readonly defaultSpaceId: string }
+  | { readonly ok: false; readonly message: string };
+
 export function createNodeDevCredentialsReader(): DevCredentialsReader {
   return {
     read(path: string): string | null {
@@ -254,6 +258,49 @@ export function readDevProfileServerUrl(options: {
   }
 
   return { ok: true, serverUrl: selected.server_url };
+}
+
+export function readDevProfileDefaultSpaceId(options: {
+  readonly profile: DevProfilePaths;
+  readonly credentialsReader: DevCredentialsReader;
+}): DevProfileDefaultSpaceResult {
+  const raw = options.credentialsReader.read(options.profile.credentialsPath);
+  if (raw === null) {
+    return {
+      ok: false,
+      message: `Profile credentials are missing: ${options.profile.credentialsPath}`
+    };
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return {
+      ok: false,
+      message: `Profile credentials are malformed: ${options.profile.credentialsPath}`
+    };
+  }
+
+  if (!isRecord(parsed) || !isRecord(parsed.spaces)) {
+    return {
+      ok: false,
+      message: `Profile credentials do not contain Teamem spaces: ${options.profile.credentialsPath}`
+    };
+  }
+
+  const defaultSpaceId =
+    typeof parsed.default_space_id === 'string'
+      ? parsed.default_space_id
+      : undefined;
+  if (defaultSpaceId && isRecord(parsed.spaces[defaultSpaceId])) {
+    return { ok: true, defaultSpaceId };
+  }
+
+  return {
+    ok: false,
+    message: `Profile credentials do not contain a default Space: ${options.profile.credentialsPath}`
+  };
 }
 
 export function renderDevServerHealth(result: DevServerHealthResult): string {

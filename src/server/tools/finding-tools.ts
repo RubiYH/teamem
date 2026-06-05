@@ -18,6 +18,7 @@ export function shareFinding(
     recipient_principals?: unknown;
     severity?: unknown;
     refs?: unknown;
+    scope?: 'current' | 'space';
   }
 ): ToolResponse<{
   finding_id: string;
@@ -27,6 +28,8 @@ export function shareFinding(
   status: 'active' | 'resolved' | 'archived';
   version: number;
   expires_at: string | null;
+  sprint_id: string | null;
+  context: 'space' | 'sprint';
 }> {
   const summary = typeof input.summary === 'string' ? input.summary.trim() : '';
   if (summary.length === 0) {
@@ -93,6 +96,15 @@ export function shareFinding(
     actor: input.actor,
     delegation: input.delegation,
     event_type: 'finding_shared',
+    ...ctx.routingMetadataForPrincipal(
+      ctx.db,
+      input,
+      input.scope === 'space'
+        ? { delivery: 'space' }
+        : recipientPrincipals.length > 0
+          ? { delivery: 'direct', recipient_principals: recipientPrincipals }
+          : { delivery: 'broadcast' }
+    ),
     scope:
       paths.length > 0
         ? { paths }
@@ -128,7 +140,9 @@ export function shareFinding(
       lifecycle,
       status,
       version,
-      expires_at: expiresAt
+      expires_at: expiresAt,
+      sprint_id: event.sprint_id ?? null,
+      context: event.sprint_id == null ? 'space' : 'sprint'
     }
   };
 }
@@ -340,6 +354,9 @@ export function acknowledgeFinding(
       actor: input.actor,
       delegation: input.delegation,
       event_type: 'acknowledgment_recorded',
+      ...ctx.routingMetadataForPrincipal(ctx.db, input, {
+        delivery: 'broadcast'
+      }),
       scope: {},
       payload: {
         finding_id: findingId,

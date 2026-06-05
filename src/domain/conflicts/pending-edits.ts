@@ -24,6 +24,7 @@ export type PendingEditRow = {
   space_id: string;
   blocked_principal: string;
   blocking_claim_id: string;
+  sprint_id: string | null;
   paths: string[];
   intent: string | null;
   created_at: string;
@@ -60,18 +61,26 @@ export function findResolvableByRelease(
   db: Database,
   space_id: string,
   released_claim_id: string,
-  released_paths: readonly string[]
+  released_paths: readonly string[],
+  released_sprint_id: string | null = null
 ): PendingEditRow[] {
   const rows = db
     .prepare(
       `SELECT pending_id, space_id, blocked_principal, blocking_claim_id,
-              paths_json, intent, created_at, expires_at, resolved_at, source_event_id
+              sprint_id, paths_json, intent, created_at, expires_at, resolved_at, source_event_id
          FROM pending_edits
         WHERE space_id = ?1
           AND resolved_at IS NULL
-          AND tombstoned_at IS NULL`
+          AND tombstoned_at IS NULL
+          AND ${
+            released_sprint_id === null ? 'sprint_id IS NULL' : 'sprint_id = ?2'
+          }`
     )
-    .all(space_id) as RawPendingRow[];
+    .all(
+      ...(released_sprint_id === null
+        ? [space_id]
+        : [space_id, released_sprint_id])
+    ) as RawPendingRow[];
 
   const decoded = rows.map(decodeRow);
   // Coerce to a writable copy once — `findOverlaps` predates the readonly
@@ -132,17 +141,21 @@ export function gcExpiredPendingEdits(db: Database, now_iso: string): number {
  */
 export function loadBlockingPreviews(
   db: Database,
-  space_id: string
+  space_id: string,
+  sprint_id: string | null = null
 ): Map<string, Array<{ blocked_principal: string; paths: string[] }>> {
   const rows = db
     .prepare(
       `SELECT blocking_claim_id, blocked_principal, paths_json
          FROM pending_edits
         WHERE space_id = ?1
+          AND ${sprint_id === null ? 'sprint_id IS NULL' : 'sprint_id = ?2'}
           AND resolved_at IS NULL
           AND tombstoned_at IS NULL`
     )
-    .all(space_id) as Array<{
+    .all(
+      ...(sprint_id === null ? [space_id] : [space_id, sprint_id])
+    ) as Array<{
     blocking_claim_id: string;
     blocked_principal: string;
     paths_json: string;

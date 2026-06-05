@@ -195,6 +195,230 @@ process.exit(0);
     }
   }, 30_000);
 
+  it('renders Sprint-wide discussion summaries as Sprint-scoped, not Space-wide', async () => {
+    const plugin = mkdtempSync(join(tmpdir(), 'teamem-monitor-sprint-label-'));
+    try {
+      mkdirSync(join(plugin, 'bin'));
+      mkdirSync(join(plugin, 'lib'));
+
+      copyFileSync(
+        join(REPO_ROOT, 'plugin/bin/teamem-monitor'),
+        join(plugin, 'bin/teamem-monitor')
+      );
+      chmodSync(join(plugin, 'bin/teamem-monitor'), 0o755);
+
+      writeFileSync(
+        join(plugin, 'lib/bridge.js'),
+        `#!/usr/bin/env bun
+process.stdout.write(JSON.stringify({
+  ok: true,
+  data: {
+    events: [
+      {
+        event_id: 'evt-direct',
+        event_type: 'discussion_posted',
+        principal: 'bob',
+        sprint_id: 'sprint-plugin-release',
+        delivery_scope: 'direct',
+        payload: { recipient_principal: 'alice', body: 'direct ping' }
+      },
+      {
+        event_id: 'evt-sprint',
+        event_type: 'discussion_posted',
+        principal: 'bob',
+        sprint_id: 'sprint-plugin-release',
+        delivery_scope: 'sprint',
+        payload: { recipient_principal: null, body: 'sprint broadcast' }
+      },
+      {
+        event_id: 'evt-space',
+        event_type: 'discussion_posted',
+        principal: 'bob',
+        sprint_id: null,
+        delivery_scope: 'space',
+        payload: { recipient_principal: null, body: 'space broadcast' }
+      }
+    ],
+    next_cursor: 'done'
+  }
+}));
+process.exit(0);
+`,
+        { mode: 0o755 }
+      );
+
+      const sessionId = 'test-session';
+      const env: Record<string, string | undefined> = {
+        ...process.env,
+        CLAUDE_PLUGIN_ROOT: plugin,
+        CLAUDE_PLUGIN_DATA: join(plugin, 'data'),
+        CLAUDE_SESSION_ID: sessionId,
+        TEAMEM_PROJECT_ID: 'monitor-test-project',
+        TEAMEM_MONITOR_POLL_MS: '1000'
+      };
+
+      mkdirSync(join(plugin, 'data/sessions', sessionId), {
+        recursive: true
+      });
+      writeFileSync(join(plugin, 'data/sessions', sessionId, 'active'), 'now');
+
+      const child = require('node:child_process').spawn(
+        'bun',
+        ['run', join(plugin, 'bin/teamem-monitor')],
+        { env, stdio: ['ignore', 'pipe', 'pipe'] }
+      );
+      let stdout = '';
+      child.stdout.on('data', (d: Buffer) => (stdout += d.toString()));
+      const exitPromise = new Promise<void>((resolveFn) => {
+        child.on('close', () => resolveFn());
+      });
+
+      const deadline = Date.now() + 5000;
+      while (
+        !stdout.includes('"event_id":"evt-space"') &&
+        Date.now() < deadline
+      ) {
+        Bun.sleepSync(50);
+      }
+      try {
+        child.kill('SIGTERM');
+      } catch {
+        /* ignore */
+      }
+      await Promise.race([
+        exitPromise,
+        new Promise<void>((resolveFn) => setTimeout(resolveFn, 500))
+      ]);
+
+      const lines = stdout
+        .trim()
+        .split('\n')
+        .filter(Boolean)
+        .map(
+          (line) => JSON.parse(line) as { event_id: string; summary: string }
+        );
+      const summaries = new Map(
+        lines.map((line) => [line.event_id, line.summary])
+      );
+
+      expect(summaries.get('evt-direct')).toContain('bob → alice');
+      expect(summaries.get('evt-sprint')).toContain(
+        'bob → sprint:sprint-plugin-release'
+      );
+      expect(summaries.get('evt-sprint')).not.toContain('bob → space');
+      expect(summaries.get('evt-space')).toContain('bob → space');
+    } finally {
+      rmSync(plugin, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  it('persists next_cursor from empty visible pages and uses it on the next poll', async () => {
+    const plugin = mkdtempSync(join(tmpdir(), 'teamem-monitor-cursor-'));
+    try {
+      mkdirSync(join(plugin, 'bin'));
+      mkdirSync(join(plugin, 'lib'));
+
+      copyFileSync(
+        join(REPO_ROOT, 'plugin/bin/teamem-monitor'),
+        join(plugin, 'bin/teamem-monitor')
+      );
+      chmodSync(join(plugin, 'bin/teamem-monitor'), 0o755);
+
+      const callLog = join(plugin, 'data', 'calls.json');
+      mkdirSync(join(plugin, 'data'), { recursive: true });
+      writeFileSync(
+        join(plugin, 'lib/bridge.js'),
+        `#!/usr/bin/env bun
+import { writeFileSync, existsSync, readFileSync } from 'node:fs';
+const callLog = ${JSON.stringify(callLog)};
+const prior = existsSync(callLog) ? JSON.parse(readFileSync(callLog, 'utf-8')) : [];
+const argv = process.argv.slice(2);
+const jsonArg = argv[argv.indexOf('--json') + 1];
+const body = jsonArg ? JSON.parse(jsonArg) : {};
+prior.push({ argv, body });
+writeFileSync(callLog, JSON.stringify(prior));
+if (prior.length === 1) {
+  process.stdout.write(JSON.stringify({ ok: true, data: { events: [], next_cursor: 'hidden-end' } }));
+} else if (body.since === 'hidden-end') {
+  process.stdout.write(JSON.stringify({
+    ok: true,
+    data: {
+      events: [
+        { event_id: 'visible-1', event_type: 'discussion_posted', principal: 'bob', payload: { body: 'visible after hidden page' } }
+      ],
+      next_cursor: 'visible-end'
+    }
+  }));
+} else {
+  process.stdout.write(JSON.stringify({ ok: true, data: { events: [] } }));
+}
+process.exit(0);
+`,
+        { mode: 0o755 }
+      );
+
+      const sessionId = 'test-session';
+      const env: Record<string, string | undefined> = {
+        ...process.env,
+        CLAUDE_PLUGIN_ROOT: plugin,
+        CLAUDE_PLUGIN_DATA: join(plugin, 'data'),
+        CLAUDE_SESSION_ID: sessionId,
+        TEAMEM_PROJECT_ID: 'monitor-test-project',
+        TEAMEM_MONITOR_POLL_MS: '1000'
+      };
+
+      mkdirSync(join(plugin, 'data/sessions', sessionId), {
+        recursive: true
+      });
+      writeFileSync(join(plugin, 'data/sessions', sessionId, 'active'), 'now');
+
+      const child = require('node:child_process').spawn(
+        'bun',
+        ['run', join(plugin, 'bin/teamem-monitor')],
+        { env, stdio: ['ignore', 'pipe', 'pipe'] }
+      );
+      let stdout = '';
+      child.stdout.on('data', (d: Buffer) => (stdout += d.toString()));
+      const exitPromise = new Promise<void>((resolveFn) => {
+        child.on('close', () => resolveFn());
+      });
+
+      const deadline = Date.now() + 7000;
+      while (
+        !stdout.includes('"event_id":"visible-1"') &&
+        Date.now() < deadline
+      ) {
+        Bun.sleepSync(50);
+      }
+      try {
+        child.kill('SIGTERM');
+      } catch {
+        /* ignore */
+      }
+      await Promise.race([
+        exitPromise,
+        new Promise<void>((resolveFn) => setTimeout(resolveFn, 500))
+      ]);
+
+      expect(stdout).toContain('"event_id":"visible-1"');
+      const calls = JSON.parse(readFileSync(callLog, 'utf-8')) as Array<{
+        argv: string[];
+        body: { since?: string; limit?: number };
+      }>;
+      expect(calls.length).toBeGreaterThanOrEqual(2);
+      expect(calls[0]?.body).toEqual({ limit: 20 });
+      expect(calls[1]?.body).toEqual({ since: 'hidden-end', limit: 50 });
+      expect(
+        readFileSync(
+          join(plugin, 'data/sessions', sessionId, 'monitor-cursor'),
+          'utf-8'
+        )
+      ).toBe('visible-end');
+    } finally {
+      rmSync(plugin, { recursive: true, force: true });
+    }
+  }, 30_000);
+
   it('idles until Teamem is active, respects disabled override, then polls using project auto-on', () => {
     const plugin = mkdtempSync(join(tmpdir(), 'teamem-monitor-auto-on-'));
     try {

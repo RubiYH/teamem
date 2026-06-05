@@ -17,6 +17,8 @@ export const TOOL_NAMES = [
   'teamem.whoami',
   'teamem.post_message',
   'teamem.read_thread',
+  'teamem.raise_blocker',
+  'teamem.resolve_blocker',
   'teamem.update_coord_pref',
   'teamem.share_finding',
   'teamem.get_finding',
@@ -38,7 +40,15 @@ export const TOOL_NAMES = [
   'teamem.fetch_unread_notifications',
   'teamem.pause_claims_for_branch',
   'teamem.resume_claims_for_branch',
-  'teamem.list_claims'
+  'teamem.list_claims',
+  'teamem.create_sprint',
+  'teamem.join_sprint',
+  'teamem.leave_sprint',
+  'teamem.get_current_sprint',
+  'teamem.list_sprints',
+  'teamem.archive_sprint',
+  'teamem.reopen_sprint',
+  'teamem.get_sprint_history'
 ] as const;
 
 export type ToolName = (typeof TOOL_NAMES)[number];
@@ -63,6 +73,8 @@ export function createToolRegistry(
     'teamem.whoami': tools.whoami,
     'teamem.post_message': tools.postMessage,
     'teamem.read_thread': tools.readThread,
+    'teamem.raise_blocker': tools.raiseBlocker,
+    'teamem.resolve_blocker': tools.resolveBlocker,
     'teamem.update_coord_pref': tools.updateCoordPref,
     'teamem.share_finding': tools.shareFinding,
     'teamem.get_finding': tools.getFinding,
@@ -84,6 +96,14 @@ export function createToolRegistry(
     'teamem.fetch_unread_notifications': tools.fetchUnreadNotifications,
     'teamem.pause_claims_for_branch': tools.pauseClaimsForBranch,
     'teamem.resume_claims_for_branch': tools.resumeClaimsForBranch,
-    'teamem.list_claims': tools.listClaims
+    'teamem.list_claims': tools.listClaims,
+    'teamem.create_sprint': tools.createSprint,
+    'teamem.join_sprint': tools.joinSprint,
+    'teamem.leave_sprint': tools.leaveSprint,
+    'teamem.get_current_sprint': tools.getCurrentSprint,
+    'teamem.list_sprints': tools.listSprints,
+    'teamem.archive_sprint': tools.archiveSprint,
+    'teamem.reopen_sprint': tools.reopenSprint,
+    'teamem.get_sprint_history': tools.getSprintHistory
   };
 }

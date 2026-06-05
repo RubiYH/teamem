@@ -24,6 +24,10 @@ const postgresSource = readFileSync(
   join(process.cwd(), 'apps/web/src/server/postgres.ts'),
   'utf8'
 );
+const postgresCoreSource = readFileSync(
+  join(process.cwd(), 'apps/web/src/server/postgres-core.ts'),
+  'utf8'
+);
 const routeSource = readFileSync(
   join(process.cwd(), 'apps/web/app/api/auth/[...all]/route.ts'),
   'utf8'
@@ -49,14 +53,18 @@ describe('Teamem Cloud OAuth dashboard shell', () => {
   it('wires Better Auth to Supabase Postgres through the scaffold env contract', () => {
     expect(authSource).toContain("import 'server-only'");
     expect(authSource).toContain('createTeamemCloudAuth([nextCookies()])');
-    expect(postgresSource).toContain("import { Pool } from 'pg'");
+    expect(postgresSource).toContain("import 'server-only'");
+    expect(postgresSource).toContain(
+      "export { createTeamemCloudPostgresPool } from './postgres-core'"
+    );
+    expect(postgresCoreSource).toContain("import { Pool } from 'pg'");
     expect(authCoreSource).toContain('loadTeamemCloudWebEnv()');
     expect(authSource).toContain('export function getAuth()');
     expect(authCoreSource).toContain('createTeamemCloudPostgresPool');
-    expect(postgresSource).toContain('SUPABASE_POSTGRES_CA_CERT');
-    expect(postgresSource).toContain('rejectUnauthorized: true');
-    expect(postgresSource).toContain("replaceAll('\\\\n', '\\n')");
-    expect(postgresSource).toContain("searchParams.delete('sslmode')");
+    expect(postgresCoreSource).toContain('SUPABASE_POSTGRES_CA_CERT');
+    expect(postgresCoreSource).toContain('rejectUnauthorized: true');
+    expect(postgresCoreSource).toContain("replaceAll('\\\\n', '\\n')");
+    expect(postgresCoreSource).toContain("searchParams.delete('sslmode')");
     expect(authCoreSource).toContain('database');
     expect(authCliSource).toContain('createTeamemCloudAuth()');
     expect(authCliSource).not.toContain('server-only');

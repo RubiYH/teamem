@@ -1,0 +1,5 @@
+{
+  "name": "generic-fake-plugin",
+  "version": "0.0.0",
+  "description": "Generic fake Claude plugin fixture for plugin-e2e-module tests"
+}

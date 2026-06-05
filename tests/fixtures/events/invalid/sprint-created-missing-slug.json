@@ -1,0 +1,17 @@
+{
+  "schema_version": "1.0",
+  "event_id": "01JSPRINTINVALID2",
+  "idempotency_key": "idem-sprint-invalid-2",
+  "space_id": "teamem-poc",
+  "timestamp": "2026-05-27T00:00:00.000Z",
+  "principal": "alice",
+  "actor": "codex-cli/session-1",
+  "delegation": "alice->codex",
+  "event_type": "sprint_created",
+  "scope": {},
+  "payload": {
+    "sprint_id": "01JSPRINTID001",
+    "display_name": "MVP Lifecycle",
+    "goal": "Build the first Sprint lifecycle path."
+  }
+}

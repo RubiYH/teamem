@@ -16,7 +16,12 @@ export default [
     ]
   },
   {
-    files: ['src/**/*.ts', 'tests/**/*.ts', 'packages/**/*.ts'],
+    files: [
+      'src/**/*.ts',
+      'tests/**/*.ts',
+      'packages/**/*.ts',
+      'plugin-e2e-module/**/*.ts'
+    ],
     languageOptions: {
       parser,
       parserOptions: {

@@ -261,6 +261,60 @@ describe('channel runtime integration', () => {
     expect(persistedCursors).toEqual(['evt-ordinary']);
   });
 
+  it('persists get_updates.next_cursor when the filtered event page is empty', async () => {
+    const emitted: ClaudeChannelNotification[] = [];
+    const persistedCursors: string[] = [];
+
+    const realGetUpdates = TOOL_BINDINGS['teamem.get_updates'];
+    expect(realGetUpdates).toBeDefined();
+
+    const client: BridgeHttpClient = {
+      async post<T = unknown>(path: string, body: unknown) {
+        expect(path).toBe('/tools/teamem.get_updates');
+        expect(body).toEqual({ since: 'evt-before', limit: 50 });
+        return {
+          ok: true,
+          data: {
+            ok: true,
+            data: { events: [], next_cursor: 'evt-hidden-page-end' }
+          } as T
+        };
+      }
+    };
+
+    const nextCursor = await pollChannelOnce({
+      server: {
+        async notification(notification) {
+          emitted.push(notification);
+        }
+      },
+      entry: {
+        space_id: 'space-1',
+        label: 'local-dev',
+        member_name: 'alice',
+        jwt: 'test-jwt',
+        jwt_exp: Date.now() + 60_000,
+        server_url: 'http://127.0.0.1:3000'
+      },
+      cursor: 'evt-before',
+      isActive: () => true,
+      rateOk: () => true,
+      client,
+      getUpdates: async (args, client) =>
+        (await realGetUpdates.handler(args, client)) as {
+          ok?: boolean;
+          data?: { events?: TeamemChannelEvent[]; next_cursor?: string | null };
+        },
+      onPersistCursor: (cursor) => {
+        persistedCursors.push(cursor);
+      }
+    });
+
+    expect(emitted).toHaveLength(0);
+    expect(nextCursor).toBe('evt-hidden-page-end');
+    expect(persistedCursors).toEqual(['evt-hidden-page-end']);
+  });
+
   it('emits the local discussion target and incumbent permission request from a mixed event stream', async () => {
     const emitted: ClaudeChannelNotification[] = [];
     const persistedCursors: string[] = [];

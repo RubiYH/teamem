@@ -11,13 +11,47 @@ dependency, no per-machine path configuration.
 | Capability | How |
 | --- | --- |
 | **Self-contained install** | `plugin/lib/bridge.js` is a single-file `bun build` artifact bundled with the marketplace plugin. `teamem init` / `teamem update` install it on any machine that has Bun and Claude Code. |
-| **Slash commands** | `/teamem-off`, `/teamem-status`, `/teamem-briefing`, `/teamem-decide`, `/teamem-space`, `/teamem-setup`, `/teamem-reset`, `/teamem-disband`, `/teamem-restore`, `/teamem-gotcha`, `/teamem-coord-pref`, `/teamem-grant`, `/teamem-deny`, `/teamem-end-dispute`, `/teamem-clear-queue`. |
+| **Slash commands** | `/teamem-off`, `/teamem-status`, `/teamem-briefing`, `/teamem-decide`, `/teamem-sprint`, `/teamem-discuss`, `/teamem-space`, `/teamem-setup`, `/teamem-reset`, `/teamem-disband`, `/teamem-restore`, `/teamem-gotcha`, `/teamem-coord-pref`, `/teamem-grant`, `/teamem-deny`, `/teamem-end-dispute`, `/teamem-clear-queue`. |
 | **Agent-driven claims** | Claims are managed through MCP tools and hooks, not human slash commands. Edit gates auto-claim in `on_commit` mode; agents use `teamem.claim_scope`, `teamem.list_claims`, `teamem.release_scope`, and `teamem.force_release` for natural-language claim requests. |
 | **Queue-first coordination + legacy permission primitives** | `auto-skip` is the active user-facing coordination preference. Stored or legacy `auto-discuss` values are treated as queued fallbacks in the current plugin build while negotiator automation is postponed. Legacy permission-request / grant / deny primitives still exist for compatibility and alert handling. |
 | **Soft-by-default destructive ops** | `wipe` masks projection rows but retains them; `unwipe` recovers. `disband` tombstones the space for 7 days; `restore` undoes within the grace window. `wipe --hard` is the compliance escape hatch. |
 | **Information-sharing primitives** | `share_finding` (tag-faceted, severity-labeled, 7-day TTL — surfaced through SessionStart sync, briefing, and optional channel flows), `share_artifact` (durable references), `agent_focus_changed` (replaces synthetic `task_started`). |
 | **Discussion delivery** | `/teamem-discuss` stores direct or broadcast discussion messages durably. Phase 1 Channels POC can deliver them live when enabled; otherwise they remain available through SessionStart sync, `teamem.read_thread`, `/teamem-status`, and unread notifications. |
 | **Briefing-on-demand** | `/teamem-briefing` and the `teamem-briefer` Haiku agent fetch the current plan, active claims, recent decisions, active risks, recent progress, and recent findings/artifacts. |
+
+## Space mode and Sprint mode
+
+Teamem has two live coordination modes inside one Space. Space mode is the
+default when you are not joined to a Sprint; it preserves the historical
+Space-wide behavior for ordinary claims and live updates. Sprint mode starts
+when you join a Sprint, which is a work-goal context boundary inside the Space.
+Sprint is not a privacy boundary: Space members can explicitly list Sprints and
+read Sprint history, but non-members are not live-interrupted by ordinary Sprint
+events.
+
+Use `/teamem-sprint` for Sprint lifecycle:
+
+```text
+/teamem-sprint create <name> -- <goal>
+/teamem-sprint join <slug-or-id>
+/teamem-sprint leave
+/teamem-sprint list
+/teamem-sprint history <slug-or-id> [--limit N]
+/teamem-sprint archive <slug-or-id>
+/teamem-sprint reopen <slug-or-id>
+```
+
+Direct messages always reach the addressed teammate regardless of Sprint
+membership. For `/teamem-discuss`, `*` broadcasts to the current Sprint in
+Sprint mode and to the Space in Space mode; `**` is an explicit Space-wide
+escalation that reaches teammates currently working inside Sprints too.
+Archived Sprint history remains available through explicit history/list
+commands as non-private lifecycle history, and it is not part of normal live
+updates.
+
+The monitor follows the same boundary: Space mode is not an all-Sprints feed,
+and Sprint mode includes the current Sprint, direct-to-me messages, and explicit
+Space-wide `**` broadcasts.
 
 ## Install
 
@@ -161,13 +195,15 @@ existing monitor path. When the optional `teamem-channel` runtime is enabled,
 the documented manual sender is:
 
 ```text
-/teamem-discuss <principal|*> -- <topic>
+/teamem-discuss <principal|*|**> -- <topic>
 ```
 
 Delivery expectations for this POC:
 
 - Directed discussion messages are visible only to the addressed recipient's active channel session.
-- Broadcast discussion messages (`*`) are visible to non-senders in the same Teamem space.
+- `*` discussion broadcasts are visible to non-senders in the current Sprint when the sender is in Sprint mode, and to non-senders in the Space when the sender is in Space mode.
+- `**` discussion broadcasts are explicit Space-wide escalations and may live-interrupt Space members even when they are currently in Sprints.
+- Normal queue-first file-claim conflicts do not send Channel alerts; they continue through the hook denial and pending-edit queue path.
 - Legacy permission requests may also surface as urgent incumbent-only channel alerts carrying the exact metadata fields `req_id`, `blocking_claim_id`, `incumbent_principal`, `event_id`, `event_type`, and `principal`. The JSON content retains the full payload and scope and must surface `/teamem-grant <req_id>` and `/teamem-deny <req_id>`.
 - `teamem.read_thread`, `/teamem-status`, unread notifications, and the next SessionStart sync remain the fallback path when the channel runtime is disabled, unavailable, or not yet enabled in a session.
 - Local `--plugin-dir` channel sessions poll whenever `teamem-channel` starts successfully. Set `TEAMEM_CHANNEL_REQUIRE_ACTIVE=1` only when you specifically want channel polling gated by the session active flag.
@@ -274,6 +310,11 @@ Force-release notifies the claim holder through the unread queue on their next
 active SessionStart; channel-enabled sessions may also surface it live. If a
 session was launched without Teamem intent, restart with `claude --teamem` to
 make the queued notice visible.
+
+In Sprint mode, new claims conflict only with claims in the same Sprint. In
+Space mode, new claims conflict with Space-mode claims. Overlapping claims in
+another Sprint are non-blocking cross-Sprint awareness; git merge and review own
+that later integration risk.
 
 ## Coordination prefs (the conflict story)
 

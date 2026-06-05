@@ -30,6 +30,96 @@ function gitSync(cwd: string, args: string[]): void {
 }
 
 describe('Teamem plugin data directory resolution', () => {
+  it('honors explicit TEAMEM_DATA over Claude plugin data and cache-derived data', () => {
+    const work = join(
+      tmpdir(),
+      `teamem-explicit-data-dir-${Date.now()}-${Math.random().toString(16).slice(2)}`
+    );
+    const home = join(work, 'home');
+    const pluginRoot = join(
+      home,
+      '.claude/plugins/cache/teamem-local/teamem/0.3.4'
+    );
+    const repo = join(work, 'repo');
+
+    try {
+      mkdirSync(join(pluginRoot, 'scripts'), { recursive: true });
+      mkdirSync(join(pluginRoot, 'bin'), { recursive: true });
+      copyFileSync(
+        join(REPO_ROOT, 'plugin/scripts/_common.sh'),
+        join(pluginRoot, 'scripts/_common.sh')
+      );
+      copyFileSync(
+        join(REPO_ROOT, 'plugin/bin/teamem-flag'),
+        join(pluginRoot, 'bin/teamem-flag')
+      );
+
+      mkdirSync(repo, { recursive: true });
+      gitSync(repo, ['init']);
+      gitSync(repo, [
+        'remote',
+        'add',
+        'origin',
+        'https://github.com/mdn/todo-react'
+      ]);
+      writeFileSync(join(repo, 'README.md'), 'test\n');
+      gitSync(repo, ['add', '.']);
+      gitSync(repo, ['commit', '-m', 'initial']);
+
+      const wrongData = join(home, '.claude/plugins/data/codex-openai-codex');
+      const cacheDerivedData = join(
+        home,
+        '.claude/plugins/data/teamem-teamem-local'
+      );
+      const explicitData = join(work, 'isolated-teamem-data');
+      const env = {
+        ...process.env,
+        HOME: home,
+        CLAUDE_PLUGIN_DATA: wrongData,
+        TEAMEM_DATA: explicitData,
+        CLAUDE_SESSION_ID: 'default'
+      };
+
+      const enable = spawnSync(
+        'bash',
+        [join(pluginRoot, 'bin/teamem-flag'), 'enable', '--persist'],
+        { cwd: repo, env, encoding: 'utf8' }
+      );
+      expect(enable.status).toBe(0);
+
+      const status = spawnSync(
+        'bash',
+        [join(pluginRoot, 'bin/teamem-flag'), 'status'],
+        { cwd: repo, env, encoding: 'utf8' }
+      );
+      expect(status.status).toBe(0);
+      expect(status.stdout).toContain(
+        `session_dir: ${explicitData}/sessions/default`
+      );
+      expect(status.stdout).not.toContain(wrongData);
+      expect(status.stdout).not.toContain(cacheDerivedData);
+
+      const autoOnFiles = spawnSync(
+        'find',
+        [work, '-name', 'auto-on', '-print'],
+        {
+          cwd: repo,
+          env,
+          encoding: 'utf8'
+        }
+      );
+      expect(autoOnFiles.status).toBe(0);
+      expect(autoOnFiles.stdout).toContain(explicitData);
+      expect(autoOnFiles.stdout).not.toContain(wrongData);
+      expect(autoOnFiles.stdout).not.toContain(cacheDerivedData);
+      expect(existsSync(join(explicitData, 'sessions/default/active'))).toBe(
+        true
+      );
+    } finally {
+      rmSync(work, { recursive: true, force: true });
+    }
+  }, 30_000);
+
   it('ignores another plugin data dir when running from installed Teamem cache', () => {
     const work = join(
       tmpdir(),

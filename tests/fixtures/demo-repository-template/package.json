@@ -1,0 +1,9 @@
+{
+  "name": "teamem-demo-workspace",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "bun run src/app.ts"
+  }
+}

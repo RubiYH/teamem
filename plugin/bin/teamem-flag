@@ -7,10 +7,10 @@
 #   teamem-flag status
 #
 # Storage:
-#   ${CLAUDE_PLUGIN_DATA}/sessions/${SID}/active    — per-session opt-in
-#   ${CLAUDE_PLUGIN_DATA}/sessions/${SID}/disabled  — per-session opt-out over project auto-on
-#   ${CLAUDE_PLUGIN_DATA}/sessions/${SID}/space     — pinned space (text)
-#   ${CLAUDE_PLUGIN_DATA}/projects/<key>/auto-on    — project-wide auto-opt-in
+#   ${TEAMEM_DATA:-resolved plugin data}/sessions/${SID}/active   — per-session opt-in
+#   ${TEAMEM_DATA:-resolved plugin data}/sessions/${SID}/disabled — per-session opt-out over project auto-on
+#   ${TEAMEM_DATA:-resolved plugin data}/sessions/${SID}/space    — pinned space (text)
+#   ${TEAMEM_DATA:-resolved plugin data}/projects/<key>/auto-on   — project-wide auto-opt-in
 #
 # Exit 0 unless arguments are malformed.
 

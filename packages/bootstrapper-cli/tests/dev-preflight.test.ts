@@ -12,6 +12,7 @@ import { join } from 'node:path';
 import {
   createNodeDevBundleFreshnessChecker,
   createNodeDevServerHealthChecker,
+  readDevProfileDefaultSpaceId,
   readDevProfileServerUrl,
   renderDevBundleFreshness
 } from '../src/dev-preflight.js';
@@ -41,10 +42,94 @@ describe('dev preflight', () => {
     });
   });
 
+  it('reads the selected profile credentials default Space id', () => {
+    const result = readDevProfileDefaultSpaceId({
+      profile: profilePaths(),
+      credentialsReader: {
+        read: () =>
+          JSON.stringify({
+            version: 1,
+            default_space_id: 'space-2',
+            spaces: {
+              'space-1': {
+                space_id: 'space-1',
+                server_url: 'https://wrong.example'
+              },
+              'space-2': {
+                space_id: 'space-2',
+                server_url: 'https://teamem.example'
+              }
+            }
+          })
+      }
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      defaultSpaceId: 'space-2'
+    });
+  });
+
+  for (const [name, defaultSpaceId] of [
+    ['missing', undefined],
+    ['null', null]
+  ] as const) {
+    it(`rejects profile credentials with spaces but ${name} default Space id`, () => {
+      const result = readDevProfileDefaultSpaceId({
+        profile: profilePaths(),
+        credentialsReader: {
+          read: () =>
+            JSON.stringify({
+              version: 1,
+              ...(defaultSpaceId === undefined
+                ? {}
+                : { default_space_id: defaultSpaceId }),
+              spaces: {
+                'space-1': {
+                  space_id: 'space-1',
+                  server_url: 'https://teamem.example'
+                }
+              }
+            })
+        }
+      });
+
+      expect(result).toEqual({
+        ok: false,
+        message:
+          'Profile credentials do not contain a default Space: /tmp/home/.teamem/dev-profiles/alice/credentials.json'
+      });
+    });
+  }
+
+  it('rejects profile credentials with a stale default Space id', () => {
+    const result = readDevProfileDefaultSpaceId({
+      profile: profilePaths(),
+      credentialsReader: {
+        read: () =>
+          JSON.stringify({
+            version: 1,
+            default_space_id: 'stale-space',
+            spaces: {
+              'space-1': {
+                space_id: 'space-1',
+                server_url: 'https://teamem.example'
+              }
+            }
+          })
+      }
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      message:
+        'Profile credentials do not contain a default Space: /tmp/home/.teamem/dev-profiles/alice/credentials.json'
+    });
+  });
+
   it('passes the checked health URL into the Bun probe', () => {
-    const result = createNodeDevServerHealthChecker().check(
-      'http://127.0.0.1:9'
-    );
+    const result =
+      createNodeDevServerHealthChecker().check('http://127.0.0.1:9');
 
     expect(result.ok).toBe(false);
     expect(result.checkedUrl).toBe('http://127.0.0.1:9/health');

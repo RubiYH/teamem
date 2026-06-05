@@ -10,5 +10,5 @@
     "resolveJsonModule": true,
     "types": ["node", "bun"]
   },
-  "include": ["src", "tests", "packages"]
+  "include": ["src", "tests", "packages", "plugin-e2e-module"]
 }

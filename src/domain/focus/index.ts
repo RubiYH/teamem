@@ -9,6 +9,7 @@ import type { Database } from 'bun:sqlite';
  */
 export type FocusRow = {
   focus_id: string;
+  sprint_id: string | null;
   principal: string;
   scope_paths: string[];
   scope_hash: string;
@@ -19,10 +20,12 @@ export type FocusRow = {
 export function loadRecentFocus(
   db: Database,
   space_id: string,
+  currentSprintId: string | null,
   limit = 20
 ): FocusRow[] {
   let rows: Array<{
     focus_id: string;
+    sprint_id: string | null;
     principal: string;
     scope_paths_json: string;
     scope_hash: string;
@@ -32,14 +35,16 @@ export function loadRecentFocus(
   try {
     rows = db
       .prepare(
-        `SELECT f.focus_id, f.principal, f.scope_paths_json, f.scope_hash,
-                f.intent, f.started_at
+        `SELECT f.focus_id, f.sprint_id, f.principal, f.scope_paths_json,
+                f.scope_hash, f.intent, f.started_at
            FROM focus f
           WHERE f.space_id = ?1
+            AND f.sprint_id IS ?2
             AND f.tombstoned_at IS NULL
             AND f.focus_id = (
               SELECT focus_id FROM focus
                WHERE space_id = ?1
+                 AND sprint_id IS ?2
                  AND principal = f.principal
                  AND scope_hash = f.scope_hash
                  AND tombstoned_at IS NULL
@@ -47,9 +52,9 @@ export function loadRecentFocus(
                LIMIT 1
             )
           ORDER BY f.started_at DESC
-          LIMIT ?2`
+          LIMIT ?3`
       )
-      .all(space_id, limit) as typeof rows;
+      .all(space_id, currentSprintId, limit) as typeof rows;
   } catch (err) {
     const e = err as { message?: string };
     if (e?.message?.includes('no such table: focus')) return [];
@@ -68,6 +73,7 @@ export function loadRecentFocus(
     }
     return {
       focus_id: r.focus_id,
+      sprint_id: r.sprint_id,
       principal: r.principal,
       scope_paths,
       scope_hash: r.scope_hash,

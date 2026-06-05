@@ -23,6 +23,29 @@ describe('channel runtime filtering', () => {
     ).toBe(false);
   });
 
+  it('prefers top-level direct discussion routing over legacy payload routing', () => {
+    const bobToAlice = {
+      event_id: 'evt-top-level-direct-discussion',
+      event_type: 'discussion_posted',
+      principal: 'bob',
+      delivery_scope: 'direct',
+      recipient_principals: ['alice'],
+      payload: {
+        message_id: 'msg-1',
+        thread_id: 'thr-1',
+        recipient_principal: null,
+        body: 'Top-level recipients are authoritative.'
+      }
+    } as const;
+
+    expect(
+      shouldEmitTeamemChannelEvent(bobToAlice, { myPrincipal: 'alice' })
+    ).toBe(true);
+    expect(
+      shouldEmitTeamemChannelEvent(bobToAlice, { myPrincipal: 'carol' })
+    ).toBe(false);
+  });
+
   it('can restrict delivery to an explicit trusted sender allowlist', () => {
     const bobToAlice = {
       event_id: 'evt-1',
@@ -163,6 +186,29 @@ describe('channel runtime filtering', () => {
     expect(
       shouldEmitTeamemChannelEvent(broadcastGotcha, { myPrincipal: 'bob' })
     ).toBe(false);
+    expect(
+      shouldEmitTeamemChannelEvent(directGotcha, { myPrincipal: 'alice' })
+    ).toBe(true);
+    expect(
+      shouldEmitTeamemChannelEvent(directGotcha, { myPrincipal: 'carol' })
+    ).toBe(false);
+  });
+
+  it('prefers top-level direct finding routing over legacy payload routing', () => {
+    const directGotcha = {
+      event_id: 'evt-top-level-direct-gotcha',
+      event_type: 'finding_shared',
+      principal: 'bob',
+      delivery_scope: 'direct',
+      recipient_principals: ['alice'],
+      payload: {
+        finding_id: 'finding-1',
+        kind: 'gotcha',
+        summary: 'Top-level recipients are authoritative.',
+        recipient_principals: []
+      }
+    } as const;
+
     expect(
       shouldEmitTeamemChannelEvent(directGotcha, { myPrincipal: 'alice' })
     ).toBe(true);

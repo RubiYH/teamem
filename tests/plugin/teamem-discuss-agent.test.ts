@@ -11,9 +11,11 @@ describe('/teamem-discuss direct send contract', () => {
       'utf-8'
     );
 
-    expect(command).toContain('allowed-tools: mcp__teamem__post_message');
-    expect(command).not.toContain('mcp__teamem__read_thread');
-    expect(command).not.toContain('mcp__teamem__get_briefing');
+    expect(command).toContain(
+      'allowed-tools: mcp__teamem__teamem_post_message'
+    );
+    expect(command).not.toContain('mcp__teamem__teamem_read_thread');
+    expect(command).not.toContain('mcp__teamem__teamem_get_briefing');
     expect(command).not.toContain('teamem-negotiator');
     expect(command).not.toContain('teamem-call');
     expect(command).toContain('If `--` is missing');

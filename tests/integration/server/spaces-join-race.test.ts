@@ -9,6 +9,7 @@ import {
 } from '../../../src/server/spaces.js';
 
 const TEST_SECRET = 'test-secret-32bytes-padded-xxxxx';
+const ACTIVE_TRIAL_EXPIRES_AT = '2999-01-01T00:00:00.000Z';
 
 function buildDb(): Database {
   const db = new Database(':memory:');
@@ -110,7 +111,7 @@ describe('joinSpace concurrent race — Cloud free member cap', () => {
       provisioningRequestId: 'req-race',
       runtimeServerUrl: 'https://runtime.teamem.test',
       plan: 'free',
-      trialExpiresAt: '2026-06-01T00:00:00.000Z',
+      trialExpiresAt: ACTIVE_TRIAL_EXPIRES_AT,
       memberLimit: 3
     });
     expect(typeof created).toBe('object');

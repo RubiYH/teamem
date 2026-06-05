@@ -573,7 +573,10 @@ function checkTeamemLaunchReadiness(options: {
     readinessEnvironment.cwd
   );
   const pluginLookupOptions = {
-    projectPath: resolveLaunchProjectPath(commandRunner, readinessEnvironment.cwd)
+    projectPath: resolveLaunchProjectPath(
+      commandRunner,
+      readinessEnvironment.cwd
+    )
   };
   const pluginScope =
     rememberedScope ??

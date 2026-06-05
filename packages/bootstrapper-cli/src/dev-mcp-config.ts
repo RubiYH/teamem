@@ -191,7 +191,9 @@ function scrubMcpServerProfileEnv(
 function readPluginMcpDeclaration(
   fileSystem: DevMcpConfigFileSystem,
   declarationPath: string
-): { readonly ok: true; readonly value: unknown } | { readonly ok: false; readonly error: string } {
+):
+  | { readonly ok: true; readonly value: unknown }
+  | { readonly ok: false; readonly error: string } {
   if (!fileSystem.isReadableFile(declarationPath)) {
     return {
       ok: false,
@@ -199,7 +201,10 @@ function readPluginMcpDeclaration(
     };
   }
   try {
-    return { ok: true, value: JSON.parse(fileSystem.readFile(declarationPath)) };
+    return {
+      ok: true,
+      value: JSON.parse(fileSystem.readFile(declarationPath))
+    };
   } catch {
     return {
       ok: false,

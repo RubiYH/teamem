@@ -25,16 +25,14 @@ describe('dev MCP config generation', () => {
     });
 
     expect(result.ok).toBe(true);
-    expect(result.ok ? result.config.mcpServers.teamem.command : undefined).toBe(
-      'custom-bun'
-    );
-    expect(result.ok ? result.config.mcpServers.teamem.args : undefined).toEqual(
-      ['run', '/src/teamem/plugin/lib/custom-bridge.js']
-    );
     expect(
-      result.ok
-        ? result.config.mcpServers['teamem-channel'].args
-        : undefined
+      result.ok ? result.config.mcpServers.teamem.command : undefined
+    ).toBe('custom-bun');
+    expect(
+      result.ok ? result.config.mcpServers.teamem.args : undefined
+    ).toEqual(['run', '/src/teamem/plugin/lib/custom-bridge.js']);
+    expect(
+      result.ok ? result.config.mcpServers['teamem-channel'].args : undefined
     ).toEqual(['run', '/src/teamem/plugin/lib/custom-channel.js']);
   });
 
@@ -53,8 +51,7 @@ describe('dev MCP config generation', () => {
             command: 'bun',
             args: ['run', '${CLAUDE_PLUGIN_ROOT}/lib/channel.js'],
             env: {
-              TEAMEM_CHANNEL_LOG:
-                '${CLAUDE_PLUGIN_ROOT}/logs/channel.log'
+              TEAMEM_CHANNEL_LOG: '${CLAUDE_PLUGIN_ROOT}/logs/channel.log'
             }
           }
         }
@@ -151,8 +148,7 @@ describe('dev MCP config generation', () => {
     });
     expect(missingChannel).toMatchObject({
       ok: false,
-      error:
-        'Plugin MCP declaration is missing required server: teamem-channel'
+      error: 'Plugin MCP declaration is missing required server: teamem-channel'
     });
   });
 
@@ -187,13 +183,11 @@ describe('dev MCP config generation', () => {
 
     expect(missingCommand).toMatchObject({
       ok: false,
-      error:
-        'Plugin MCP required server command must be a string: teamem'
+      error: 'Plugin MCP required server command must be a string: teamem'
     });
     expect(nonStringCommand).toMatchObject({
       ok: false,
-      error:
-        'Plugin MCP required server command must be a string: teamem'
+      error: 'Plugin MCP required server command must be a string: teamem'
     });
   });
 
@@ -229,13 +223,11 @@ describe('dev MCP config generation', () => {
 
     expect(nonArrayArgs).toMatchObject({
       ok: false,
-      error:
-        'Plugin MCP required server args must be a string array: teamem'
+      error: 'Plugin MCP required server args must be a string array: teamem'
     });
     expect(nonStringArg).toMatchObject({
       ok: false,
-      error:
-        'Plugin MCP required server args must be a string array: teamem'
+      error: 'Plugin MCP required server args must be a string array: teamem'
     });
   });
 
@@ -257,18 +249,18 @@ describe('dev MCP config generation', () => {
     });
 
     expect(result.ok).toBe(true);
-    expect(result.ok ? result.config.mcpServers.teamem.env : undefined).toEqual({
-      EXISTING: 'kept',
-      CLAUDE_PLUGIN_DATA:
-        '/tmp/home/.teamem/dev-profiles/alice/plugin-data/teamem',
-      CLAUDE_PLUGIN_ROOT: '/src/teamem/plugin',
-      TEAMEM_CREDENTIALS:
-        '/tmp/home/.teamem/dev-profiles/alice/credentials.json'
-    });
+    expect(result.ok ? result.config.mcpServers.teamem.env : undefined).toEqual(
+      {
+        EXISTING: 'kept',
+        CLAUDE_PLUGIN_DATA:
+          '/tmp/home/.teamem/dev-profiles/alice/plugin-data/teamem',
+        CLAUDE_PLUGIN_ROOT: '/src/teamem/plugin',
+        TEAMEM_CREDENTIALS:
+          '/tmp/home/.teamem/dev-profiles/alice/credentials.json'
+      }
+    );
     expect(
-      result.ok
-        ? result.config.mcpServers['teamem-channel'].env
-        : undefined
+      result.ok ? result.config.mcpServers['teamem-channel'].env : undefined
     ).toEqual({
       CLAUDE_PLUGIN_DATA:
         '/tmp/home/.teamem/dev-profiles/alice/plugin-data/teamem',
@@ -377,7 +369,10 @@ describe('dev MCP config generation', () => {
         mcpServers: {
           teamem: {
             command: 'bun',
-            args: ['run', '/Users/me/.claude/plugins/cache/teamem/lib/bridge.js']
+            args: [
+              'run',
+              '/Users/me/.claude/plugins/cache/teamem/lib/bridge.js'
+            ]
           },
           'teamem-channel': {
             command: 'bun',
@@ -466,9 +461,7 @@ function sourceResolution(): DevSourceResolution {
   };
 }
 
-function pluginDeclarationFileSystem(
-  content: string
-): DevMcpConfigFileSystem {
+function pluginDeclarationFileSystem(content: string): DevMcpConfigFileSystem {
   return {
     isReadableFile(path: string): boolean {
       return path === '/src/teamem/plugin/.mcp.json';

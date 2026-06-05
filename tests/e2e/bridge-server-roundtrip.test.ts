@@ -161,7 +161,9 @@ describe('bridge → server round-trip (in-process)', () => {
         lifecycle: 'persistent',
         status: 'active',
         version: 1,
-        expires_at: null
+        expires_at: null,
+        sprint_id: null,
+        context: 'space'
       }
     }) as {
       ok: true;

@@ -1,3 +1,5 @@
+import { join } from 'node:path';
+
 import {
   buildActionPlan,
   type ActionPlan,
@@ -82,7 +84,10 @@ import {
   type DevSourceFileSystem,
   type DevSourceResolution
 } from './dev-source.js';
-import { generateDevMcpConfig } from './dev-mcp-config.js';
+import {
+  generateDevMcpConfig,
+  type StrictMcpConfig
+} from './dev-mcp-config.js';
 import { createLocalDevSetupRunner, type DevSetupRunner } from './dev-setup.js';
 import {
   buildDevLaunchPlan,
@@ -98,6 +103,7 @@ import {
   createNodeDevServerHealthChecker,
   devServerHealthUrl,
   hasDevBundleFreshnessFailure,
+  readDevProfileDefaultSpaceId,
   readDevProfileServerUrl,
   renderDevBundleFreshness,
   renderDevServerHealth,
@@ -1027,6 +1033,10 @@ export function runCli(
           profile: paths,
           credentialsReader
         });
+        const defaultSpace = readDevProfileDefaultSpaceId({
+          profile: paths,
+          credentialsReader
+        });
         const plannedHealthLine = serverUrl.ok
           ? `dry-run: server health would be checked at ${devServerHealthUrl(serverUrl.serverUrl)} before launch.`
           : `dry-run: server health would be checked after profile credentials exist at ${paths.credentialsPath}.`;
@@ -1037,7 +1047,10 @@ export function runCli(
           env: environment.env,
           pathEnv: environment.pathEnv,
           homeDir: environment.homeDir,
-          fileSystem: devSourceFileSystem
+          fileSystem: devSourceFileSystem,
+          defaultSpaceId: defaultSpace.ok
+            ? defaultSpace.defaultSpaceId
+            : undefined
         });
         io.stdout.write(
           [
@@ -1053,6 +1066,7 @@ export function runCli(
               ? 'dry-run: existing profile credentials would be reused; setup would not run.'
               : `dry-run: profile-scoped Teamem setup would run with TEAMEM_CREDENTIALS=${paths.credentialsPath}.`,
             `dry-run: profile MCP config would be written to ${paths.mcpConfigPath} from ${mcpConfig.declarationPath}.`,
+            `dry-run: launch workspace MCP config would be written to ${devLaunchWorkspaceMcpConfigPath(sourceResolution)} with Teamem dev channel servers.`,
             parsed.value.dev?.buildPlugin
               ? 'dry-run: --build-plugin would run `bun run build:plugin` before launch planning continues.'
               : undefined,
@@ -1141,12 +1155,22 @@ export function runCli(
         return healthExitCode;
       }
       devFileSystem.writeFile(selection.paths.mcpConfigPath, mcpConfig.json);
+      const launchWorkspaceMcpConfig = materializeDevLaunchWorkspaceMcpConfig({
+        source: sourceResolution,
+        generatedConfig: mcpConfig.config,
+        fileSystem: devSourceFileSystem
+      });
+      if (!launchWorkspaceMcpConfig.ok) {
+        io.stderr.write(`${launchWorkspaceMcpConfig.error}\n`);
+        return 1;
+      }
       io.stdout.write(
         [
           `Selected dev profile: ${selection.profileName}`,
           selection.created ? 'Profile skeleton created.' : undefined,
           setupStatus.message,
-          `Generated profile MCP config: ${selection.paths.mcpConfigPath}`
+          `Generated profile MCP config: ${selection.paths.mcpConfigPath}`,
+          `Generated launch workspace MCP config: ${launchWorkspaceMcpConfig.path}`
         ]
           .filter((line): line is string => line !== undefined)
           .join('\n') + '\n'
@@ -1560,12 +1584,79 @@ function renderDevProfileStatusBoundary(options: {
     `Launch cwd: ${launchCwd ?? 'unresolved because source checkout is missing'}`,
     `Generated MCP config: ${options.paths.mcpConfigPath}`,
     `Generated MCP config status: ${generatedMcpStatus}`,
+    `Launch workspace MCP config: ${options.source ? devLaunchWorkspaceMcpConfigPath(options.source) : 'unresolved because source checkout is missing'}`,
     'MCP isolation mode: strict profile MCP config (--strict-mcp-config)',
     'Channel source: server:teamem-channel',
     'Marketplace plugin ignored: yes (teamem@teamem-alpha is not loaded for source-checkout dev status).',
     `Metadata: ${options.paths.metadataPath}`,
     `Logs: ${options.paths.logsDir}`
   ].join('\n');
+}
+
+function devLaunchWorkspaceMcpConfigPath(source: DevSourceResolution): string {
+  return join(source.launchCwd, '.mcp.json');
+}
+
+function materializeDevLaunchWorkspaceMcpConfig(options: {
+  readonly source: DevSourceResolution;
+  readonly generatedConfig: StrictMcpConfig;
+  readonly fileSystem: DevSourceFileSystem;
+}):
+  | { readonly ok: true; readonly path: string }
+  | { readonly ok: false; readonly path: string; readonly error: string } {
+  const path = devLaunchWorkspaceMcpConfigPath(options.source);
+  let existing: Record<string, unknown> = {};
+
+  if (options.fileSystem.isReadableFile(path)) {
+    try {
+      const parsed = JSON.parse(options.fileSystem.readFile(path)) as unknown;
+      if (!isPlainRecord(parsed)) {
+        return {
+          ok: false,
+          path,
+          error: `Launch workspace MCP config must be a JSON object: ${path}`
+        };
+      }
+      existing = parsed;
+    } catch (error) {
+      return {
+        ok: false,
+        path,
+        error: `Launch workspace MCP config is malformed JSON: ${path}. ${formatUnknownCliError(error)}`
+      };
+    }
+  }
+
+  const existingServers = existing.mcpServers;
+  if (existingServers !== undefined && !isPlainRecord(existingServers)) {
+    return {
+      ok: false,
+      path,
+      error: `Launch workspace MCP config mcpServers must be an object: ${path}`
+    };
+  }
+  const existingMcpServers = isPlainRecord(existingServers)
+    ? existingServers
+    : {};
+
+  const merged = {
+    ...existing,
+    mcpServers: {
+      ...existingMcpServers,
+      teamem: options.generatedConfig.mcpServers.teamem,
+      'teamem-channel': options.generatedConfig.mcpServers['teamem-channel']
+    }
+  };
+  options.fileSystem.writeFile(path, `${JSON.stringify(merged, null, 2)}\n`);
+  return { ok: true, path };
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function formatUnknownCliError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function ensureDevServerHealth(options: {

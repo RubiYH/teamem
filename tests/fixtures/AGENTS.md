@@ -5,19 +5,21 @@
 
 ## Purpose
 
-Static JSON test data. Currently only event-envelope fixtures (valid + invalid) used by the validator unit tests.
+Static test data. Event-envelope JSON fixtures support validator unit tests, and
+the demo repository template supports plugin smoke workspace tests.
 
 ## Subdirectories
 
 | Directory  | Purpose                                                                  |
 | ---------- | ------------------------------------------------------------------------ |
 | `events/`  | Valid + invalid event envelope fixtures — see `events/AGENTS.md`         |
+| `demo-repository-template/` | Static demo app/docs repository copied into plugin smoke temp workspaces |
 
 ## For AI Agents
 
 ### Working In This Directory
 
-- Fixtures are pure data — no JS/TS files here.
+- Fixtures are pure data — do not put executable test helpers here.
 - Reference fixtures by basename in tests (the loader appends `.json`).
 
 ### Testing Requirements
@@ -26,13 +28,16 @@ Static JSON test data. Currently only event-envelope fixtures (valid + invalid) 
 
 ### Common Patterns
 
-- One subdirectory per fixture domain; within each, a `valid/` and `invalid/` split mirroring the test pattern.
+- One subdirectory per fixture domain. Event fixtures use a `valid/` and
+  `invalid/` split; file-tree fixtures should keep stable relative paths for
+  copy-based tests.
 
 ## Dependencies
 
 ### Internal
 
 - Read by `tests/unit/events/validate.test.ts`.
+- Copied by plugin smoke workspace helpers.
 
 ### External
 

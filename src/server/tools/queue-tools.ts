@@ -40,6 +40,26 @@ export function queuePendingEdit(
   const now = new Date();
   const expiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString();
   const pendingId = ctx.ulid();
+  const blockingClaim = ctx.db
+    .prepare(
+      `SELECT sprint_id
+         FROM claims
+        WHERE space_id = ?1
+          AND claim_id = ?2
+          AND status IN ('active', 'paused')
+          AND tombstoned_at IS NULL
+        LIMIT 1`
+    )
+    .get(input.space_id, blockingClaimId) as {
+    sprint_id: string | null;
+  } | null;
+  if (!blockingClaim) {
+    return ctx.toolError(
+      'blocking_claim_not_found',
+      `No active or paused claim ${blockingClaimId}`
+    );
+  }
+  const sprintId = blockingClaim.sprint_id;
 
   const event: TeamemEvent = {
     schema_version: '1.0',
@@ -51,6 +71,8 @@ export function queuePendingEdit(
     actor: input.actor,
     delegation: input.delegation,
     event_type: 'conflict_queued',
+    sprint_id: sprintId,
+    delivery_scope: sprintId === null ? 'space' : 'sprint',
     scope: { paths },
     payload: {
       pending_id: pendingId,

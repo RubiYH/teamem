@@ -39,7 +39,9 @@ export function LandingSecondaryCta({
       className={className}
       href={href}
       variant="secondary"
-      onClick={() => posthog.capture('landing_github_clicked', { cta: 'secondary' })}
+      onClick={() =>
+        posthog.capture('landing_github_clicked', { cta: 'secondary' })
+      }
     >
       {children}
     </Button>

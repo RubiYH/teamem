@@ -218,4 +218,70 @@ describe('gate-claim.sh branch-aware enrichment', () => {
       rmSync(workdir, { recursive: true, force: true });
     }
   });
+
+  it('honors explicit TEAMEM_DATA for activation and last-branch state', () => {
+    const workdir = mkdtempSync(
+      join(tmpdir(), 'teamem-gate-explicit-data-test-')
+    );
+    try {
+      const sentinel = join(workdir, 'argv.log');
+      stageFakePlugin(workdir, sentinel);
+      const sessionId = 'test-session-explicit-data-001';
+      const explicitPluginData = join(workdir, 'explicit-teamem-data');
+      const wrongClaudePluginData = join(workdir, 'wrong-plugin-data');
+      mkdirSync(join(explicitPluginData, 'sessions', sessionId), {
+        recursive: true
+      });
+      mkdirSync(wrongClaudePluginData, { recursive: true });
+      writeFileSync(
+        join(explicitPluginData, 'sessions', sessionId, 'active'),
+        ''
+      );
+      const { filePath, repoDir } = createGitRepo(workdir);
+
+      const input = JSON.stringify({
+        tool_name: 'Edit',
+        tool_input: { file_path: filePath },
+        cwd: repoDir,
+        session_id: sessionId
+      });
+
+      const result = spawnSync(
+        join(workdir, 'plugin/scripts/gate-claim.sh'),
+        [],
+        {
+          input,
+          encoding: 'utf8',
+          env: {
+            ...process.env,
+            CLAUDE_PLUGIN_ROOT: join(workdir, 'plugin'),
+            CLAUDE_PLUGIN_DATA: wrongClaudePluginData,
+            TEAMEM_DATA: explicitPluginData,
+            TEAMEM_SPACE: 'default',
+            HOME: workdir
+          }
+        }
+      );
+
+      expect(result.status).toBe(0);
+      expect(existsSync(sentinel)).toBe(true);
+
+      const calls = readFileSync(sentinel, 'utf-8')
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line) as string[]);
+      expect(calls.some((argv) => argv.includes('teamem.claim_scope'))).toBe(
+        true
+      );
+
+      const explicitLastBranchDir = join(explicitPluginData, 'last-branch');
+      expect(existsSync(explicitLastBranchDir)).toBe(true);
+      expect(readdirSync(explicitLastBranchDir).length).toBeGreaterThan(0);
+      expect(existsSync(join(wrongClaudePluginData, 'last-branch'))).toBe(
+        false
+      );
+    } finally {
+      rmSync(workdir, { recursive: true, force: true });
+    }
+  });
 });

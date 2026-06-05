@@ -89,7 +89,123 @@ The principal whose claim attempt was rejected because of an existing claim. Alw
 
 ### Space
 
-An isolated team scope. Identified by a ULID `space_id`. Created by a team lead. Joined by teammates via room code. Members of a space see each other's events and claims; members of different spaces are completely isolated.
+An isolated team trust and membership boundary. Identified by a ULID `space_id`. Created by a team lead. Joined by teammates via room code. Members of different spaces are completely isolated.
+
+When no Sprint is active, Space mode preserves the historical behavior: members coordinate against the Space-wide event and claim picture. When a Sprint is active, Sprint membership narrows the live monitoring and claim-conflict context for that work goal; Space remains the broader trust boundary, not the live interruption boundary.
+
+### Sprint
+
+A work-goal context boundary inside a Space. A Sprint groups a subset of Space members around one goal, such as "plugin release". Sprint is not a privacy boundary in v1: Space members can explicitly inspect Sprint metadata/history, but non-members do not receive live Sprint monitor events by default.
+
+Rules resolved for v1:
+
+- A Sprint belongs to exactly one Space.
+- Sprint names are unique within their Space, including archived Sprints. A Sprint display name is trimmed, must be non-empty after trim, and is capped at 80 characters for v1. A Sprint has a human display name and a canonical dashed slug: the slug normalizes from the display name to lowercase `a-z0-9-`, collapses repeated dashes, trims leading/trailing dashes, and is rejected if empty after normalization. The trimmed display name is preserved for rendering. Display name and slug are immutable in v1; rename is deferred.
+- Command surfaces display and prefer slugs, but accept either slug or Sprint id for targeting. IDs are a fallback for ambiguity and debugging, not the normal user-facing handle.
+- Sprint goal is required at creation. The goal is trimmed, must be non-empty after trim, and is capped at 500 characters for v1. Goal/description can become mutable later, but the first experimental slice only sets it at creation time.
+- Creating a Sprint whose slug already exists is rejected, not treated as an idempotent join. If the existing Sprint is active, the error should tell the member to join it instead. If the existing Sprint is archived, the error should tell the member to reopen it instead.
+- Sprint lifecycle changes are event-sourced first-class Teamem events: `sprint_created`, `sprint_joined`, `sprint_left`, `sprint_archived`, and `sprint_reopened`. Archive claim cleanup emits normal claim release/force-release events per claim rather than hiding cleanup inside one aggregate event.
+- Top-level `sprint_id` means the routing/context scope of an event, not merely that the author happened to be in a Sprint. Sprint lifecycle events carry the affected Sprint as their `sprint_id`. Space-mode and explicit Space-wide events carry `sprint_id: null`, even if the author is currently in a Sprint.
+- Legacy events without `sprint_id` are treated as Space-mode (`sprint_id: null`). There is no backfill into Sprints.
+- Events that need explicit delivery semantics carry top-level routing intent separately from `sprint_id`, such as `delivery_scope: direct | sprint | space`. `delivery_scope` is event metadata, not payload data. `sprint_id` identifies context; `delivery_scope` identifies how the event should be routed.
+- New events persist explicit `delivery_scope`. Inference is a read-compatibility rule for legacy events only, not a writer shortcut.
+- Direct delivery uses top-level recipient metadata such as `recipient_principals: string[]`. Event payloads may still contain business-specific recipient details, but delivery consumers must not parse payload shapes to decide routing.
+- New events with `delivery_scope: "direct"` must include non-empty top-level `recipient_principals`. A direct event without recipients is malformed. Legacy payload-only direct events may infer recipients during read compatibility, but new writes must fail validation without top-level recipients.
+- New events with `delivery_scope: "direct"` may carry `sprint_id` as context, but direct routing is controlled only by `recipient_principals`. Direct delivery interrupts the recipient regardless of their current Sprint.
+- New events with `delivery_scope: "sprint"` or `"space"` must not include `recipient_principals`. Sprint and Space delivery fanout is derived from current membership at delivery/read time, not frozen into explicit recipient metadata. Direct events are the exception: their explicit `recipient_principals` are the recipient snapshot.
+- New events with `delivery_scope: "sprint"` must include a non-null `sprint_id`. Sprint-scoped delivery without a Sprint id is malformed. Explicit Space-wide escalation from inside a Sprint uses `delivery_scope: "space"` with `sprint_id: null`.
+- New events with `delivery_scope: "space"` must carry `sprint_id: null`. If a Space-wide event is about a specific Sprint, that relationship belongs in event-specific payload metadata such as `affected_sprint_id`; it must not overload routing context.
+- Legacy events without `delivery_scope` are inferred for compatibility: direct-recipient metadata implies `direct`, non-null `sprint_id` implies `sprint`, and otherwise the event is treated as `space`.
+- Any Space member can create, join, leave, archive, and reopen a Sprint in v1. Archiving does not require the actor to be a Sprint member; the guardrails are the zero-member archive precondition, explicit claim cleanup events, and durable audit history.
+- Creating a Sprint automatically joins the creator and moves them out of any current Sprint in that Space.
+- A member can belong to at most one active Sprint per Space.
+- Joining a Sprint leaves the member's current Sprint in that Space and makes the joined Sprint their current work context.
+- Joining the Sprint the member is already in is idempotent: return a clear no-op message such as `already in <sprint>` and do not emit a duplicate lifecycle event.
+- Commands that change current Sprint proceed atomically but must report both sides of the switch when they move the actor out of an existing Sprint. For example: `left <old-sprint>, joined <new-sprint>`. This applies to `create`, `join`, and `reopen`.
+- Joining a Sprint makes prior Sprint history visible in non-live surfaces such as status, briefing, and history because Sprint is not a privacy boundary. Live Sprint interruption applies only to Sprint events delivered while the member is currently in that Sprint.
+- Leaving a Sprint returns the member to Space mode.
+- `leave` output must report the new mode explicitly, for example `left <sprint>; now in Space mode`, because Space mode is still an active coordination mode.
+- `leave` is idempotent in Space mode and returns a clear no-op message such as `already in Space mode` instead of failing.
+- After leaving a Sprint, ordinary status and briefing no longer include that Sprint's context. The exceptions are explicit history/recovery commands and the member's own leftover claims, which remain visible so the member can clean them up.
+- Archived Sprints can be reopened with the same identity, name, membership history, and event history. Reopen automatically joins the actor and moves them out of any current Sprint, matching create. Reopen does not automatically rejoin prior members or restore claims that were released or force-released during archive.
+- Reopen can be performed by any Space member in v1. Because reopen auto-joins the actor and emits durable lifecycle history, the action is explicit and auditable.
+- Reopening an already active Sprint is a no-op only when the actor is already in that Sprint. If the Sprint is active and the actor is not in it, `reopen` should tell the actor to use `join` instead.
+- Archived Sprints cannot be joined directly. A member must explicitly reopen the Sprint first, creating an auditable lifecycle transition back to active coordination.
+- Archived Sprint history remains visible through explicit history/audit commands. Archive ends active coordination and live routing for that Sprint; it does not erase the Sprint record.
+- `/teamem-sprint list` shows both active and archived Sprints by default, with clear state labels. Archived Sprints are not hidden behind a separate flag because Sprint names remain reserved and archived Sprints can be reopened. List is compact inventory, not a lifecycle log: it should show fields such as slug, display name, active/archived state, goal, current members, and last activity. Full lifecycle history belongs in explicit history/audit commands. V1 list is not capped or paginated; pagination is deferred until Spaces accumulate enough Sprints to need it.
+- A Sprint can be archived only after every member has left it. During archive, Teamem may force-release any remaining active claims tied to that Sprint as an explicit archive side effect, with normal audit-visible release events. Archive force-release sends direct cleanup notifications to affected claim owners, even if they already left the Sprint, but does not broadcast broad live cleanup notifications to current Space or Sprint members. Broader live announcement still requires explicit `**`.
+- Archiving an already archived Sprint is idempotent: return a clear no-op message such as `already archived <sprint>` and do not emit another archive event.
+- Sprint archive is non-interrupting by default. It emits durable/status-visible history, but live Space-wide closure announcements require an explicit `**` broadcast.
+- Sprint lifecycle events such as create, join, leave, archive, and reopen are durable/status-visible by default, not live-interrupting for other members. The acting member sees command output immediately; broader live announcement requires explicit `*` or `**` broadcast.
+- Current Sprint is server-authoritative membership state. Plugin-local session files may cache it for display or fast status, but they are not the source of truth.
+- Current Sprint is principal-level within a Space, not per Claude session. If one session joins a Sprint, the member's other sessions in that Space observe the same current Sprint on their next server read.
+- Sprint membership lives in a separate projection table, not only on `members.current_sprint_id`, so Teamem can preserve membership history and rebuild state from events. A convenience field on `members` may exist if useful, but event replay plus the Sprint membership projection is canonical and must be able to rebuild it. A partial uniqueness rule enforces at most one active Sprint membership per `(space_id, principal)`.
+
+### Sprint mode
+
+The Teamem operating mode for a member currently joined to a Sprint. Live monitoring and notifications are Sprint-wide by default: peer-to-peer events inside the Sprint and Sprint-wide events are urgent and interruptible for Sprint members, while Space members outside the Sprint are not interrupted.
+
+Direct peer-to-peer messages are the exception: an explicit direct message to a member is always live-interrupting for that member, regardless of the sender's Sprint or the recipient's current Sprint. Direct-message rendering should include sender context as metadata, such as `Direct from Alice (plugin-release)` or `Direct from Alice (Space mode)`, but that context does not affect routing. Sprint prevents unrelated team-wide noise; it does not suppress intentional direct contact. Automatic claim, conflict, permission, and overlap-awareness events do not get this bypass.
+
+`get_updates` follows the member's current mode. In Space mode it returns Space-mode events plus explicit direct-to-me messages and explicit Space-wide events; it does not act as an all-Sprints feed. In Sprint mode it returns current-Sprint events, explicit direct-to-me messages regardless of Sprint, and explicit Space-wide events; it excludes other Sprint events, archived Sprint history, and ordinary Space-mode events.
+
+Ordinary Space-mode events do not live-interrupt members currently in Sprints. Only explicit `**` Space-wide events and direct-to-me messages cross into Sprint live context.
+
+Briefing follows the same context boundary. In Sprint mode, briefing is Sprint-first: current Sprint header, goal, members, active claims, decisions, gotchas, blockers, and progress; direct-to-me messages regardless of Sprint; explicit `**` Space-wide announcements; low-priority cross-Sprint overlap awareness; and a separate outside-current-context section for the member's own leftover claims. It does not include ordinary events from other Sprints, archived Sprint summaries, or ordinary Space-mode noise. Archived Sprint context appears only through explicit history/audit commands or when directly relevant to the member's leftover claims.
+
+Status stays compact and operational. In Sprint mode it shows Teamem activation, monitor health, Space label/id, mode `Sprint`, Sprint display name and slug, Sprint members, the member's active claims in the current context, the member's active claims outside the current context, recent notifications in the current routing set, and a cross-Sprint overlap count rather than full detail. `/teamem-status` does not list archived Sprints; archived inventory belongs in `/teamem-sprint list` and explicit history/audit commands.
+
+Claims made in Sprint mode are coordinated against the current Sprint's claim picture. Overlapping work in a different Sprint is not a Teamem conflict in v1; the repository's normal git and merge workflow owns that later integration risk.
+
+Claims are context-stable after creation. A claim created in Space mode remains a Space-mode claim, and a claim created in Sprint mode remains tied to that Sprint. Joining or leaving a Sprint does not silently release, pause, or migrate existing claims; it only affects the context stamped on new claims. Status surfaces should make claims outside the member's current context visible as leftovers.
+
+Claim projection rows carry nullable `sprint_id`. `NULL` means Space-mode claim; non-null means Sprint-mode claim. Conflict lookup filters by context: Space mode compares only Space-mode claims, and Sprint mode compares only claims with the same `sprint_id`.
+
+Claim listing defaults to the current context. In Sprint mode it lists current-Sprint claims by default, with explicit options for Space-wide recovery views and for the member's own outside-current-context leftovers. In Space mode it preserves the current Space behavior.
+
+Force-release by path or search defaults to the current context. Force-release by exact `claim_id` can cross context because the id is unambiguous, but the response must display the claim's context before release.
+
+Git-driven release uses claim context, not the member's current Sprint. A post-commit release finds the matching active claim by ownership/repo/branch/path and emits the release event with that claim's original `sprint_id`.
+
+When one commit releases claims from multiple contexts, release notifications route per released claim context and may be live within that context. Same-context pending edits receive unblock notifications; current Sprint members see live releases for claims in their Sprint; Space-mode members see live releases for Space-mode claims; other contexts are not live-interrupted. If a member has left a Sprint but still owns leftover claims there, cleanup notifications about their own released/unblocked leftover claims may reach them as direct-to-owner signals; ordinary Sprint-wide release noise does not keep interrupting them. Those cleanup signals use `delivery_scope: "direct"` with top-level `recipient_principals` and the old Sprint's `sprint_id` as context metadata.
+
+Automatic coordination machinery is context-scoped. Claims, conflicts, pending edits, conflict resolution, and unblock notifications all share one coordination context: Space mode or one Sprint. Only explicit communication, such as direct messages or `**` broadcasts, crosses context live.
+
+Pending edit rows carry nullable `sprint_id`. Enqueue context matches the failed claim context, and resolve-on-release only matches pending edits in the same context: both `NULL` for Space mode, or the same Sprint id.
+
+Blockers follow the current context by default. A blocker raised in Sprint mode is Sprint-scoped; a blocker raised in Space mode is Space-mode. Cross-context escalation requires explicit direct communication or `**` Space-wide broadcast.
+
+Joining or leaving a Sprint should warn, but not block, when the member has active claims outside the new context. Leaving a Sprint also succeeds when the member still has active claims tied to that Sprint; those claims become out-of-current-context leftovers until normal release or Sprint archive force-release. The response should state that the claims remain active and should be released when done. Archive is the exception: after all members have left, archive may force-release remaining claims tied to the archived Sprint.
+
+Cross-Sprint overlapping work may appear as low-priority awareness in status or briefing surfaces. It must not block, interrupt live, or route through the coordination handshake by default.
+
+Decisions and gotchas created in Sprint mode are Sprint-scoped by default. Publishing a Space-wide decision or gotcha from Sprint mode is a scope escalation and should require an explicit surface, not an accidental default.
+
+Space Rules remain Space-scoped in v1. Sprint decisions may express Sprint-specific working agreements, but they do not override Space Rules.
+
+`**` is the general marker for Space-wide escalation from Sprint mode across broadcast-capable surfaces. For discussion broadcasts, `*` means the current Sprint and `**` means the whole Space. In Sprint mode, `*` reaches only current Sprint members live; Space-mode members and members in other Sprints do not receive it live. Recipient rendering for Sprint-wide broadcasts should show Sprint context, for example `Sprint plugin-release: Alice says ...`. Recipient rendering for Space-wide broadcasts should show the escalation, for example `Space-wide from Alice: ...`, and may include sender context such as `Space-wide from Alice (plugin-release): ...`. The sender-facing output for Sprint-mode `*` must label the scope, for example `sent to Sprint <slug>`, and hint `use ** for Space-wide`. Sender-facing output for `**` must also label the scope, for example `sent Space-wide`. In Space mode, `*` remains accepted as Space-wide for backward compatibility, and `**` also resolves to Space-wide broadcast. `**` is live-interrupting for all Space members by design when used on a live notification surface, including members currently working inside Sprints.
+
+The first experimental Sprint implementation should stay thin: membership, event stamping, monitor routing, Sprint-local claim conflicts, and status visibility. Roles, privacy, multi-Sprint membership, rich history UI, and cross-Sprint merge planning are deferred.
+
+V1 Sprint command surface:
+
+- `/teamem-sprint create "<display name>" -- <goal>`
+- `/teamem-sprint join <slug-or-id>`
+- `/teamem-sprint leave`
+- `/teamem-sprint list`
+- `/teamem-sprint history <slug-or-id>`
+- `/teamem-sprint archive <slug-or-id>`
+- `/teamem-sprint reopen <slug-or-id>`
+
+Create accepts a human display name and derives the canonical slug, e.g. `"Plugin Release"` becomes `plugin-release`. Commands after creation should prefer the slug so users do not need quoted display names, while still accepting Sprint ids for ambiguity/debugging.
+
+`/teamem-sprint history <slug-or-id>` is read-only, explicit, and non-live. It exposes Sprint lifecycle/audit history without adding archived or non-current Sprint history to ordinary update, status, or briefing streams. V1 history is lifecycle-focused by default; broad coordination-event history is deferred so the command does not become a noisy Sprint feed. Archive force-release cleanup entries are included as lifecycle-adjacent audit effects tied to archive, without including the full claim event stream. History output is capped by default, for example latest 50 lifecycle entries, with an explicit `--limit` bounded by a sane maximum.
+
+There is no separate `/teamem-sprint use` or `/teamem-sprint off` in v1 because current Sprint is membership state. MCP tools mirror the command verbs: `teamem.create_sprint`, `teamem.join_sprint`, `teamem.leave_sprint`, `teamem.list_sprints`, `teamem.get_sprint_history`, `teamem.archive_sprint`, `teamem.reopen_sprint`, and `teamem.get_current_sprint`.
+
+### Space mode
+
+The Teamem operating mode for a member not currently joined to a Sprint. Space mode preserves the historical Space-wide behavior for monitoring and claim coordination so existing Spaces remain compatible without requiring Sprints.
 
 ### Member
 
@@ -102,6 +218,8 @@ The member who created the space. Has additional permissions: kick, disband, rot
 ### Coordination handshake (hybrid protocol)
 
 The protocol Teamem runs at the moment of a scope conflict, after `gate-claim.sh` would have denied the edit. Shape depends on the resolved coordination preference:
+
+In Sprint mode, "scope conflict" means a claim collision within the same Sprint. Cross-Sprint overlaps are not blocking conflicts in v1, because different Sprints pursue different goals and should not serialize each other's work by default. In Space mode, the historical Space-wide conflict behavior remains.
 
 | Mode | Protocol | Latency profile |
 | - | - | - |
@@ -144,10 +262,10 @@ A server-side record produced when a latter hits a conflict and falls through to
 
 ### Queue visibility
 
-`pending_edits` rows are **visible to every member of the space**, not just the blocked principal. Specifically:
+`pending_edits` rows are visible to every member in the same coordination context, not just the blocked principal. Space remains the trust boundary, so explicit recovery/history views may inspect across contexts, but ordinary status and briefing stay context-scoped. Specifically:
 
 - Incumbents see who is queued behind their claim. Surfaces in the briefing's `active_claims` block as `claim_id … blocking [bob waiting on src/auth/, carol waiting on src/auth/utils.ts]`. This gives the incumbent a social signal to release sooner if they've reached a natural stopping point.
-- Other teammates see the queue in `/teamem-briefing` so they understand the work-ordering picture.
+- Other teammates in the same coordination context see the queue in `/teamem-briefing` so they understand the work-ordering picture.
 - Only the blocked principal can call `/teamem-clear-queue` to cancel their own entry. Other teammates cannot dequeue someone else.
 
 ### Permission request (Mode 6.B mechanics, legacy/internal)
@@ -237,7 +355,7 @@ Each space can disable any subset of the four conditions (`team.dispute_terminat
 
 **Roadmap auto-negotiator tool surface:** if the postponed `teamem-negotiator-auto` subagent returns, its only state-mutation tool should be `teamem.dispute_post_move(thread_id, move_type, payload)`. The server validates each move against the dispute state machine: cannot accept a non-existent proposal, cannot post twice in a row from the same side, cannot post after termination. Illegal moves are `409 invalid_move`. The auto-negotiator should have NO access to `claim_scope`, `release_scope`, `publish_event`, or `record_decision` — its only world is the dispute thread.
 
-**Visibility:** dispute threads are visible to all space members in `/teamem-status` and `/teamem-briefing`. Helps the team identify recurring conflict patterns ("alice and bob keep disputing src/auth/* — should we factor out the shared module?").
+**Visibility:** dispute threads are visible in `/teamem-status` and `/teamem-briefing` for the current coordination context. Explicit history/recovery views may inspect across contexts because Space remains the trust boundary. This helps identify recurring conflict patterns without turning ordinary Sprint briefing into an all-Space feed.
 
 ### Identity model
 
@@ -275,17 +393,19 @@ Long-lived JWT is acceptable because:
 
 ### Architecture decisions (formal records)
 
-The ADRs in `docs/adr/` capture the design choices that this glossary references:
+The ADRs in `.docs/adr/` capture the design choices that this glossary references:
 
-- [ADR-0001](docs/adr/0001-per-teammate-coord-prefs-incumbent-wins.md) — Per-teammate coordination preferences with incumbent-wins resolution.
-- [ADR-0002](docs/adr/0002-mode-6c-structured-moves.md) — Mode 6.C dispute uses a structured move vocabulary.
-- [ADR-0003](docs/adr/0003-plugin-bundle-not-npm.md) — Ship the plugin runtime as a checked-in `bun build` bundle, not an npm package.
-- [ADR-0004](docs/adr/0004-disband-7d-soft-tombstone.md) — Disband is a 7-day soft tombstone with restore + GC.
-- [ADR-0005](docs/adr/0005-detect-conflicts-removed-v1.md) — Remove `teamem.detect_conflicts` from the v1 public surface.
-- [ADR-0006](docs/adr/0006-claude-only-v1.md) — v1 ships Claude Code only.
-- [ADR-0007](docs/adr/0007-two-pr-split.md) — v1 lands as two PRs (Foundation, then Coordination).
-- [ADR-0008](docs/adr/0008-claim-lifecycle-git-driven.md) — Claim lifecycle is driven by git evidence and explicit release semantics.
-- [ADR-0009](docs/adr/0009-npm-bootstrapper-github-marketplace.md) — npm ships a bootstrapper for the GitHub-hosted Claude Code marketplace, not the plugin runtime.
+- [ADR-0001](.docs/adr/0001-per-teammate-coord-prefs-incumbent-wins.md) — Per-teammate coordination preferences with incumbent-wins resolution.
+- [ADR-0002](.docs/adr/0002-mode-6c-structured-moves.md) — Mode 6.C dispute uses a structured move vocabulary.
+- [ADR-0003](.docs/adr/0003-plugin-bundle-not-npm.md) — Ship the plugin runtime as a checked-in `bun build` bundle, not an npm package.
+- [ADR-0004](.docs/adr/0004-disband-7d-soft-tombstone.md) — Disband is a 7-day soft tombstone with restore + GC.
+- [ADR-0005](.docs/adr/0005-detect-conflicts-removed-v1.md) — Remove `teamem.detect_conflicts` from the v1 public surface.
+- [ADR-0006](.docs/adr/0006-claude-only-v1.md) — v1 ships Claude Code only.
+- [ADR-0007](.docs/adr/0007-two-pr-split.md) — v1 lands as two PRs (Foundation, then Coordination).
+- [ADR-0008](.docs/adr/0008-claim-lifecycle-git-driven.md) — Claim lifecycle is driven by git evidence and explicit release semantics.
+- [ADR-0009](.docs/adr/0009-npm-bootstrapper-github-marketplace.md) — npm ships a bootstrapper for the GitHub-hosted Claude Code marketplace, not the plugin runtime.
+- [ADR-0010](.docs/adr/0010-teamem-aware-claude-launcher.md) — Replace `teamem cc` with an opt-in Teamem-aware Claude launcher.
+- [ADR-0011](.docs/adr/0011-sprint-context-boundary.md) — Add Sprint as an experimental context boundary for monitoring and claim coordination.
 
 ### Open ADR candidates (capture later)
 

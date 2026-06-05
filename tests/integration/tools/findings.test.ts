@@ -450,6 +450,9 @@ describe('share_finding — briefing surfaces by severity then recency', () => {
       actor: 'alice',
       delegation: 'alice->alice',
       event_type: 'finding_shared',
+      sprint_id: null,
+      delivery_scope: 'direct',
+      recipient_principals: ['bob'],
       scope: {},
       payload: {
         finding_id: shared.data.finding_id,

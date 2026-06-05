@@ -71,11 +71,16 @@ export function claimScope(
   // events-table UNIQUE on idempotency_key is defense-in-depth: any
   // duplicate self-claim that bypasses the gate still collides here.
   const normalizedPaths = ctx.normalizeScopePaths(input.scope.paths);
-  const idempotencyKey = ctx.deterministicClaimIdempotencyKey(
+  const currentSprintId = ctx.readCurrentSprintId(
+    ctx.db,
+    input.space_id,
+    input.principal
+  );
+  const idempotencyKey = `${ctx.deterministicClaimIdempotencyKey(
     input.space_id,
     input.principal,
     normalizedPaths
-  );
+  )}:context:${currentSprintId ?? 'space'}`;
   const nowIso = new Date().toISOString();
   const event: TeamemEvent = {
     schema_version: '1.0',
@@ -87,6 +92,9 @@ export function claimScope(
     actor: input.actor,
     delegation: input.delegation,
     event_type: 'scope_claimed',
+    ...ctx.routingMetadataForPrincipal(ctx.db, input, {
+      delivery: 'broadcast'
+    }),
     scope: input.scope,
     payload: {
       claim_id: claimId,
@@ -110,6 +118,7 @@ export function claimScope(
         const rows = ctx.selectActiveClaimsForOverlap(
           ctx.db,
           input.space_id,
+          currentSprintId,
           input.repo_id,
           input.branch
         );
@@ -331,10 +340,12 @@ export function claimScope(
             if (storedClaimId) {
               // Probe the projection: is the prior claim still active?
               // Terminal evidence is `released_at IS NOT NULL` OR an
-              // expires_at in the past. PRD §150: on_commit/manual_only
-              // claims have NULL expires_at, so we cannot rely on the
-              // stored event's expires_at to decide terminality — we
-              // MUST consult the projection's released_at.
+              // expires_at in the past. If the projection row is missing,
+              // the stored claim is invisible to list_claims and must be
+              // treated as stale so recovery can acquire a fresh visible
+              // claim. PRD §150: on_commit/manual_only claims have NULL
+              // expires_at, so terminality must come from the projection
+              // whenever the projection exists.
               const priorClaimRow = ctx.db
                 .query(
                   'SELECT released_at, expires_at FROM claims WHERE claim_id = ?1'
@@ -348,8 +359,7 @@ export function claimScope(
                 ? priorClaimRow.released_at !== null ||
                   (priorClaimRow.expires_at !== null &&
                     new Date(priorClaimRow.expires_at).getTime() < nowMs)
-                : storedExpiresAt !== null &&
-                  new Date(storedExpiresAt).getTime() < nowMs;
+                : true;
               if (priorIsTerminal) {
                 // Prior claim is released or expired — allow fresh
                 // acquisition by salting the idempotency_key with the
@@ -435,26 +445,12 @@ export function releaseScope(
     input.principal,
     input.claim_id
   );
-  const event: TeamemEvent = {
-    schema_version: '1.0',
-    event_id: ctx.newEventId(),
-    idempotency_key: idempotencyKey,
-    space_id: input.space_id,
-    timestamp: new Date().toISOString(),
-    principal: input.principal,
-    actor: input.actor,
-    delegation: input.delegation,
-    event_type: 'scope_released',
-    scope: {},
-    payload: { claim_id: input.claim_id }
-  };
-
   // CRITICAL: keep .immediate() — see plan §4 / R-NEW-2.
   return ctx.db
     .transaction(() => {
       const row = ctx.db
         .query(
-          `SELECT released_at, scope_json
+          `SELECT released_at, scope_json, sprint_id
              FROM claims
             WHERE claim_id = ?1
               AND space_id = ?2
@@ -463,6 +459,7 @@ export function releaseScope(
         .get(input.claim_id, input.space_id, input.principal) as {
         released_at: string | null;
         scope_json: string;
+        sprint_id: string | null;
       } | null;
       if (!row) {
         return ctx.toolError(
@@ -474,70 +471,152 @@ export function releaseScope(
         // Idempotent no-op — already released.
         return { ok: true, data: { released: true } };
       }
+      const event: TeamemEvent = {
+        schema_version: '1.0',
+        event_id: ctx.newEventId(),
+        idempotency_key: idempotencyKey,
+        space_id: input.space_id,
+        timestamp: new Date().toISOString(),
+        principal: input.principal,
+        actor: input.actor,
+        delegation: input.delegation,
+        event_type: 'scope_released',
+        sprint_id: row.sprint_id,
+        delivery_scope: row.sprint_id === null ? 'space' : 'sprint',
+        scope: {},
+        payload: { claim_id: input.claim_id }
+      };
       ctx.store.appendInTx(event);
       ctx.applyProjectionUpdate(ctx.db, event);
 
-      // Issue #10 — Mode 6.A resolve-on-release. Scan pending_edits
-      // for rows whose blocking_claim_id matches OR whose paths
-      // overlap the released scope; emit conflict_resolved per row
-      // (directed at blocked_principal) so status/session-sync/channel
-      // surfaces can tell the blocked teammate the scope is free.
-      let releasedPaths: string[] = [];
-      try {
-        const parsed = JSON.parse(row.scope_json) as TeamemEvent['scope'];
-        releasedPaths = Array.isArray(parsed.paths) ? parsed.paths : [];
-      } catch {
-        // malformed scope_json — treat as path-less; only direct
-        // blocking_claim_id matches will resolve.
-      }
-      try {
-        const resolvable = ctx.findResolvableByRelease(
-          ctx.db,
-          input.space_id,
-          input.claim_id,
-          releasedPaths
-        );
-        for (const pending of resolvable) {
-          const resolvedAt = new Date().toISOString();
-          const resolvedEvent: TeamemEvent = {
-            schema_version: '1.0',
-            event_id: ctx.newEventId(),
-            idempotency_key: `idem-resolve-${pending.pending_id}`,
-            space_id: input.space_id,
-            timestamp: resolvedAt,
-            principal: input.principal,
-            actor: input.actor,
-            delegation: input.delegation,
-            event_type: 'conflict_resolved',
-            scope: { paths: pending.paths },
-            payload: {
-              pending_id: pending.pending_id,
-              blocked_principal: pending.blocked_principal,
-              blocking_claim_id: input.claim_id,
-              previously_blocked_paths: pending.paths,
-              now_free: true
-            }
-          };
-          try {
-            ctx.store.appendInTx(resolvedEvent);
-            ctx.applyProjectionUpdate(ctx.db, resolvedEvent);
-          } catch {
-            // Idempotency collision (rare) — projection update inside
-            // ctx.applyProjectionUpdate already marked the row resolved if
-            // the duplicate was a re-run, so swallow and keep going.
-          }
-        }
-      } catch (err) {
-        const e = err as { message?: string };
-        if (!e?.message?.includes('no such table: pending_edits')) {
-          throw err;
-        }
-        // Migration 006 not applied — pending_edits table absent in
-        // legacy fixtures. Skip resolve-on-release silently.
-      }
+      resolvePendingEditsForReleasedClaim(ctx, {
+        space_id: input.space_id,
+        principal: input.principal,
+        actor: input.actor,
+        delegation: input.delegation,
+        claim_id: input.claim_id,
+        sprint_id: row.sprint_id,
+        released_paths: parseReleasedScopePaths(row.scope_json)
+      });
       return { ok: true, data: { released: true } };
     })
     .immediate() as ToolResponse<{ released: boolean }>;
+}
+
+function parseReleasedScopePaths(scopeJson: string): string[] {
+  try {
+    const parsed = JSON.parse(scopeJson) as TeamemEvent['scope'];
+    return Array.isArray(parsed.paths) ? parsed.paths : [];
+  } catch {
+    // Malformed legacy scope_json remains path-less; direct claim_id matches
+    // can still resolve pending edits.
+    return [];
+  }
+}
+
+function resolvePendingEditsForReleasedClaim(
+  ctx: ToolContext,
+  input: {
+    space_id: string;
+    principal: string;
+    actor: string;
+    delegation: string;
+    claim_id: string;
+    sprint_id: string | null;
+    released_paths: string[];
+  }
+): void {
+  // Issue #10 — Mode 6.A resolve-on-release. Scan pending_edits for rows
+  // whose blocking_claim_id matches OR whose paths overlap the released
+  // scope; emit conflict_resolved per row in the same claim context.
+  try {
+    const resolvable = ctx.findResolvableByRelease(
+      ctx.db,
+      input.space_id,
+      input.claim_id,
+      input.released_paths,
+      input.sprint_id
+    );
+    for (const pending of resolvable) {
+      const resolvedAt = new Date().toISOString();
+      const resolvedEvent: TeamemEvent = {
+        schema_version: '1.0',
+        event_id: ctx.newEventId(),
+        idempotency_key: `idem-resolve-${pending.pending_id}`,
+        space_id: input.space_id,
+        timestamp: resolvedAt,
+        principal: input.principal,
+        actor: input.actor,
+        delegation: input.delegation,
+        event_type: 'conflict_resolved',
+        sprint_id: pending.sprint_id,
+        delivery_scope: 'direct',
+        recipient_principals: [pending.blocked_principal],
+        scope: { paths: pending.paths },
+        payload: {
+          pending_id: pending.pending_id,
+          blocked_principal: pending.blocked_principal,
+          blocking_claim_id: input.claim_id,
+          previously_blocked_paths: pending.paths,
+          now_free: true
+        }
+      };
+      try {
+        ctx.store.appendInTx(resolvedEvent);
+        ctx.applyProjectionUpdate(ctx.db, resolvedEvent);
+      } catch (err) {
+        if (
+          !isKnownPendingResolutionIdempotency(
+            ctx,
+            err,
+            resolvedEvent.idempotency_key,
+            pending.pending_id
+          )
+        ) {
+          throw err;
+        }
+      }
+    }
+  } catch (err) {
+    const e = err as { message?: string };
+    if (!e?.message?.includes('no such table: pending_edits')) {
+      throw err;
+    }
+    // Migration 006 not applied — pending_edits table absent in legacy
+    // fixtures. Skip resolve-on-release silently.
+  }
+}
+
+function isKnownPendingResolutionIdempotency(
+  ctx: ToolContext,
+  err: unknown,
+  idempotencyKey: string,
+  pendingId: string
+): boolean {
+  if (!(err instanceof Error)) return false;
+  const message = err.message;
+  const isIdempotencyError =
+    message.includes('Idempotency conflict') ||
+    message.includes('UNIQUE') ||
+    message.includes('SQLITE_CONSTRAINT');
+  if (!isIdempotencyError) return false;
+
+  const row = ctx.db
+    .prepare('SELECT event_id FROM idempotency_keys WHERE idempotency_key = ?1')
+    .get(idempotencyKey) as { event_id: string } | null;
+  if (!row) return false;
+  const eventRow = ctx.db
+    .prepare('SELECT payload_json FROM events WHERE event_id = ?1')
+    .get(row.event_id) as { payload_json: string } | null;
+  if (!eventRow) return false;
+  try {
+    const payload = JSON.parse(eventRow.payload_json) as {
+      pending_id?: unknown;
+    };
+    return payload.pending_id === pendingId;
+  } catch {
+    return false;
+  }
 }
 
 export function releaseScopeViaGit(
@@ -572,8 +651,28 @@ export function releaseScopeViaGit(
   let released = 0;
   let kept = 0;
 
+  type GitReleaseCandidate = {
+    claim: {
+      claim_id: string;
+      status: string;
+      auto_release_mode: string;
+      head_sha_at_acquire: string | null;
+      branch: string;
+      path: string;
+      scope_json: string;
+      sprint_id: string | null;
+    };
+    evidence_targets: Array<{
+      filePath: string;
+      commitStatus: 'M' | 'A' | 'D' | 'R';
+      porcelainDirty: boolean;
+    }>;
+  };
+
   return ctx.db
     .transaction(() => {
+      const candidatesByClaimId = new Map<string, GitReleaseCandidate>();
+
       for (const entry of input.paths_with_status) {
         // For rename: release both old_path (status R) and new path (status R)
         const pathEntries: Array<{
@@ -590,9 +689,9 @@ export function releaseScopeViaGit(
           // filtering on `path = ?` would miss multi-path claims when the
           // committed file is paths[1+]. json_each(scope_json) walks the
           // full scope.paths array and matches any entry.
-          const claimRow = ctx.db
+          const claimRows = ctx.db
             .query(
-              `SELECT c.claim_id, c.status, c.auto_release_mode, c.head_sha_at_acquire, c.branch, c.path
+              `SELECT c.claim_id, c.status, c.auto_release_mode, c.head_sha_at_acquire, c.branch, c.path, c.scope_json, c.sprint_id
                FROM claims c
               WHERE c.space_id = ?1
                 AND c.principal = ?2
@@ -605,50 +704,68 @@ export function releaseScopeViaGit(
                   SELECT 1 FROM json_each(json_extract(c.scope_json, '$.paths')) je
                    WHERE je.value = ?5
                 )
-              LIMIT 1`
+              ORDER BY c.created_at ASC, c.claim_id ASC`
             )
-            .get(
+            .all(
               input.space_id,
               input.principal,
               input.repo_id,
               input.branch,
               filePath
-            ) as {
+            ) as Array<{
             claim_id: string;
             status: string;
             auto_release_mode: string;
             head_sha_at_acquire: string | null;
             branch: string;
             path: string;
-          } | null;
+            scope_json: string;
+            sprint_id: string | null;
+          }>;
 
-          if (!claimRow) continue;
+          for (const claimRow of claimRows) {
+            const candidate = candidatesByClaimId.get(claimRow.claim_id) ?? {
+              claim: claimRow,
+              evidence_targets: []
+            };
+            candidate.evidence_targets.push({
+              filePath,
+              commitStatus,
+              porcelainDirty: input.porcelain_dirty_paths.includes(filePath)
+            });
+            candidatesByClaimId.set(claimRow.claim_id, candidate);
+          }
+        }
+      }
 
-          const porcelainDirty = input.porcelain_dirty_paths.includes(filePath);
+      for (const candidate of candidatesByClaimId.values()) {
+        const { claim } = candidate;
+        let releaseTarget: { filePath: string } | null = null;
+
+        for (const target of candidate.evidence_targets) {
           const evidence = ctx.evaluateRelease(
             {
-              head_sha_at_acquire: claimRow.head_sha_at_acquire,
-              branch: claimRow.branch,
-              // For multi-path claims, the committed file (`filePath`) is
-              // the relevant evidence target — claimRow.path only stores
-              // paths[0]. Field is structural; not used in evidence logic.
-              path: filePath,
-              auto_release_mode: claimRow.auto_release_mode as
+              head_sha_at_acquire: claim.head_sha_at_acquire,
+              branch: claim.branch,
+              // For multi-path claims, the committed file is the relevant
+              // evidence target; claim.path only stores paths[0].
+              path: target.filePath,
+              auto_release_mode: claim.auto_release_mode as
                 | 'on_commit'
                 | 'manual_only'
                 | 'ttl'
             },
             input.current_head_sha,
-            porcelainDirty,
+            target.porcelainDirty,
             input.branch,
-            commitStatus
+            target.commitStatus
           );
 
           const result = ctx.claimTransition(
             {
-              claim_id: claimRow.claim_id,
-              status: claimRow.status,
-              auto_release_mode: claimRow.auto_release_mode
+              claim_id: claim.claim_id,
+              status: claim.status,
+              auto_release_mode: claim.auto_release_mode
             },
             { kind: 'release_via_git', evidence }
           );
@@ -658,36 +775,55 @@ export function releaseScopeViaGit(
             'nextStatus' in result &&
             result.nextStatus === 'released'
           ) {
-            const releaseEvent: TeamemEvent = {
-              schema_version: '1.0',
-              event_id: ctx.newEventId(),
-              idempotency_key: `git-release-${claimRow.claim_id}-${input.current_head_sha}`,
-              space_id: input.space_id,
-              timestamp: new Date().toISOString(),
-              principal: input.principal,
-              actor: input.actor,
-              delegation: input.delegation,
-              event_type: 'scope_released_via_git',
-              scope: { paths: [filePath] },
-              payload: {
-                claim_id: claimRow.claim_id,
-                repo_id: input.repo_id,
-                branch: input.branch,
-                path: filePath,
-                head_sha: input.current_head_sha
-              }
+            releaseTarget = {
+              filePath: target.filePath
             };
-            ctx.store.appendInTx(releaseEvent);
-            ctx.db
-              .prepare(
-                `UPDATE claims SET status = 'released', released_at = ?1 WHERE claim_id = ?2`
-              )
-              .run(releaseEvent.timestamp, claimRow.claim_id);
-            released++;
-          } else {
-            kept++;
+            break;
           }
         }
+
+        if (!releaseTarget) {
+          kept++;
+          continue;
+        }
+
+        const releaseEvent: TeamemEvent = {
+          schema_version: '1.0',
+          event_id: ctx.newEventId(),
+          idempotency_key: `git-release-${claim.claim_id}-${input.current_head_sha}`,
+          space_id: input.space_id,
+          timestamp: new Date().toISOString(),
+          principal: input.principal,
+          actor: input.actor,
+          delegation: input.delegation,
+          event_type: 'scope_released_via_git',
+          sprint_id: claim.sprint_id,
+          delivery_scope: claim.sprint_id === null ? 'space' : 'sprint',
+          scope: { paths: [releaseTarget.filePath] },
+          payload: {
+            claim_id: claim.claim_id,
+            repo_id: input.repo_id,
+            branch: input.branch,
+            path: releaseTarget.filePath,
+            head_sha: input.current_head_sha
+          }
+        };
+        ctx.store.appendInTx(releaseEvent);
+        ctx.db
+          .prepare(
+            `UPDATE claims SET status = 'released', released_at = ?1 WHERE claim_id = ?2`
+          )
+          .run(releaseEvent.timestamp, claim.claim_id);
+        resolvePendingEditsForReleasedClaim(ctx, {
+          space_id: input.space_id,
+          principal: input.principal,
+          actor: input.actor,
+          delegation: input.delegation,
+          claim_id: claim.claim_id,
+          sprint_id: claim.sprint_id,
+          released_paths: parseReleasedScopePaths(claim.scope_json)
+        });
+        released++;
       }
       return { ok: true, data: { released, kept } };
     })
@@ -711,6 +847,8 @@ export function forceRelease(
   released: boolean;
   claim_id: string;
   original_holder: string;
+  sprint_id: string | null;
+  context: 'space' | 'sprint';
   idempotent?: boolean;
 }> {
   const byClaimId = typeof input.claim_id === 'string' && input.claim_id !== '';
@@ -733,6 +871,11 @@ export function forceRelease(
   const requestedBranch = input.branch ?? '';
   const requestedPath = input.path ?? '';
   const requestedTargetPrincipal = input.target_principal ?? '';
+  const currentSprintId = ctx.readCurrentSprintId(
+    ctx.db,
+    input.space_id,
+    input.principal
+  );
 
   // codex-review fix (task #2): wrap in `.immediate()` to acquire
   // SQLite's RESERVED lock at BEGIN. Without it, two concurrent
@@ -750,7 +893,7 @@ export function forceRelease(
         byClaimId
           ? ctx.db
               .prepare(
-                `SELECT claim_id, principal, status, released_at, scope_json, repo_id, branch, path
+                `SELECT claim_id, principal, status, released_at, scope_json, repo_id, branch, path, sprint_id
                    FROM claims
                   WHERE space_id = ?1
                     AND claim_id = ?2
@@ -763,12 +906,13 @@ export function forceRelease(
               .get(input.space_id, claimId)
           : ctx.db
               .prepare(
-                `SELECT claim_id, principal, status, released_at, scope_json, repo_id, branch, path
+                `SELECT claim_id, principal, status, released_at, scope_json, repo_id, branch, path, sprint_id
                    FROM claims
                   WHERE space_id = ?1
                     AND repo_id = ?2
                     AND branch = ?3
                     AND principal = ?5
+                    AND ${currentSprintId === null ? 'sprint_id IS NULL' : 'sprint_id = ?6'}
                     AND status IN ('active', 'paused')
                     AND (path = ?4 OR EXISTS (
                       SELECT 1
@@ -781,11 +925,22 @@ export function forceRelease(
                   LIMIT 1`
               )
               .get(
-                input.space_id,
-                requestedRepoId,
-                requestedBranch,
-                requestedPath,
-                requestedTargetPrincipal
+                ...(currentSprintId === null
+                  ? [
+                      input.space_id,
+                      requestedRepoId,
+                      requestedBranch,
+                      requestedPath,
+                      requestedTargetPrincipal
+                    ]
+                  : [
+                      input.space_id,
+                      requestedRepoId,
+                      requestedBranch,
+                      requestedPath,
+                      requestedTargetPrincipal,
+                      currentSprintId
+                    ])
               )
       ) as {
         claim_id: string;
@@ -796,6 +951,7 @@ export function forceRelease(
         repo_id: string;
         branch: string;
         path: string;
+        sprint_id: string | null;
       } | null;
 
       if (!claim) {
@@ -807,7 +963,7 @@ export function forceRelease(
           byClaimId
             ? ctx.db
                 .prepare(
-                  `SELECT claim_id, principal FROM claims
+                  `SELECT claim_id, principal, sprint_id FROM claims
                     WHERE space_id = ?1
                       AND claim_id = ?2
                       AND status = 'released'
@@ -818,11 +974,12 @@ export function forceRelease(
                 .get(input.space_id, claimId)
             : ctx.db
                 .prepare(
-                  `SELECT claim_id, principal FROM claims
+                  `SELECT claim_id, principal, sprint_id FROM claims
                     WHERE space_id = ?1
                       AND repo_id = ?2
                       AND branch = ?3
                       AND principal = ?5
+                      AND ${currentSprintId === null ? 'sprint_id IS NULL' : 'sprint_id = ?6'}
                       AND status = 'released'
                       AND (path = ?4 OR EXISTS (
                         SELECT 1
@@ -834,13 +991,28 @@ export function forceRelease(
                     LIMIT 1`
                 )
                 .get(
-                  input.space_id,
-                  requestedRepoId,
-                  requestedBranch,
-                  requestedPath,
-                  requestedTargetPrincipal
+                  ...(currentSprintId === null
+                    ? [
+                        input.space_id,
+                        requestedRepoId,
+                        requestedBranch,
+                        requestedPath,
+                        requestedTargetPrincipal
+                      ]
+                    : [
+                        input.space_id,
+                        requestedRepoId,
+                        requestedBranch,
+                        requestedPath,
+                        requestedTargetPrincipal,
+                        currentSprintId
+                      ])
                 )
-        ) as { claim_id: string; principal: string } | null;
+        ) as {
+          claim_id: string;
+          principal: string;
+          sprint_id: string | null;
+        } | null;
 
         if (recentlyReleased) {
           return {
@@ -849,6 +1021,8 @@ export function forceRelease(
               released: true,
               claim_id: recentlyReleased.claim_id,
               original_holder: recentlyReleased.principal,
+              sprint_id: recentlyReleased.sprint_id,
+              context: recentlyReleased.sprint_id === null ? 'space' : 'sprint',
               idempotent: true
             }
           };
@@ -896,6 +1070,9 @@ export function forceRelease(
         actor: input.actor,
         delegation: input.delegation,
         event_type: 'claim_force_released',
+        sprint_id: claim.sprint_id,
+        delivery_scope: 'direct',
+        recipient_principals: [claim.principal],
         scope: releasedPath ? { paths: [releasedPath] } : {},
         payload: {
           claim_id: claim.claim_id,
@@ -945,7 +1122,9 @@ export function forceRelease(
         data: {
           released: true,
           claim_id: claim.claim_id,
-          original_holder: claim.principal
+          original_holder: claim.principal,
+          sprint_id: claim.sprint_id,
+          context: claim.sprint_id === null ? 'space' : 'sprint'
         }
       };
     })
@@ -953,6 +1132,8 @@ export function forceRelease(
     released: boolean;
     claim_id: string;
     original_holder: string;
+    sprint_id: string | null;
+    context: 'space' | 'sprint';
     idempotent?: boolean;
   }>;
 }
@@ -1041,6 +1222,9 @@ export function pauseClaimsForBranch(
           actor: input.actor,
           delegation: input.delegation,
           event_type: 'claim_paused',
+          ...ctx.routingMetadataForPrincipal(ctx.db, input, {
+            delivery: 'broadcast'
+          }),
           scope: { paths: [claim.path] },
           payload: {
             claim_id: claim.claim_id,
@@ -1118,6 +1302,9 @@ export function resumeClaimsForBranch(
           actor: input.actor,
           delegation: input.delegation,
           event_type: 'claim_resumed',
+          ...ctx.routingMetadataForPrincipal(ctx.db, input, {
+            delivery: 'broadcast'
+          }),
           scope: { paths: [claim.path] },
           payload: {
             claim_id: claim.claim_id,
@@ -1223,6 +1410,7 @@ export function listClaims(
     space_id: string;
     principal: string;
     scope: 'self' | 'space';
+    view?: 'current' | 'space' | 'outside_current_context';
   }
 ): ToolResponse<{
   claims: Array<{
@@ -1238,6 +1426,8 @@ export function listClaims(
     created_at: string;
     last_edit_at: string | null;
     expires_at: string | null;
+    sprint_id: string | null;
+    context: 'space' | 'sprint';
   }>;
 }> {
   const validScopes = ['self', 'space'];
@@ -1248,32 +1438,69 @@ export function listClaims(
       {}
     );
   }
+  const view = input.view ?? 'current';
+  const validViews = ['current', 'space', 'outside_current_context'];
+  if (!validViews.includes(view)) {
+    return ctx.toolError(
+      'INVALID_PAYLOAD',
+      'view must be "current", "space", or "outside_current_context"',
+      {}
+    );
+  }
+  const currentSprintId = ctx.readCurrentSprintId(
+    ctx.db,
+    input.space_id,
+    input.principal
+  );
+  if (view === 'outside_current_context' && currentSprintId === null) {
+    return {
+      ok: true,
+      data: { claims: [] }
+    };
+  }
+  const predicates: string[] = ['space_id = ?'];
+  const params: string[] = [input.space_id];
+  if (input.scope === 'self') {
+    predicates.push('principal = ?');
+    params.push(input.principal);
+  }
+  if (view === 'space') {
+    predicates.push('sprint_id IS NULL');
+  } else if (view === 'outside_current_context') {
+    predicates.push('principal = ?');
+    predicates.push('(sprint_id IS NULL OR sprint_id != ?)');
+    params.push(input.principal, currentSprintId ?? '');
+  } else if (currentSprintId === null) {
+    predicates.push('sprint_id IS NULL');
+  } else {
+    predicates.push('sprint_id = ?');
+    params.push(currentSprintId);
+  }
 
   const rows = (
     input.scope === 'self'
       ? ctx.db
           .prepare(
             `SELECT claim_id, principal, repo_id, branch, path, auto_release_mode,
-                status, paused_at, paused_reason, created_at, last_edit_at, expires_at
+                status, paused_at, paused_reason, created_at, last_edit_at, expires_at, sprint_id
            FROM claims
-          WHERE space_id = ?1
-            AND principal = ?2
+          WHERE ${predicates.join(' AND ')}
             AND status IN ('active', 'paused')
             AND tombstoned_at IS NULL
           ORDER BY created_at ASC`
           )
-          .all(input.space_id, input.principal)
+          .all(...params)
       : ctx.db
           .prepare(
             `SELECT claim_id, principal, repo_id, branch, path, auto_release_mode,
-                status, paused_at, paused_reason, created_at, last_edit_at, expires_at
+                status, paused_at, paused_reason, created_at, last_edit_at, expires_at, sprint_id
            FROM claims
-          WHERE space_id = ?1
+          WHERE ${predicates.join(' AND ')}
             AND status IN ('active', 'paused')
             AND tombstoned_at IS NULL
           ORDER BY principal ASC, created_at ASC`
           )
-          .all(input.space_id)
+          .all(...params)
   ) as Array<{
     claim_id: string;
     principal: string;
@@ -1287,6 +1514,7 @@ export function listClaims(
     created_at: string;
     last_edit_at: string | null;
     expires_at: string | null;
+    sprint_id: string | null;
   }>;
 
   return {
@@ -1304,7 +1532,9 @@ export function listClaims(
         paused_reason: r.paused_reason ?? null,
         created_at: r.created_at,
         last_edit_at: r.last_edit_at ?? null,
-        expires_at: r.expires_at ?? null
+        expires_at: r.expires_at ?? null,
+        sprint_id: r.sprint_id ?? null,
+        context: r.sprint_id === null ? 'space' : 'sprint'
       }))
     }
   };

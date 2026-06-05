@@ -1,11 +1,11 @@
 ---
 description: Show your Teamem identity for the resolved space — principal, space_id, and label. Useful for diagnosing multi-principal / multi-space test setups.
-allowed-tools: mcp__teamem__whoami
+allowed-tools: mcp__teamem__teamem_whoami, mcp__plugin_teamem_teamem__teamem_whoami
 ---
 
 Steps:
 
-1. Call `mcp__teamem__whoami` with an empty input object `{}`. Do NOT pass `space_id` or `principal` — the bridge resolves them from the verified JWT.
+1. Call `mcp__teamem__teamem_whoami` with an empty input object `{}`. Do NOT pass `space_id` or `principal` — the bridge resolves them from the verified JWT.
 
 2. On success (`ok: true`), print exactly three lines:
    ```

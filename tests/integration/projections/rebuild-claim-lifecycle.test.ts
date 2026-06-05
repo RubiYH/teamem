@@ -44,6 +44,8 @@ function claimEvent(opts: {
     actor: 'alice',
     delegation: 'alice->alice',
     event_type: 'scope_claimed',
+    sprint_id: null,
+    delivery_scope: 'space',
     scope: { paths: [opts.path] },
     payload: {
       claim_id: opts.claim_id,
@@ -98,6 +100,8 @@ describe('rebuildProjections — claim lifecycle replay', () => {
       actor: 'post-checkout',
       delegation: 'alice->post-checkout',
       event_type: 'claim_paused',
+      sprint_id: null,
+      delivery_scope: 'space',
       scope: { paths: ['src/A.ts'] },
       payload: {
         claim_id: 'claim-paused-only',
@@ -118,6 +122,8 @@ describe('rebuildProjections — claim lifecycle replay', () => {
       actor: 'post-checkout',
       delegation: 'alice->post-checkout',
       event_type: 'claim_paused',
+      sprint_id: null,
+      delivery_scope: 'space',
       scope: { paths: ['src/B.ts'] },
       payload: {
         claim_id: 'claim-resumed-after-pause',
@@ -139,6 +145,8 @@ describe('rebuildProjections — claim lifecycle replay', () => {
       actor: 'post-checkout',
       delegation: 'alice->post-checkout',
       event_type: 'claim_resumed',
+      sprint_id: null,
+      delivery_scope: 'space',
       scope: { paths: ['src/B.ts'] },
       payload: {
         claim_id: 'claim-resumed-after-pause',
@@ -159,6 +167,8 @@ describe('rebuildProjections — claim lifecycle replay', () => {
       actor: 'bob',
       delegation: 'bob->bob',
       event_type: 'claim_force_released',
+      sprint_id: null,
+      delivery_scope: 'space',
       scope: { paths: ['src/C.ts'] },
       payload: {
         claim_id: 'claim-force-released',
@@ -183,6 +193,8 @@ describe('rebuildProjections — claim lifecycle replay', () => {
       actor: 'post-commit',
       delegation: 'alice->post-commit',
       event_type: 'scope_released_via_git',
+      sprint_id: null,
+      delivery_scope: 'space',
       scope: { paths: ['src/D.ts'] },
       payload: {
         claim_id: 'claim-released-via-git',
@@ -205,6 +217,8 @@ describe('rebuildProjections — claim lifecycle replay', () => {
       actor: 'ttl-sweeper',
       delegation: 'alice->ttl-sweeper',
       event_type: 'claim_expired',
+      sprint_id: null,
+      delivery_scope: 'space',
       scope: { paths: ['src/E.ts'] },
       payload: {
         claim_id: 'claim-expired-by-ttl',

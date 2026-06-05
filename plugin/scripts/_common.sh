@@ -7,8 +7,10 @@ TEAMEM_DEFAULT_SPACE="${CLAUDE_PLUGIN_OPTION_DEFAULT_SPACE:-}"
 
 # Claude normally sets CLAUDE_PLUGIN_DATA to this plugin's data directory, but
 # sessions with multiple local plugins can expose another plugin's data dir to
-# slash-command shells. Installed Teamem can recover its own data slug from the
-# cache layout: ~/.claude/plugins/cache/<marketplace>/<plugin>/<version>.
+# slash-command shells. TEAMEM_DATA is an explicit override for launchers, tests,
+# and git hooks that need a known data root. Installed Teamem can recover its
+# own data slug from the cache layout:
+# ~/.claude/plugins/cache/<marketplace>/<plugin>/<version>.
 _teamem_data_from_installed_cache() {
   local root="${CLAUDE_PLUGIN_ROOT:-${PLUGIN_ROOT:-}}"
   [ -n "$root" ] || return 1
@@ -60,8 +62,21 @@ _teamem_plugin_data_env_looks_teamem() {
   return 1
 }
 
+_teamem_explicit_data_env() {
+  [ -n "${TEAMEM_DATA:-}" ] || return 1
+  case "${TEAMEM_DATA}" in
+    \$\{*\}) return 1 ;;
+  esac
+  printf '%s' "${TEAMEM_DATA}"
+}
+
 _teamem_resolve_data_dir() {
   local derived=""
+  if derived=$(_teamem_explicit_data_env 2>/dev/null); then
+    printf '%s' "$derived"
+    return 0
+  fi
+
   if derived=$(_teamem_data_from_installed_cache 2>/dev/null); then
     if _teamem_plugin_data_env_looks_teamem; then
       printf '%s' "${CLAUDE_PLUGIN_DATA}"

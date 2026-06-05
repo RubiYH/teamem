@@ -25,6 +25,12 @@
     "principal": { "type": "string" },
     "actor": { "type": "string" },
     "delegation": { "type": "string" },
+    "sprint_id": { "type": ["string", "null"], "minLength": 1 },
+    "delivery_scope": { "enum": ["direct", "sprint", "space"] },
+    "recipient_principals": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
     "event_type": {
       "type": "string",
       "enum": [
@@ -64,7 +70,12 @@
         "claim_expired",
         "space_rule_added",
         "space_rule_amended",
-        "space_rule_disabled"
+        "space_rule_disabled",
+        "sprint_created",
+        "sprint_joined",
+        "sprint_left",
+        "sprint_archived",
+        "sprint_reopened"
       ]
     },
     "scope": { "type": "object" },
@@ -74,6 +85,106 @@
   },
   "additionalProperties": true,
   "allOf": [
+    {
+      "$comment": "New explicit routing metadata. Legacy events may omit delivery_scope and are inferred at read time by runtime code.",
+      "if": {
+        "properties": { "delivery_scope": { "const": "direct" } },
+        "required": ["delivery_scope"]
+      },
+      "then": {
+        "required": ["recipient_principals"],
+        "properties": {
+          "recipient_principals": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    },
+    {
+      "$comment": "Sprint/Space fanout derives recipients from membership and must not snapshot recipient principals.",
+      "if": {
+        "properties": { "delivery_scope": { "enum": ["sprint", "space"] } },
+        "required": ["delivery_scope"]
+      },
+      "then": {
+        "properties": {
+          "recipient_principals": { "maxItems": 0 }
+        }
+      }
+    },
+    {
+      "$comment": "Sprint delivery requires non-null sprint_id.",
+      "if": {
+        "properties": { "delivery_scope": { "const": "sprint" } },
+        "required": ["delivery_scope"]
+      },
+      "then": {
+        "required": ["sprint_id"],
+        "properties": { "sprint_id": { "type": "string", "minLength": 1 } }
+      }
+    },
+    {
+      "$comment": "Space delivery must not overload sprint_id; event-specific payload fields such as affected_sprint_id carry related Sprint metadata.",
+      "if": {
+        "properties": { "delivery_scope": { "const": "space" } },
+        "required": ["delivery_scope"]
+      },
+      "then": {
+        "required": ["sprint_id"],
+        "properties": { "sprint_id": { "type": "null" } }
+      }
+    },
+    {
+      "$comment": "Sprint lifecycle events carry projection-critical payload fields. Public publishEvent validation must reject malformed Sprint rows before replay can derive corrupt projections.",
+      "if": {
+        "properties": { "event_type": { "const": "sprint_created" } },
+        "required": ["event_type"]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "required": ["sprint_id", "slug", "display_name", "goal"],
+            "properties": {
+              "sprint_id": { "type": "string", "minLength": 1 },
+              "slug": { "type": "string", "minLength": 1 },
+              "display_name": { "type": "string", "minLength": 1 },
+              "goal": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      }
+    },
+    {
+      "$comment": "Sprint lifecycle events require target identity so projection replay can rebuild current Sprint status and membership.",
+      "if": {
+        "properties": {
+          "event_type": {
+            "enum": [
+              "sprint_joined",
+              "sprint_left",
+              "sprint_archived",
+              "sprint_reopened"
+            ]
+          }
+        },
+        "required": ["event_type"]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "required": ["sprint_id", "slug"],
+            "properties": {
+              "sprint_id": { "type": "string", "minLength": 1 },
+              "slug": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      }
+    },
     {
       "$comment": "Codex F25 — dispute_opened payload must carry opened_by + target_principal so the auto-negotiator can derive side without re-query (see ADR-0002, slice #24 F22 fix).",
       "if": {

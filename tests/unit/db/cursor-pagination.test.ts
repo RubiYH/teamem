@@ -27,6 +27,8 @@ function publishEvent(
     actor: 'alice/agent',
     delegation: 'alice->agent',
     event_type: 'task_started',
+    sprint_id: null,
+    delivery_scope: 'space',
     scope: { paths: ['src/index.ts'] },
     payload: { task_id: id }
   });

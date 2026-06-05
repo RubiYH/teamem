@@ -1,14 +1,21 @@
 import type { ToolContext } from './context.js';
+import {
+  directRecipientsForRead,
+  inferDeliveryScopeForRead
+} from '../../domain/events/routing.js';
 import type { TeamemEvent } from '../../domain/events/types.js';
 import type { ToolResponse } from '../types.js';
 import type { BriefingResponse } from './briefing-schema.js';
+
+const VISIBLE_UPDATE_RAW_PAGE_LIMIT = 500;
+const VISIBLE_UPDATE_MAX_RAW_SCAN = 1_000;
 
 export function publishEvent(
   ctx: ToolContext,
   input: unknown
 ): ToolResponse<{ event_id: string }> {
   try {
-    const event = ctx.validateEvent(input);
+    const event = ctx.validateEvent(input, { requireRoutingMetadata: true });
     ctx.store.append(event);
     ctx.applyProjectionUpdate(ctx.db, event);
     return { ok: true, data: { event_id: event.event_id } };
@@ -46,13 +53,27 @@ export function getUpdates(
     }>;
   };
 }> {
-  const events = ctx.store.getUpdates(
-    input.space_id,
-    input.since,
-    input.limit ?? 100
-  );
-  const nextCursor =
-    events.length > 0 ? (events.at(-1)?.event_id ?? null) : null;
+  const principal = input.principal ?? input.actor;
+  const requestedLimit = input.limit ?? 100;
+  let currentSprintId: string | null = null;
+  if (principal) {
+    try {
+      currentSprintId = readCurrentSprintId(ctx, input.space_id, principal);
+    } catch (error) {
+      return ctx.toolError(
+        'sprint_context_unavailable',
+        'failed to read current Sprint membership',
+        { reason: error instanceof Error ? error.message : String(error) }
+      );
+    }
+  }
+  const { events: visibleEvents, nextCursor } = collectVisibleUpdates(ctx, {
+    space_id: input.space_id,
+    since: input.since,
+    principal,
+    requestedLimit,
+    currentSprintId
+  });
 
   // Persist cursor for actor so next call can resume where it left off
   if (nextCursor && input.actor) {
@@ -65,7 +86,7 @@ export function getUpdates(
       .run(input.actor, input.space_id, nextCursor, now);
   }
 
-  const decisionEventIds = events
+  const decisionEventIds = visibleEvents
     .filter((event) => ctx.isDecisionLifecycleEventType(event.event_type))
     .map((event) => event.event_id);
   const replayPrincipal = input.principal ?? input.actor;
@@ -131,9 +152,144 @@ export function getUpdates(
   return {
     ok: true,
     data: spaceMeta
-      ? { events, next_cursor: nextCursor, space_meta: spaceMeta }
-      : { events, next_cursor: nextCursor }
+      ? {
+          events: visibleEvents,
+          next_cursor: nextCursor,
+          space_meta: spaceMeta
+        }
+      : { events: visibleEvents, next_cursor: nextCursor }
   };
+}
+
+function collectVisibleUpdates(
+  ctx: ToolContext,
+  input: {
+    space_id: string;
+    since?: string;
+    principal?: string;
+    requestedLimit: number;
+    currentSprintId: string | null;
+  }
+): { events: TeamemEvent[]; nextCursor: string | null } {
+  if (!input.principal) {
+    const events = ctx.store.getUpdates(
+      input.space_id,
+      input.since,
+      input.requestedLimit
+    );
+    return {
+      events,
+      nextCursor: events.length > 0 ? (events.at(-1)?.event_id ?? null) : null
+    };
+  }
+
+  let cursor = input.since;
+  let nextCursor: string | null = null;
+  const events: TeamemEvent[] = [];
+  let scannedRawEvents = 0;
+
+  while (
+    events.length < input.requestedLimit &&
+    scannedRawEvents < VISIBLE_UPDATE_MAX_RAW_SCAN
+  ) {
+    const rawPageLimit = Math.min(
+      VISIBLE_UPDATE_RAW_PAGE_LIMIT,
+      VISIBLE_UPDATE_MAX_RAW_SCAN - scannedRawEvents
+    );
+    const rawEvents = ctx.store.getUpdates(
+      input.space_id,
+      cursor,
+      rawPageLimit
+    );
+    if (rawEvents.length === 0) break;
+    scannedRawEvents += rawEvents.length;
+
+    let consumedFullPage = true;
+    for (const event of rawEvents) {
+      nextCursor = event.event_id;
+      if (
+        isVisibleInCurrentMode(event, {
+          principal: input.principal,
+          currentSprintId: input.currentSprintId
+        })
+      ) {
+        events.push(event);
+        if (events.length >= input.requestedLimit) {
+          consumedFullPage = false;
+          break;
+        }
+      }
+    }
+
+    if (
+      !consumedFullPage ||
+      rawEvents.length < rawPageLimit ||
+      scannedRawEvents >= VISIBLE_UPDATE_MAX_RAW_SCAN
+    ) {
+      break;
+    }
+    cursor = rawEvents.at(-1)?.event_id;
+  }
+
+  return { events, nextCursor };
+}
+
+function readCurrentSprintId(
+  ctx: ToolContext,
+  spaceId: string,
+  principal: string
+): string | null {
+  try {
+    const row = ctx.db
+      .prepare(
+        `SELECT sm.sprint_id
+           FROM sprint_memberships sm
+           JOIN sprints s ON s.sprint_id = sm.sprint_id
+          WHERE sm.space_id = ?1
+            AND sm.principal = ?2
+            AND sm.sprint_id IS NOT NULL
+            AND s.status = 'active'
+          LIMIT 1`
+      )
+      .get(spaceId, principal) as { sprint_id: string } | null;
+    return row?.sprint_id ?? null;
+  } catch (error) {
+    if (isMissingSprintContextTableError(error)) return null;
+    throw error;
+  }
+}
+
+function isMissingSprintContextTableError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return (
+    error.message.includes('no such table: sprint_memberships') ||
+    error.message.includes('no such table: sprints')
+  );
+}
+
+function isVisibleInCurrentMode(
+  event: TeamemEvent,
+  input: { principal: string; currentSprintId: string | null }
+): boolean {
+  const deliveryScope = inferDeliveryScopeForRead(event);
+  if (deliveryScope === 'direct') {
+    return directRecipientsForRead(event).includes(input.principal);
+  }
+  if (deliveryScope === 'space') {
+    return (
+      input.currentSprintId === null || isExplicitSpaceWideEscalation(event)
+    );
+  }
+  return (
+    input.currentSprintId !== null && event.sprint_id === input.currentSprintId
+  );
+}
+
+function isExplicitSpaceWideEscalation(event: TeamemEvent): boolean {
+  return (
+    event.event_type === 'discussion_posted' &&
+    event.payload.broadcast_marker === '**'
+  );
 }
 
 export function getContractState(
@@ -171,14 +327,22 @@ export function getBriefing(
     token_budget?: number;
   }
 ): ToolResponse<BriefingResponse> {
-  return {
-    ok: true,
-    data: ctx.buildBriefing(ctx.db, {
-      space_id: input.space_id,
-      principal: input.principal ?? '',
-      token_budget: input.token_budget
-    })
-  };
+  try {
+    return {
+      ok: true,
+      data: ctx.buildBriefing(ctx.db, {
+        space_id: input.space_id,
+        principal: input.principal ?? '',
+        token_budget: input.token_budget
+      })
+    };
+  } catch (error) {
+    return ctx.toolError(
+      'sprint_context_unavailable',
+      'failed to read current Sprint membership',
+      { reason: error instanceof Error ? error.message : String(error) }
+    );
+  }
 }
 
 export function whoami(

@@ -1,5 +1,5 @@
 <!-- Parent: ../AGENTS.md -->
-<!-- Generated: 2026-05-01 | Updated: 2026-05-13 -->
+<!-- Generated: 2026-05-01 | Updated: 2026-06-02 -->
 
 # tools
 
@@ -72,9 +72,15 @@ Every tool that emits an event MUST do so inside `db.transaction((args) => { ...
 
 `newEventId`, `newClaimId`, and `newIdempotencyKey` from `src/domain/ids.ts` use ULID. Use those helpers, not raw `Date.now()`.
 
-### Idempotency recovery — beware truthiness checks on nullable fields
+### Idempotency recovery — projection visibility is required
 
 PRD §150: `expires_at` is NULL for `on_commit` and `manual_only`. The previous recovery guard `if (storedClaimId && storedExpiresAt)` was a stand-in for "is this a TTL claim?" but silently broke fresh-after-release re-claim once `expires_at` became nullable. Always consult the projection's `released_at` for terminality, not the stored event's `expires_at` truthiness.
+
+Recovery must also verify the stored claim is still visible in the `claims`
+projection. If an idempotency row and original event exist but the projection row
+is missing, returning the stored `claim_id` creates invisible ownership that
+`listClaims` cannot show. Treat the prior claim as stale and salt the
+idempotency key so `claimScope` can create a fresh visible claim.
 
 ### Path lookup via `scope_json`, not `claims.path`
 

@@ -5,14 +5,20 @@
 
 ## Purpose
 
-Mode 6.C dispute negotiation domain logic (slice #12). Pure state machine for bounded structured negotiation between two `auto-discuss`-opted-in teammates. Validates moves against the dispute state machine, enforces turn alternation and round-trip caps, classifies events by dispute side (opener vs. target), and determines termination conditions. Zero I/O, zero clock reads — the route layer assembles full state and asks this module if a move is legal.
+Mode 6.C dispute negotiation domain logic (slice #12). Pure state machine for
+bounded structured negotiation between two `auto-discuss`-opted-in teammates.
+The server/tool surface still exposes this compatibility domain, but the plugin
+runtime currently degrades stale `auto-discuss` file-claim conflicts to the
+queue-first path because watcher/negotiator Notification agents are postponed.
+This directory keeps the deterministic dispute state machine and side-derivation
+helpers ready for explicit dispute-tool flows and future runtime reactivation.
 
 ## Key Files
 
 | File | Description |
 |------|-------------|
 | `state-machine.ts` | Core dispute state machine; validates move legality (turn alternation, proposal targeting, move-type constraints); checks termination conditions (user_override, explicit, turns, wallclock, pref_changed); determines outcome (resolved vs. terminated) |
-| `derive-side.ts` | Helper to derive a dispute side (opener or target) from an event payload for the auto-negotiator agent (Codex F22); given `whoami_principal` and a payload carrying `opened_by` and `target_principal`, returns 'opener', 'target', or null (misrouted event) |
+| `derive-side.ts` | Helper to derive a dispute side (opener or target) from an event payload for deferred/future auto-negotiator routing; given `whoami_principal` and a payload carrying `opened_by` and `target_principal`, returns 'opener', 'target', or null (misrouted event) |
 
 ## Subdirectories
 
@@ -35,10 +41,12 @@ None.
 
 ### Testing Requirements
 
-- Unit tests in `tests/unit/domain/disputes/` cover:
+- Unit tests in `tests/unit/disputes/` cover:
   - `validateMove()` legality checks (turn alternation, proposal targeting, move-type constraints)
-  - `shouldTerminate()` conditions (time, turn count, pref change)
-  - `deriveDisputeSide()` payload classification
+  - `applyMove()` state transitions
+  - `checkTermination()` conditions (time, turn count, pref change)
+- Integration tests in `tests/integration/disputes/` cover:
+  - `deriveDisputeSide()` payload classification from real emitted dispute payloads
 - Pure unit tests only — no DB, no I/O. Test with hardcoded state objects and verify return types.
 - Test all 7 move types and all 5 termination conditions independently.
 - Test edge cases: empty proposals, first move constraints, counterparty acceptance/rejection.

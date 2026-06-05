@@ -1,4 +1,10 @@
-import { accessSync, constants, readFileSync, statSync } from 'node:fs';
+import {
+  accessSync,
+  constants,
+  readFileSync,
+  statSync,
+  writeFileSync
+} from 'node:fs';
 import { delimiter, join, resolve, sep } from 'node:path';
 
 import {
@@ -16,6 +22,7 @@ export interface DevSourceFileSystem {
   isReadableFile(path: string): boolean;
   isExecutableFile(path: string): boolean;
   readFile(path: string): string;
+  writeFile(path: string, content: string): void;
 }
 
 export interface DevSourceResolution {
@@ -89,6 +96,9 @@ export function createNodeDevSourceFileSystem(): DevSourceFileSystem {
     },
     readFile(path: string): string {
       return readFileSync(path, 'utf8');
+    },
+    writeFile(path: string, content: string): void {
+      writeFileSync(path, content, 'utf8');
     }
   };
 }
@@ -343,7 +353,8 @@ function diagnoseRealClaude(options: {
       id: 'real-claude',
       label: 'Real Claude Code',
       severity: 'ok',
-      summary: 'Detected a Claude Code executable outside Teamem-owned shim paths.',
+      summary:
+        'Detected a Claude Code executable outside Teamem-owned shim paths.',
       details: realClaudePath
     };
   }
@@ -538,9 +549,14 @@ function okDiagnostic(
 function readJsonFile(
   fileSystem: DevSourceFileSystem,
   path: string
-): { readonly ok: true; readonly value: unknown } | { readonly ok: false; readonly message: string } {
+):
+  | { readonly ok: true; readonly value: unknown }
+  | { readonly ok: false; readonly message: string } {
   if (!fileSystem.isReadableFile(path)) {
-    return { ok: false, message: 'Required JSON file is missing or unreadable.' };
+    return {
+      ok: false,
+      message: 'Required JSON file is missing or unreadable.'
+    };
   }
   try {
     return { ok: true, value: JSON.parse(fileSystem.readFile(path)) };
@@ -554,9 +570,11 @@ function describeProbeFailure(probe: {
   readonly stderr: string;
   readonly errorCode?: string;
 }): string | undefined {
-  return [probe.errorCode, probe.stderr.trim(), probe.stdout.trim()]
-    .filter((value): value is string => Boolean(value))
-    .join(' | ') || undefined;
+  return (
+    [probe.errorCode, probe.stderr.trim(), probe.stdout.trim()]
+      .filter((value): value is string => Boolean(value))
+      .join(' | ') || undefined
+  );
 }
 
 function renderSeverity(severity: DiagnosticSeverity): string {

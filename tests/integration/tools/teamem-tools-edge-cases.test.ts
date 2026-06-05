@@ -34,6 +34,8 @@ describe('teamem tools edge cases', () => {
       actor: 'codex/session-1',
       delegation: 'alice->codex',
       event_type: 'task_started',
+      sprint_id: null,
+      delivery_scope: 'space',
       scope: { paths: ['src/index.ts'] },
       payload: { task_id: 'TASK-1' }
     } as const;

@@ -1,7 +1,7 @@
 /**
  * AC16 + AC17 — server-side claimScope idempotency collision recovery.
  *
- * AC16: key exists + event exists → idempotent return of claim_id from stored event.
+ * AC16: key exists + event exists + active projection → idempotent return of claim_id from stored event.
  * AC17: key exists but events row is GONE → idempotency_collision 409 returned.
  * AC30: TEAMEM_IDEMPOTENCY_RECOVERY=0 → collision propagates as 500/throw
  *        (recovery is default-on; unset/anything-else gives recovery semantics).
@@ -75,7 +75,7 @@ describe('AC16 — idempotency recovery: key + event present → return stored c
     }
   });
 
-  it('recovery from idempotency_keys row when events row exists returns ok:true with stored claim_id', () => {
+  it('missing claims projection row is stale and re-claims with a fresh visible claim_id', () => {
     const db = buildTestDb();
     const store = new SqliteEventStore(db);
     const tools = createTeamemTools({ db, store });
@@ -98,12 +98,13 @@ describe('AC16 — idempotency recovery: key + event present → return stored c
       if (!first.ok) throw new Error('first claim failed');
       const firstClaimId = first.data.claim_id;
 
-      // Manually expire / delete the claim row to force re-insert attempt
-      // but keep the idempotency_keys row intact
+      // Delete only the projection row to force re-insert attempt while
+      // keeping the original event and idempotency_keys row intact.
       db.prepare('DELETE FROM claims WHERE claim_id = ?1').run(firstClaimId);
 
       // Second call with same paths — gate sees no active claims, tries to insert,
-      // hits UNIQUE constraint on idempotency_keys, recovers via event lookup
+      // hits UNIQUE constraint on idempotency_keys, then treats the missing
+      // projection row as stale and salts the new event's idempotency_key.
       const second = tools.claimScope({
         space_id: TEST_SPACE,
         principal: TEST_PRINCIPAL,
@@ -114,10 +115,20 @@ describe('AC16 — idempotency recovery: key + event present → return stored c
         lease_seconds: 3600
       });
 
-      // Recovery path must return ok:true with the original claim_id
       expect(second.ok).toBe(true);
       if (!second.ok) throw new Error('second claim (recovery) failed');
-      expect(second.data.claim_id).toBe(firstClaimId);
+      expect(second.data.claim_id).not.toBe(firstClaimId);
+
+      const listed = tools.listClaims({
+        space_id: TEST_SPACE,
+        principal: TEST_PRINCIPAL,
+        scope: 'self'
+      });
+      expect(listed.ok).toBe(true);
+      if (!listed.ok) throw new Error('list_claims failed');
+      expect(listed.data.claims.map((claim) => claim.claim_id)).toEqual([
+        second.data.claim_id
+      ]);
     } finally {
       if (savedRecovery === undefined) {
         delete process.env.TEAMEM_IDEMPOTENCY_RECOVERY;
@@ -379,6 +390,62 @@ describe('AC-NEW: fresh-after-terminal — re-claim succeeds after release/expir
       if (!second.ok) throw new Error('second on_commit claim failed');
       expect(second.data.claim_id).not.toBe(firstClaimId);
       expect(second.data.expires_at).toBeNull();
+    } finally {
+      if (savedRecovery === undefined) {
+        delete process.env.TEAMEM_IDEMPOTENCY_RECOVERY;
+      } else {
+        process.env.TEAMEM_IDEMPOTENCY_RECOVERY = savedRecovery;
+      }
+    }
+  });
+
+  it('on_commit re-claim after missing projection row succeeds with a fresh visible claim_id', () => {
+    const db = buildTestDb();
+    const store = new SqliteEventStore(db);
+    const tools = createTeamemTools({ db, store });
+
+    const savedRecovery = process.env.TEAMEM_IDEMPOTENCY_RECOVERY;
+    process.env.TEAMEM_IDEMPOTENCY_RECOVERY = '1';
+
+    try {
+      const first = tools.claimScope({
+        space_id: TEST_SPACE,
+        principal: TEST_PRINCIPAL,
+        actor: TEST_PRINCIPAL,
+        delegation: `${TEST_PRINCIPAL}->${TEST_PRINCIPAL}`,
+        scope: { paths: ['src/oncommit-missing-projection.ts'] },
+        auto_release_mode: 'on_commit'
+      });
+      expect(first.ok).toBe(true);
+      if (!first.ok) throw new Error('first on_commit claim failed');
+      expect(first.data.expires_at).toBeNull();
+      const firstClaimId = first.data.claim_id;
+
+      db.prepare('DELETE FROM claims WHERE claim_id = ?1').run(firstClaimId);
+
+      const second = tools.claimScope({
+        space_id: TEST_SPACE,
+        principal: TEST_PRINCIPAL,
+        actor: TEST_PRINCIPAL,
+        delegation: `${TEST_PRINCIPAL}->${TEST_PRINCIPAL}`,
+        scope: { paths: ['src/oncommit-missing-projection.ts'] },
+        auto_release_mode: 'on_commit'
+      });
+      expect(second.ok).toBe(true);
+      if (!second.ok) throw new Error('second on_commit claim failed');
+      expect(second.data.claim_id).not.toBe(firstClaimId);
+      expect(second.data.expires_at).toBeNull();
+
+      const listed = tools.listClaims({
+        space_id: TEST_SPACE,
+        principal: TEST_PRINCIPAL,
+        scope: 'self'
+      });
+      expect(listed.ok).toBe(true);
+      if (!listed.ok) throw new Error('list_claims failed');
+      expect(listed.data.claims.map((claim) => claim.claim_id)).toEqual([
+        second.data.claim_id
+      ]);
     } finally {
       if (savedRecovery === undefined) {
         delete process.env.TEAMEM_IDEMPOTENCY_RECOVERY;

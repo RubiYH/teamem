@@ -7,6 +7,14 @@ export function rebuildProjections(
   spaceId: string
 ): { replayed: number } {
   db.prepare('DELETE FROM claims WHERE space_id = ?1').run(spaceId);
+  try {
+    db.prepare('DELETE FROM sprint_memberships WHERE space_id = ?1').run(
+      spaceId
+    );
+    db.prepare('DELETE FROM sprints WHERE space_id = ?1').run(spaceId);
+  } catch {
+    // legacy fixtures
+  }
   db.prepare('DELETE FROM findings WHERE space_id = ?1').run(spaceId);
   try {
     db.prepare('DELETE FROM finding_acknowledgements WHERE space_id = ?1').run(
@@ -30,10 +38,15 @@ export function rebuildProjections(
   } catch {
     // legacy fixtures
   }
+  try {
+    db.prepare('DELETE FROM focus WHERE space_id = ?1').run(spaceId);
+  } catch {
+    // legacy fixtures
+  }
 
   const rows = db
     .query(
-      'SELECT raw_json FROM events WHERE space_id = ?1 ORDER BY timestamp ASC'
+      'SELECT raw_json FROM events WHERE space_id = ?1 ORDER BY timestamp ASC, rowid ASC'
     )
     .all(spaceId) as Array<{ raw_json: string }>;
 

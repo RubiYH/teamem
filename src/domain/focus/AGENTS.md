@@ -11,7 +11,7 @@ Agent focus tracking domain logic (issue #15). Computes stable scope hashes from
 
 | File | Description |
 |------|-------------|
-| `index.ts` | `loadRecentFocus()` — read most-recent focus row per `(principal, scope_hash)` from the database; sorted by `started_at` desc, capped at limit (default 20); tolerates missing `focus` table (early schema) and malformed JSON |
+| `index.ts` | `loadRecentFocus()` — read most-recent focus row per `(principal, scope_hash)` for the current Sprint context (`sprint_id` or Space-mode `NULL`) from the database; sorted by `started_at` desc, capped at limit (default 20); tolerates missing `focus` table (early schema) and malformed JSON |
 | `scope-hash.ts` | `computeScopeHash()` — stable SHA-256 hash of normalized+deduped+sorted paths; `canonicalScopePaths()` — return the canonical form (sorted, deduped, normalized) for persistence alongside the hash |
 
 ## Subdirectories
@@ -26,7 +26,7 @@ None.
 - **Deduplication**: use a `Set` to eliminate duplicates; then sort lexicographically for stability.
 - **Hash stability**: `computeScopeHash()` is pure and deterministic — identical path sets always produce the same hash, regardless of input order.
 - **Empty scope**: empty or undefined paths hash to the SHA-256 of `'[]'`; callers rely on this constant to collapse "no-scope" focus events.
-- **Projection read**: `loadRecentFocus()` returns the most-recent row per unique `(principal, scope_hash)` pair — prevents displaying a single agent's heartbeat noise as multiple distinct work items. The briefing consumer sorts by `started_at` desc.
+- **Projection read**: `loadRecentFocus()` returns the most-recent row per unique `(principal, scope_hash)` pair inside the caller's current Sprint context — prevents displaying a single agent's heartbeat noise as multiple distinct work items and prevents Sprint briefings from becoming all-Sprint/Space-mode feeds. The briefing consumer sorts by `started_at` desc.
 - **Graceful schema tolerance**: `loadRecentFocus()` catches "no such table: focus" errors and returns `[]` (early schema may not have the table yet).
 
 ### Testing Requirements

@@ -1,9 +1,11 @@
 import type { Database } from 'bun:sqlite';
+import { normalizeEventRoutingForRead } from '../../domain/events/routing.js';
 import type { TeamemEvent } from '../../domain/events/types.js';
+import { validateEvent } from '../../domain/events/validate.js';
 import type { EventStore } from './types.js';
 
 function parseEvent(rawJson: string): TeamemEvent {
-  return JSON.parse(rawJson) as TeamemEvent;
+  return normalizeEventRoutingForRead(JSON.parse(rawJson) as TeamemEvent);
 }
 
 export class SqliteEventStore implements EventStore {
@@ -43,6 +45,8 @@ export class SqliteEventStore implements EventStore {
    * the deterministic idempotency-key strategy in F-NEW-3).
    */
   appendInTx(event: TeamemEvent): void {
+    validateEvent(event, { requireRoutingMetadata: true });
+
     const existing = this.db
       .query('SELECT event_id FROM idempotency_keys WHERE idempotency_key = ?1')
       .get(event.idempotency_key) as { event_id: string } | null;

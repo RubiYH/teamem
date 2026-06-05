@@ -1,0 +1,20 @@
+{
+  "schema_version": "1.0",
+  "event_id": "01JSPRINTREOPENED",
+  "idempotency_key": "idem-sprint-reopened",
+  "space_id": "teamem-poc",
+  "timestamp": "2026-05-27T00:20:00.000Z",
+  "principal": "alice",
+  "actor": "codex-cli/session-1",
+  "delegation": "alice->codex",
+  "event_type": "sprint_reopened",
+  "sprint_id": null,
+  "delivery_scope": "direct",
+  "recipient_principals": ["alice"],
+  "scope": {},
+  "payload": {
+    "sprint_id": "01JSPRINTID001",
+    "slug": "mvp-lifecycle",
+    "reopened_by": "alice"
+  }
+}
