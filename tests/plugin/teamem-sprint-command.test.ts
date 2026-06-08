@@ -16,17 +16,27 @@ describe('/teamem-sprint command contract', () => {
     ) as { commands: string[] };
 
     expect(manifest.commands).toContain('./commands/teamem-sprint.md');
-    expect(command).toContain('mcp__teamem__create_sprint');
-    expect(command).toContain('mcp__teamem__join_sprint');
-    expect(command).toContain('mcp__teamem__leave_sprint');
-    expect(command).toContain('mcp__teamem__get_current_sprint');
-    expect(command).toContain('mcp__teamem__list_sprints');
-    expect(command).toContain('mcp__teamem__archive_sprint');
-    expect(command).toContain('mcp__teamem__reopen_sprint');
-    expect(command).toContain('mcp__teamem__get_sprint_history');
+    expect(command).toContain('mcp__teamem__teamem_create_sprint');
+    expect(command).toContain('mcp__teamem__teamem_join_sprint');
+    expect(command).toContain('mcp__teamem__teamem_leave_sprint');
+    expect(command).toContain('mcp__teamem__teamem_get_current_sprint');
+    expect(command).toContain('mcp__teamem__teamem_list_sprints');
+    expect(command).toContain('mcp__teamem__teamem_archive_sprint');
+    expect(command).toContain('mcp__teamem__teamem_reopen_sprint');
+    expect(command).toContain('mcp__teamem__teamem_get_sprint_history');
+    expect(command).toContain(
+      'mcp__plugin_teamem_teamem__teamem_create_sprint'
+    );
+    expect(command).toContain(
+      'do not use ToolSearch, Bash, `/mcp`, or any discovery/probing command'
+    );
+    expect(
+      command.indexOf('mcp__plugin_teamem_teamem__teamem_create_sprint')
+    ).toBeLessThan(command.indexOf('mcp__teamem__teamem_create_sprint'));
     expect(command).not.toContain('/teamem-sprint use');
     expect(command).not.toContain('/teamem-sprint off');
-    expect(command).not.toContain('mcp__teamem__use_sprint');
-    expect(command).not.toContain('mcp__teamem__off_sprint');
+    expect(command).not.toContain('mcp__teamem__create_sprint');
+    expect(command).not.toContain('mcp__teamem__teamem_use_sprint');
+    expect(command).not.toContain('mcp__teamem__teamem_off_sprint');
   });
 });
