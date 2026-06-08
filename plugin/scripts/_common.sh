@@ -104,6 +104,7 @@ _teamem_resolve_data_dir() {
 }
 
 TEAMEM_DATA="$(_teamem_resolve_data_dir)"
+export TEAMEM_DATA
 
 # Derive a project identity that is STABLE across multiple local clones of the
 # same git repo. Order:

@@ -91,6 +91,70 @@ process.exit(0);
     }
   }, 30_000);
 
+  it('exports the resolved Teamem data dir to the bundled bridge when Claude exposes another plugin data dir', () => {
+    const home = mkdtempSync(join(tmpdir(), 'teamem-plugin-home-'));
+    const plugin = join(
+      home,
+      '.claude/plugins/cache/teamem-alpha/teamem/0.3.29'
+    );
+    try {
+      mkdirSync(join(plugin, 'scripts'), { recursive: true });
+      mkdirSync(join(plugin, 'bin'));
+      mkdirSync(join(plugin, 'lib'));
+      mkdirSync(join(home, '.claude/plugins/data/codex-openai-codex'), {
+        recursive: true
+      });
+
+      const fs = require('node:fs');
+      fs.copyFileSync(
+        join(REPO_ROOT, 'plugin/scripts/_common.sh'),
+        join(plugin, 'scripts/_common.sh')
+      );
+      fs.copyFileSync(
+        join(REPO_ROOT, 'plugin/bin/teamem-call'),
+        join(plugin, 'bin/teamem-call')
+      );
+      writeFileSync(
+        join(plugin, 'lib/bridge.js'),
+        `#!/usr/bin/env bun
+console.log(JSON.stringify({ teamemData: process.env.TEAMEM_DATA, claudePluginData: process.env.CLAUDE_PLUGIN_DATA }));
+process.exit(0);
+`,
+        { mode: 0o755 }
+      );
+      chmodSync(join(plugin, 'bin/teamem-call'), 0o755);
+
+      const foreignData = join(home, '.claude/plugins/data/codex-openai-codex');
+      const env: Record<string, string | undefined> = {
+        ...process.env,
+        HOME: home,
+        CLAUDE_PLUGIN_ROOT: plugin,
+        CLAUDE_PLUGIN_DATA: foreignData
+      };
+      delete env.TEAMEM_DATA;
+      delete env.TEAMEM_ROOT;
+      delete env.CLAUDE_PLUGIN_OPTION_TEAMEM_ROOT;
+
+      const result = spawnSync(
+        'bash',
+        [join(plugin, 'bin/teamem-call'), 'teamem.join_sprint', '--json', '{}'],
+        { env, encoding: 'utf-8', timeout: 10_000 }
+      );
+
+      expect(result.status).toBe(0);
+      const payload = JSON.parse(result.stdout.trim()) as {
+        teamemData?: string;
+        claudePluginData?: string;
+      };
+      expect(payload.claudePluginData).toBe(foreignData);
+      expect(payload.teamemData).toBe(
+        join(home, '.claude/plugins/data/teamem-teamem-alpha')
+      );
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  }, 30_000);
+
   it('emits a bridge_bundle_missing error when lib/bridge.js is absent (still does NOT require TEAMEM_ROOT)', () => {
     const plugin = mkdtempSync(join(tmpdir(), 'teamem-plugin-no-bundle-'));
     try {
