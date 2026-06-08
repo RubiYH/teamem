@@ -33,8 +33,10 @@ import { resetRateLimitBuckets } from '../../src/server/rate-limit.js';
 
 const TEST_JWT_SECRET = 'test-secret-32bytes-padded-xxxxx';
 
-let tmpDir: string;
-let server: Awaited<ReturnType<typeof startHonoTestServer>>['server'];
+let tmpDir = '';
+let server:
+  | Awaited<ReturnType<typeof startHonoTestServer>>['server']
+  | undefined;
 let serverPort: number;
 
 function buildApp() {
@@ -57,8 +59,14 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  await new Promise<void>((resolve) => server.close(() => resolve()));
-  await rm(tmpDir, { recursive: true, force: true });
+  if (server) {
+    await new Promise<void>((resolve) => server?.close(() => resolve()));
+    server = undefined;
+  }
+  if (tmpDir) {
+    await rm(tmpDir, { recursive: true, force: true });
+    tmpDir = '';
+  }
 });
 
 describe('setup with no bridge_dir (Codex F5)', () => {

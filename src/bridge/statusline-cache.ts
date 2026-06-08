@@ -53,8 +53,7 @@ export function writeStatuslineDisplayCacheFromToolResponse(
   const space =
     extractSpace(data) ?? normalizeSpace(options.credential ?? undefined);
   const sprint = canUpdateSprint ? extractSprint(data) : undefined;
-  const canClearCurrentSprint =
-    canUpdateSprint && hasCurrentSpaceContext(data);
+  const canClearCurrentSprint = canUpdateSprint && hasCurrentSpaceContext(data);
 
   if (!space && !sprint && !canClearCurrentSprint) return false;
 

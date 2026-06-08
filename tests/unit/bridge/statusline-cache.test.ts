@@ -419,7 +419,9 @@ describe('bridge statusline display cache', () => {
   });
 
   it('does not erase or extend fresh Sprint cache from whoami in the same Space', () => {
-    const work = mkdtempSync(join(tmpdir(), 'teamem-bridge-statusline-whoami-'));
+    const work = mkdtempSync(
+      join(tmpdir(), 'teamem-bridge-statusline-whoami-')
+    );
     try {
       expect(
         writeStatuslineDisplayCacheFromToolResponse(
