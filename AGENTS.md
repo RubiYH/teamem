@@ -1,4 +1,4 @@
-<!-- Updated: 2026-05-26 -->
+<!-- Updated: 2026-06-08 -->
 
 # teamem
 
@@ -100,6 +100,41 @@ bun run build:plugin
 - Run package-local gates from the relevant child `AGENTS.md` for
   `packages/bootstrapper-cli/`, `apps/web/`, `plugin/`, and specialized test
   directories.
+
+## Review guidelines
+
+Use this section for Codex GitHub review. Keep findings focused on high-confidence
+P0/P1 issues that would block merge or create serious regression risk. Do not
+comment on style-only nits, speculative rewrites, low-impact typos, or
+preference-level refactors.
+
+- Prioritize correctness, security, and data-safety defects: auth/JWT and room
+  code access control, scope claim ownership and release semantics, event
+  append/projection parity, idempotency and retry behavior, secrets or PII
+  leakage, SQLite migration compatibility, and the Teamem Cloud versus runtime
+  identity boundary.
+- For plugin and marketplace changes, verify shipped artifact parity. Source
+  changes under `src/bridge/`, `src/channel/`, or `src/cli/setup.ts` require
+  regenerated `plugin/lib/*.js` bundles. Marketplace-user behavior changes need
+  mirrored version bumps in `plugin/.claude-plugin/plugin.json` and
+  `.claude-plugin/marketplace.json`.
+- For Teamem Cloud web changes, verify the deploy/env contract. Required env
+  keys must stay aligned with `apps/web/.env.example` and
+  `docs/deploy/teamem-cloud.md`; browser `NEXT_PUBLIC_*` values are build-time
+  values; web account identity must not be treated as Teamem runtime member
+  identity.
+- For tests and CI, flag green-but-weak evidence when the touched surface needs
+  a narrower gate. Plugin live smokes must remain opt-in and skip cleanly
+  without live env. CI-safe tests must not depend on ignored or generated
+  artifacts, local caches, installed Claude plugin state, or production secrets.
+- Do not require deploy credentials, live Supabase/PostHog credentials, or live
+  Claude plugin smoke gates for ordinary static PR review unless the PR claims
+  live/deploy coverage.
+- Treat docs typos as P1 only when they change commands, env vars, security
+  guidance, setup steps, release behavior, or operator workflow. Otherwise avoid
+  typo-only review comments.
+- When a finding depends on a child `AGENTS.md`, cite the closest applicable
+  file-specific contract in the review comment.
 
 ## Commits
 

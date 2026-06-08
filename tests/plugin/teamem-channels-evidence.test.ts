@@ -20,6 +20,7 @@ import {
   assertTeamemRecipientReceipt,
   createTeamemChannelsTranscriptCheckpoint,
   expectedTeamemChannelsDeliveryMatrix,
+  expectedTeamemSprintChannelsDeliveryMatrix,
   findTeamemChannelTransportEvidence,
   findTeamemNotificationLogEvidence,
   findTeamemRenderedTranscriptEvidence,
@@ -1204,6 +1205,24 @@ describe('Teamem Channels evidence assertions', () => {
       carol: true
     });
     expect(expectedTeamemChannelsDeliveryMatrix('starstar')).toEqual({
+      alice: false,
+      bob: true,
+      carol: true
+    });
+  });
+
+  it('encodes the Sprint direct, star, and starstar delivery matrix', () => {
+    expect(expectedTeamemSprintChannelsDeliveryMatrix('direct')).toEqual({
+      alice: false,
+      bob: false,
+      carol: true
+    });
+    expect(expectedTeamemSprintChannelsDeliveryMatrix('star')).toEqual({
+      alice: false,
+      bob: true,
+      carol: false
+    });
+    expect(expectedTeamemSprintChannelsDeliveryMatrix('starstar')).toEqual({
       alice: false,
       bob: true,
       carol: true

@@ -1105,6 +1105,19 @@ export function expectedTeamemChannelsDeliveryMatrix(
   }
 }
 
+export function expectedTeamemSprintChannelsDeliveryMatrix(
+  caseName: TeamemChannelsSplitCase
+): Record<TeamemChannelsPersona, boolean> {
+  switch (caseName) {
+    case 'direct':
+      return { alice: false, bob: false, carol: true };
+    case 'star':
+      return { alice: false, bob: true, carol: false };
+    case 'starstar':
+      return { alice: false, bob: true, carol: true };
+  }
+}
+
 async function readTeamemChannelTraceArtifact(input: {
   readonly tracePath: string;
   readonly expected: TeamemChannelsEvidenceExpectation;
@@ -1452,13 +1465,23 @@ function findRenderedChannelSourceIndex(
     const renderedLine = segment.slice(index, peerEventIndex + 512);
     if (
       hasRenderedChannelSourcePrefix(renderedLine) &&
-      !renderedLine.includes(expected.marker)
+      !renderedLine.includes(expected.marker) &&
+      channelSourceFallbackIncludesRenderedText(renderedLine, expected)
     ) {
       return index;
     }
     searchFrom = peerEventIndex + 'teamem.peer_event'.length;
   }
   return -1;
+}
+
+function channelSourceFallbackIncludesRenderedText(
+  renderedLine: string,
+  expected: TeamemChannelsEvidenceExpectation
+): boolean {
+  const eventType = expected.eventType ?? 'discussion_posted';
+  if (eventType !== 'discussion_posted') return true;
+  return segmentIncludesRenderedText(renderedLine, expected);
 }
 
 function containsNegativeMarkerRender(

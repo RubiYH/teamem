@@ -39,9 +39,12 @@ Claude Code plugin tests that verify the integration between the bridge, git hoo
 | `teamem-runtime-*-smoke.test.ts` | L3 runtime/headless live smokes through real plugin MCP evidence |
 | `teamem-interactive-*-smoke.test.ts` | L4 interactive live smokes through real Claude TTY, hook traces, and runtime evidence |
 | `teamem-multi-profile-*.ts` | L5 Alice/Bob profile isolation and multi-profile live smoke coverage |
+| `teamem-interactive-sprint-claim-conflict-smoke.test.ts` | Opt-in L5 live Sprint claim-conflict smoke proving same-Sprint queued denial, cross-Sprint non-blocking overlap, Sprint-vs-Space non-blocking overlap, and stable claim context |
+| `teamem-interactive-sprint-release-cleanup-smoke.test.ts` | Opt-in L5 live Sprint release/cleanup smoke proving git-driven release routing, pending-edit unblock evidence, multi-context release isolation, archive cleanup direct notices, and capped history audit output |
 | `teamem-channels-session-planner.ts` | L5 Channels gate, profile, launch-parity, split-case, and readiness planning helpers |
 | `teamem-channels-evidence.ts` | L5 Channels evidence assertions for channel MCP traces, recipient notification logs, rendered channel-source transcript evidence, and negative recipients |
 | `teamem-channels-direct-smoke.test.ts` | Opt-in L5 live Channels smoke covering direct, `*`, and `**` discussion delivery with Alice/Bob/Carol sessions |
+| `teamem-channels-sprint-smoke.test.ts` | Opt-in L5 live Channels smoke covering Sprint-aware direct, `*`, and `**` discussion delivery with Alice/Bob/Carol sessions |
 | `teamem-channels-claim-conflict-smoke.test.ts` | Opt-in L5 live Channels smoke proving normal file-claim conflicts stay queue-first and Channel-quiet |
 | `teamem-channels-knowledge-smoke.test.ts` | Opt-in L5 live Channels smoke covering real decision and gotcha slash-command delivery to passive recipients without Alice echo |
 | `teamem-setup-no-source-tree.test.ts` | `/teamem-setup` CLI fallback (no source tree) |
@@ -63,6 +66,7 @@ Claude Code plugin tests that verify the integration between the bridge, git hoo
 - Live smokes should launch against a copied demo workspace from `tests/fixtures/demo-repository-template/`, never the Teamem source checkout. Report preserved workspace/artifact paths in failures.
 - Treat MCP traces, hook traces, runtime tool reads, and copied-workspace file state as proof. Do not treat assistant prose alone as proof that a Teamem command, claim, handoff, or Space Rules sync happened.
 - Scope-claim conflict smokes must use neutral fixture markers and require edit-like `PreToolUse` denial evidence (`Edit`, `Write`, or `MultiEdit`) with incumbent claim/principal metadata. Do not let the prompt itself tell Bob to stop before the hook runs.
+- Sprint claim-conflict smokes must prove both sides of the Sprint boundary: same-Sprint overlaps deny and queue through edit-like hook evidence, while cross-Sprint and Sprint-vs-Space overlaps allow through copied-workspace file state plus runtime claim context and low-priority briefing awareness.
 - Multi-profile L5 tests must keep Alice/Bob profile credentials, plugin data, transcripts, MCP traces, hook traces, and runtime evidence separate. Use `teamem dev claude --profile <name> --dry-run` planning through `teamem-multi-profile-coordinator.ts`; do not overwrite the developer's default `~/.teamem/credentials.json`.
 - L5 Channels tests add Carol to the multi-profile set. Every live Channels run
   requires Alice, Bob, and Carol developer-owned profile credentials, with Carol
@@ -71,6 +75,10 @@ Claude Code plugin tests that verify the integration between the bridge, git hoo
   smokes cover direct to Bob, `*` no-Sprint Space broadcast, and `**` explicit
   Space-wide broadcast. In this no-Sprint setup both broadcast forms must
   deliver Space-wide to Bob and Carol, while Alice receives no sender echo.
+- L5 Sprint Channels smokes cover Alice and Bob in the same Sprint with Carol in
+  Space mode. Direct discussion should cross the Sprint boundary to Carol, `*`
+  should deliver only to current Sprint members, and `**` should deliver
+  Space-wide to Bob and Carol with explicit Space-wide labeling.
 - L5 Channels knowledge smokes prove Alice's real decision and gotcha slash
   commands are recorded through MCP/runtime evidence and rendered to passive Bob
   and Carol through Channels, while Alice receives no sender echo.
@@ -141,6 +149,12 @@ Claude Code plugin tests that verify the integration between the bridge, git hoo
 
 ```bash
 TEAMEM_CLAUDE_PLUGIN_E2E=1 TEAMEM_CLAUDE_PLUGIN_INTERACTIVE_E2E=1 TEAMEM_CLAUDE_PLUGIN_STATEFUL_E2E=1 TEAMEM_CLAUDE_PLUGIN_MULTI_PROFILE_E2E=1 TEAMEM_CLAUDE_PLUGIN_CHANNELS_E2E=1 CLAUDE_PLUGIN_E2E_ALLOW_UNREDACTED=1 bun test tests/plugin/teamem-channels-direct-smoke.test.ts
+```
+
+Run the Sprint-aware Channels matrix with the same gates:
+
+```bash
+TEAMEM_CLAUDE_PLUGIN_E2E=1 TEAMEM_CLAUDE_PLUGIN_INTERACTIVE_E2E=1 TEAMEM_CLAUDE_PLUGIN_STATEFUL_E2E=1 TEAMEM_CLAUDE_PLUGIN_MULTI_PROFILE_E2E=1 TEAMEM_CLAUDE_PLUGIN_CHANNELS_E2E=1 CLAUDE_PLUGIN_E2E_ALLOW_UNREDACTED=1 bun test tests/plugin/teamem-channels-sprint-smoke.test.ts
 ```
 
 - **L5 Channels focused verification**: run
