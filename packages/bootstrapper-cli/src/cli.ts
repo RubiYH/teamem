@@ -976,7 +976,7 @@ export function runCli(
     if (launcherExitCode !== 0) {
       return launcherExitCode;
     }
-    runPostSetupClaudeStatuslineStep({
+    const statuslineExitCode = runPostSetupClaudeStatuslineStep({
       mode: parsed.value.claudeStatusline,
       scope: resolvedScope,
       cwd: installerEnvironment.cwd,
@@ -984,6 +984,9 @@ export function runCli(
       environment,
       commandRunner: installerEnvironment.commandRunner
     });
+    if (statuslineExitCode !== 0) {
+      return statuslineExitCode;
+    }
     return setupResult.exitCode;
   }
 
@@ -2012,7 +2015,7 @@ function runPostSetupClaudeStatuslineStep(options: {
     dryRun: false
   });
   options.io.stdout.write(renderClaudeStatuslineReport(result));
-  return 0;
+  return result.ok ? 0 : 1;
 }
 
 function createInteractiveClaudeLauncherPrompter(

@@ -5231,7 +5231,7 @@ describe('runCli', () => {
     );
   });
 
-  it('keeps init successful when the accepted statusline install reports a conflict', () => {
+  it('returns nonzero when the accepted statusline install reports a conflict', () => {
     const writes: string[] = [];
     const launcherFileSystem = createLauncherFileSystem({
       files: {
@@ -5268,7 +5268,7 @@ describe('runCli', () => {
       })
     );
 
-    expect(exitCode).toBe(0);
+    expect(exitCode).toBe(1);
     expect(writes.join('')).toContain('Status: foreign');
     expect(writes.join('')).toContain(
       'ERROR: Refusing to overwrite a non-Teamem Claude statusline.'
@@ -5368,6 +5368,48 @@ describe('runCli', () => {
     expect(
       launcherFileSystem.files.get('/tmp/project/.claude/settings.local.json')
     ).toContain(TEAMEM_STATUSLINE_COMMAND);
+  });
+
+  it('returns nonzero when forced init statusline install reports a conflict', () => {
+    const writes: string[] = [];
+    const launcherFileSystem = createLauncherFileSystem({
+      files: {
+        '/tmp/project/.claude/settings.local.json':
+          '{"statusLine":{"type":"command","command":"custom-status"}}\n'
+      }
+    });
+
+    const exitCode = runCli(
+      [
+        'init',
+        '--scope',
+        'local',
+        '--skip-git-hooks',
+        '--skip-claude-launcher',
+        '--install-claude-statusline'
+      ],
+      {
+        stdout: {
+          write(text: string) {
+            writes.push(text);
+          }
+        },
+        stderr: { write() {} }
+      },
+      createSuccessfulInitEnvironment({
+        launcherFileSystem,
+        pathEnv: '/opt/claude/bin'
+      })
+    );
+
+    expect(exitCode).toBe(1);
+    expect(writes.join('')).toContain('Status: foreign');
+    expect(writes.join('')).toContain(
+      'ERROR: Refusing to overwrite a non-Teamem Claude statusline.'
+    );
+    expect(
+      launcherFileSystem.files.get('/tmp/project/.claude/settings.local.json')
+    ).toBe('{"statusLine":{"type":"command","command":"custom-status"}}\n');
   });
 
   it('reports init Claude statusline dry-run offer, force, and skip without writing settings', () => {
