@@ -19,8 +19,10 @@ import { resetRateLimitBuckets } from '../../src/server/rate-limit.js';
 
 const TEST_JWT_SECRET = 'test-secret-32bytes-padded-xxxxx';
 
-let tmpDir: string;
-let server: Awaited<ReturnType<typeof startHonoTestServer>>['server'];
+let tmpDir = '';
+let server:
+  | Awaited<ReturnType<typeof startHonoTestServer>>['server']
+  | undefined;
 let serverPort: number;
 let roomCode: string;
 
@@ -99,8 +101,14 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  await new Promise<void>((res) => server.close(() => res()));
-  await rm(tmpDir, { recursive: true, force: true });
+  if (server) {
+    await new Promise<void>((res) => server?.close(() => res()));
+    server = undefined;
+  }
+  if (tmpDir) {
+    await rm(tmpDir, { recursive: true, force: true });
+    tmpDir = '';
+  }
 });
 
 describe('AC11 — setup join flow', () => {

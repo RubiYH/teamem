@@ -11,6 +11,15 @@ import { tmpdir } from 'node:os';
 import { delimiter, join, resolve } from 'node:path';
 
 import { parseCliArgs, renderHelp, runCli } from '../src/cli.js';
+import {
+  TEAMEM_STATUSLINE_COMMAND,
+  renderClaudeStatusline,
+  renderFallbackStatusline
+} from '../src/claude-statusline.js';
+import {
+  TEAMEM_STATUSLINE_CACHE_RELATIVE_PATH,
+  readStatuslineDisplayCache
+} from '../src/statusline-display-cache.js';
 import type { CliEnvironment } from '../src/cli.js';
 import type {
   GitHookInstaller,
@@ -43,6 +52,16 @@ import type {
 
 const PACKAGE_ROOT = resolve(import.meta.dir, '..');
 const BIN_PATH = join(PACKAGE_ROOT, 'src/bin/teamem.ts');
+const ANSI_RESET = '\x1b[0m';
+const ANSI_TEAMEM_BROWN = '\x1b[38;2;139;94;52m';
+const ANSI_SPACE_CYAN = '\x1b[38;2;34;211;238m';
+const ANSI_DIM_GRAY = '\x1b[2;38;2;156;163;175m';
+const ANSI_CONTEXT_GREEN = '\x1b[38;2;34;197;94m';
+const ANSI_CONTEXT_YELLOW = '\x1b[38;2;234;179;8m';
+const ANSI_CONTEXT_RED = '\x1b[38;2;239;68;68m';
+const statuslineSeparator = ` ${ANSI_DIM_GRAY}|${ANSI_RESET} `;
+const colorStatusline = (value: string, color: string): string =>
+  `${color}${value}${ANSI_RESET}`;
 
 describe('parseCliArgs', () => {
   it('treats no args as help output', () => {
@@ -253,6 +272,105 @@ describe('parseCliArgs', () => {
     });
   });
 
+  it('parses project Claude statusline lifecycle commands', () => {
+    expect(parseCliArgs(['claude', 'statusline', 'install'])).toEqual({
+      ok: true,
+      value: {
+        command: 'claude',
+        dryRun: false,
+        help: false,
+        scope: undefined,
+        cc: undefined,
+        claude: {
+          lifecycleCommand: 'statusline',
+          statuslineCommand: 'install'
+        },
+        uninstall: undefined,
+        setup: {
+          flow: undefined,
+          serverUrl: undefined,
+          memberName: undefined,
+          spaceLabel: undefined,
+          roomCode: undefined
+        }
+      }
+    });
+    expect(parseCliArgs(['claude', 'statusline', 'status'])).toEqual({
+      ok: true,
+      value: {
+        command: 'claude',
+        dryRun: false,
+        help: false,
+        scope: undefined,
+        cc: undefined,
+        claude: {
+          lifecycleCommand: 'statusline',
+          statuslineCommand: 'status'
+        },
+        uninstall: undefined,
+        setup: {
+          flow: undefined,
+          serverUrl: undefined,
+          memberName: undefined,
+          spaceLabel: undefined,
+          roomCode: undefined
+        }
+      }
+    });
+    expect(parseCliArgs(['claude', 'statusline', 'uninstall'])).toEqual({
+      ok: true,
+      value: {
+        command: 'claude',
+        dryRun: false,
+        help: false,
+        scope: undefined,
+        cc: undefined,
+        claude: {
+          lifecycleCommand: 'statusline',
+          statuslineCommand: 'uninstall'
+        },
+        uninstall: undefined,
+        setup: {
+          flow: undefined,
+          serverUrl: undefined,
+          memberName: undefined,
+          spaceLabel: undefined,
+          roomCode: undefined
+        }
+      }
+    });
+    expect(
+      parseCliArgs(['claude', 'statusline', 'install', '--scope', 'user'])
+    ).toEqual({
+      ok: true,
+      value: {
+        command: 'claude',
+        dryRun: false,
+        help: false,
+        scope: 'user',
+        cc: undefined,
+        claude: {
+          lifecycleCommand: 'statusline',
+          statuslineCommand: 'install'
+        },
+        uninstall: undefined,
+        setup: {
+          flow: undefined,
+          serverUrl: undefined,
+          memberName: undefined,
+          spaceLabel: undefined,
+          roomCode: undefined
+        }
+      }
+    });
+    expect(
+      parseCliArgs(['claude', 'statusline', 'install', '--force'])
+    ).toEqual({
+      ok: false,
+      error: 'Unknown option for claude statusline install: --force'
+    });
+  });
+
   it('rejects missing or unknown Teamem-aware Claude launcher lifecycle commands', () => {
     expect(parseCliArgs(['claude'])).toEqual({
       ok: false,
@@ -325,6 +443,33 @@ describe('parseCliArgs', () => {
       ok: false,
       error:
         'Choose only one Claude launcher mode: --install-claude-launcher or --skip-claude-launcher'
+    });
+    expect(parseCliArgs(['init', '--install-claude-statusline'])).toMatchObject(
+      {
+        ok: true,
+        value: {
+          command: 'init',
+          claudeStatusline: 'install'
+        }
+      }
+    );
+    expect(parseCliArgs(['init', '--skip-claude-statusline'])).toMatchObject({
+      ok: true,
+      value: {
+        command: 'init',
+        claudeStatusline: 'skip'
+      }
+    });
+    expect(
+      parseCliArgs([
+        'init',
+        '--install-claude-statusline',
+        '--skip-claude-statusline'
+      ])
+    ).toEqual({
+      ok: false,
+      error:
+        'Choose only one Claude statusline mode: --install-claude-statusline or --skip-claude-statusline'
     });
   });
 
@@ -524,8 +669,12 @@ describe('runCli', () => {
     expect(help).toContain('claude install');
     expect(help).toContain('claude status');
     expect(help).toContain('claude uninstall');
+    expect(help).toContain('claude statusline install');
+    expect(help).toContain('claude statusline status');
+    expect(help).toContain('claude statusline uninstall');
     expect(help).toContain('Teamem-aware Claude launcher');
     expect(help).toContain('opt-in `claude` shim');
+    expect(help).toContain('Teamem Claude statusline');
   });
 
   it('lists dev profiles when status has no profile', () => {
@@ -2487,6 +2636,966 @@ describe('runCli', () => {
     expect(writes.join('')).toContain('/tmp/home/.teamem/launcher/claude.json');
   });
 
+  it('installs project Claude statusline settings with the stable Teamem wrapper command', () => {
+    const writes: string[] = [];
+    const launcherFileSystem = createLauncherFileSystem();
+
+    const exitCode = runCli(
+      ['claude', 'statusline', 'install'],
+      {
+        stdout: {
+          write(text: string) {
+            writes.push(text);
+          }
+        },
+        stderr: { write() {} }
+      },
+      createLauncherCliEnvironment({
+        launcherFileSystem,
+        pathEnv: '/opt/claude/bin',
+        homeDir: '/tmp/home',
+        cwd: '/tmp/project'
+      })
+    );
+
+    expect(exitCode).toBe(0);
+    const settings = launcherFileSystem.files.get(
+      '/tmp/project/.claude/settings.json'
+    );
+    expect(settings).toBe(
+      `{\n  "statusLine": {\n    "type": "command",\n    "command": "${TEAMEM_STATUSLINE_COMMAND}"\n  }\n}\n`
+    );
+    expect(settings).toContain('teamem claude statusline render');
+    expect(settings).not.toContain('.claude-plugin');
+    expect(settings).not.toContain('.teamem-backup');
+    expect(writes.join('')).toContain('Status: installed');
+    expect(writes.join('')).toContain('Scope: project');
+  });
+
+  it('installs Claude statusline settings only at the explicitly selected scope', () => {
+    const writes: string[] = [];
+    const launcherFileSystem = createLauncherFileSystem({
+      files: {
+        '/tmp/project/.claude/settings.json':
+          '{"statusLine":{"type":"command","command":"project-status"}}\n',
+        '/tmp/project/.claude/settings.local.json':
+          '{"statusLine":{"type":"command","command":"local-status"}}\n'
+      }
+    });
+
+    const exitCode = runCli(
+      ['claude', 'statusline', 'install', '--scope', 'user'],
+      {
+        stdout: {
+          write(text: string) {
+            writes.push(text);
+          }
+        },
+        stderr: { write() {} }
+      },
+      createLauncherCliEnvironment({
+        launcherFileSystem,
+        pathEnv: '/opt/claude/bin',
+        homeDir: '/tmp/home',
+        cwd: '/tmp/project'
+      })
+    );
+
+    expect(exitCode).toBe(0);
+    expect(
+      launcherFileSystem.files.get('/tmp/home/.claude/settings.json')
+    ).toContain(TEAMEM_STATUSLINE_COMMAND);
+    expect(
+      launcherFileSystem.files.get('/tmp/project/.claude/settings.json')
+    ).toBe('{"statusLine":{"type":"command","command":"project-status"}}\n');
+    expect(
+      launcherFileSystem.files.get('/tmp/project/.claude/settings.local.json')
+    ).toBe('{"statusLine":{"type":"command","command":"local-status"}}\n');
+    expect(writes.join('')).toContain('Scope: user');
+    expect(writes.join('')).toContain('Selected effective: no');
+  });
+
+  it('defaults Claude statusline install to user scope outside a git repository', () => {
+    const launcherFileSystem = createLauncherFileSystem();
+
+    const exitCode = runCli(
+      ['claude', 'statusline', 'install'],
+      { stdout: { write() {} }, stderr: { write() {} } },
+      createLauncherCliEnvironment({
+        launcherFileSystem,
+        commandRunner: createFakeRunner({
+          'git rev-parse --is-inside-work-tree': fail('not a repo')
+        }),
+        pathEnv: '/opt/claude/bin',
+        homeDir: '/tmp/home',
+        cwd: '/tmp/outside'
+      })
+    );
+
+    expect(exitCode).toBe(0);
+    expect(
+      launcherFileSystem.files.get('/tmp/home/.claude/settings.json')
+    ).toContain(TEAMEM_STATUSLINE_COMMAND);
+    expect(
+      launcherFileSystem.files.has('/tmp/outside/.claude/settings.json')
+    ).toBe(false);
+  });
+
+  it('refuses foreign project Claude statusline settings and reports conflict status', () => {
+    const installWrites: string[] = [];
+    const launcherFileSystem = createLauncherFileSystem({
+      files: {
+        '/tmp/project/.claude/settings.json':
+          '{"statusLine":{"type":"command","command":"custom-status"}}\n'
+      }
+    });
+
+    const installExitCode = runCli(
+      ['claude', 'statusline', 'install'],
+      {
+        stdout: {
+          write(text: string) {
+            installWrites.push(text);
+          }
+        },
+        stderr: { write() {} }
+      },
+      createLauncherCliEnvironment({
+        launcherFileSystem,
+        pathEnv: '/opt/claude/bin',
+        homeDir: '/tmp/home',
+        cwd: '/tmp/project'
+      })
+    );
+
+    expect(installExitCode).toBe(1);
+    expect(installWrites.join('')).toContain('Status: foreign');
+    expect(installWrites.join('')).toContain('Refusing to overwrite');
+    expect(installWrites.join('')).toContain('does not provide --force');
+    expect(
+      launcherFileSystem.files.get('/tmp/project/.claude/settings.json')
+    ).toBe('{"statusLine":{"type":"command","command":"custom-status"}}\n');
+
+    const statusWrites: string[] = [];
+    const statusExitCode = runCli(
+      ['claude', 'statusline', 'status'],
+      {
+        stdout: {
+          write(text: string) {
+            statusWrites.push(text);
+          }
+        },
+        stderr: { write() {} }
+      },
+      createLauncherCliEnvironment({
+        launcherFileSystem,
+        pathEnv: '/opt/claude/bin',
+        homeDir: '/tmp/home',
+        cwd: '/tmp/project'
+      })
+    );
+
+    expect(statusExitCode).toBe(1);
+    expect(statusWrites.join('')).toContain('Status: foreign');
+  });
+
+  it('reports missing and installed project Claude statusline status states', () => {
+    const launcherFileSystem = createLauncherFileSystem();
+    const missingWrites: string[] = [];
+    const missingExitCode = runCli(
+      ['claude', 'statusline', 'status'],
+      {
+        stdout: {
+          write(text: string) {
+            missingWrites.push(text);
+          }
+        },
+        stderr: { write() {} }
+      },
+      createLauncherCliEnvironment({
+        launcherFileSystem,
+        pathEnv: '/opt/claude/bin',
+        homeDir: '/tmp/home',
+        cwd: '/tmp/project'
+      })
+    );
+
+    expect(missingExitCode).toBe(0);
+    expect(missingWrites.join('')).toContain('Status: missing');
+
+    launcherFileSystem.files.set(
+      '/tmp/project/.claude/settings.json',
+      `${JSON.stringify({
+        statusLine: {
+          type: 'command',
+          command: TEAMEM_STATUSLINE_COMMAND
+        }
+      })}\n`
+    );
+    const installedWrites: string[] = [];
+    const installedExitCode = runCli(
+      ['claude', 'statusline', 'status'],
+      {
+        stdout: {
+          write(text: string) {
+            installedWrites.push(text);
+          }
+        },
+        stderr: { write() {} }
+      },
+      createLauncherCliEnvironment({
+        launcherFileSystem,
+        pathEnv: '/opt/claude/bin',
+        homeDir: '/tmp/home',
+        cwd: '/tmp/project'
+      })
+    );
+
+    expect(installedExitCode).toBe(0);
+    expect(installedWrites.join('')).toContain('Status: installed');
+  });
+
+  it('reports selected installation separately from effective Claude settings precedence', () => {
+    const launcherFileSystem = createLauncherFileSystem({
+      files: {
+        '/tmp/home/.claude/settings.json': `${JSON.stringify({
+          statusLine: {
+            type: 'command',
+            command: TEAMEM_STATUSLINE_COMMAND
+          }
+        })}\n`,
+        '/tmp/project/.claude/settings.json':
+          '{"statusLine":{"type":"command","command":"project-status"}}\n'
+      }
+    });
+    const writes: string[] = [];
+
+    const exitCode = runCli(
+      ['claude', 'statusline', 'status', '--scope', 'user'],
+      {
+        stdout: {
+          write(text: string) {
+            writes.push(text);
+          }
+        },
+        stderr: { write() {} }
+      },
+      createLauncherCliEnvironment({
+        launcherFileSystem,
+        pathEnv: '/opt/claude/bin',
+        homeDir: '/tmp/home',
+        cwd: '/tmp/project'
+      })
+    );
+
+    expect(exitCode).toBe(1);
+    expect(writes.join('')).toContain('Status: installed');
+    expect(writes.join('')).toContain('Scope: user');
+    expect(writes.join('')).toContain('Effective: no');
+    expect(writes.join('')).toContain('Selected effective: no');
+    expect(writes.join('')).toContain('Effective scope: project');
+    expect(writes.join('')).toContain(
+      'installed-but-overridden: project scope overrides selected user scope.'
+    );
+    expect(writes.join('')).toContain(
+      'Overriding scope: project contains a non-Teamem statusline.'
+    );
+  });
+
+  it('reports selected Teamem statusline as overridden by higher-precedence Teamem settings', () => {
+    const launcherFileSystem = createLauncherFileSystem({
+      files: {
+        '/tmp/home/.claude/settings.json': `${JSON.stringify({
+          statusLine: {
+            type: 'command',
+            command: TEAMEM_STATUSLINE_COMMAND
+          }
+        })}\n`,
+        '/tmp/project/.claude/settings.json': `${JSON.stringify({
+          statusLine: {
+            type: 'command',
+            command: TEAMEM_STATUSLINE_COMMAND
+          }
+        })}\n`
+      }
+    });
+    const writes: string[] = [];
+
+    const exitCode = runCli(
+      ['claude', 'statusline', 'status', '--scope', 'user'],
+      {
+        stdout: {
+          write(text: string) {
+            writes.push(text);
+          }
+        },
+        stderr: { write() {} }
+      },
+      createLauncherCliEnvironment({
+        launcherFileSystem,
+        pathEnv: '/opt/claude/bin',
+        homeDir: '/tmp/home',
+        cwd: '/tmp/project'
+      })
+    );
+
+    expect(exitCode).toBe(1);
+    expect(writes.join('')).toContain('Status: installed');
+    expect(writes.join('')).toContain('Scope: user');
+    expect(writes.join('')).toContain('Selected effective: no');
+    expect(writes.join('')).toContain('Effective scope: project');
+    expect(writes.join('')).toContain(
+      'installed-but-overridden: project scope overrides selected user scope.'
+    );
+  });
+
+  it('uninstalls only the exact Teamem project statusline command', () => {
+    const launcherFileSystem = createLauncherFileSystem({
+      files: {
+        '/tmp/project/.claude/settings.json': `${JSON.stringify(
+          {
+            permissions: { allow: ['Bash(git status:*)'] },
+            statusLine: {
+              type: 'command',
+              command: TEAMEM_STATUSLINE_COMMAND
+            }
+          },
+          null,
+          2
+        )}\n`
+      }
+    });
+
+    const exitCode = runCli(
+      ['claude', 'statusline', 'uninstall'],
+      { stdout: { write() {} }, stderr: { write() {} } },
+      createLauncherCliEnvironment({
+        launcherFileSystem,
+        pathEnv: '/opt/claude/bin',
+        homeDir: '/tmp/home',
+        cwd: '/tmp/project'
+      })
+    );
+
+    expect(exitCode).toBe(0);
+    expect(
+      launcherFileSystem.files.get('/tmp/project/.claude/settings.json')
+    ).toBe(
+      `{\n  "permissions": {\n    "allow": [\n      "Bash(git status:*)"\n    ]\n  }\n}\n`
+    );
+
+    launcherFileSystem.files.set(
+      '/tmp/project/.claude/settings.json',
+      '{"statusLine":{"type":"command","command":"teamem claude statusline render --edited"}}\n'
+    );
+    const skipWrites: string[] = [];
+    const skipExitCode = runCli(
+      ['claude', 'statusline', 'uninstall'],
+      {
+        stdout: {
+          write(text: string) {
+            skipWrites.push(text);
+          }
+        },
+        stderr: { write() {} }
+      },
+      createLauncherCliEnvironment({
+        launcherFileSystem,
+        pathEnv: '/opt/claude/bin',
+        homeDir: '/tmp/home',
+        cwd: '/tmp/project'
+      })
+    );
+
+    expect(skipExitCode).toBe(0);
+    expect(skipWrites.join('')).toContain('Skipped cleanup');
+    expect(
+      launcherFileSystem.files.get('/tmp/project/.claude/settings.json')
+    ).toBe(
+      '{"statusLine":{"type":"command","command":"teamem claude statusline render --edited"}}\n'
+    );
+  });
+
+  it('uninstalls only the selected scope exact Teamem statusline setting', () => {
+    const launcherFileSystem = createLauncherFileSystem({
+      files: {
+        '/tmp/home/.claude/settings.json': `${JSON.stringify({
+          statusLine: {
+            type: 'command',
+            command: TEAMEM_STATUSLINE_COMMAND
+          }
+        })}\n`,
+        '/tmp/project/.claude/settings.json':
+          '{"statusLine":{"type":"command","command":"project-status"}}\n',
+        '/tmp/project/.claude/settings.local.json':
+          '{"statusLine":{"type":"command","command":"teamem claude statusline render --edited"}}\n'
+      }
+    });
+
+    const exitCode = runCli(
+      ['claude', 'statusline', 'uninstall', '--scope', 'user'],
+      { stdout: { write() {} }, stderr: { write() {} } },
+      createLauncherCliEnvironment({
+        launcherFileSystem,
+        pathEnv: '/opt/claude/bin',
+        homeDir: '/tmp/home',
+        cwd: '/tmp/project'
+      })
+    );
+
+    expect(exitCode).toBe(0);
+    expect(
+      launcherFileSystem.files.get('/tmp/home/.claude/settings.json')
+    ).toBe('{}\n');
+    expect(
+      launcherFileSystem.files.get('/tmp/project/.claude/settings.json')
+    ).toBe('{"statusLine":{"type":"command","command":"project-status"}}\n');
+    expect(
+      launcherFileSystem.files.get('/tmp/project/.claude/settings.local.json')
+    ).toBe(
+      '{"statusLine":{"type":"command","command":"teamem claude statusline render --edited"}}\n'
+    );
+  });
+
+  it('renders a compact fallback Claude statusline without stack traces', () => {
+    expect(
+      renderFallbackStatusline(
+        '{"model":{"display_name":"Opus"},"workspace":{"current_dir":"/tmp/project"}}'
+      )
+    ).toBe(
+      [
+        colorStatusline('Teamem', ANSI_TEAMEM_BROWN),
+        colorStatusline('Opus', ANSI_DIM_GRAY),
+        colorStatusline('project', ANSI_DIM_GRAY)
+      ].join(statuslineSeparator)
+    );
+    expect(
+      renderFallbackStatusline(
+        JSON.stringify({
+          model: { display_name: 'Opus\n\u001b[31mred\u0007' },
+          workspace: { current_dir: '/tmp/project\r\n\u001b[2J' }
+        })
+      )
+    ).toBe(
+      [
+        colorStatusline('Teamem', ANSI_TEAMEM_BROWN),
+        colorStatusline('Opus red', ANSI_DIM_GRAY),
+        colorStatusline('project', ANSI_DIM_GRAY)
+      ].join(statuslineSeparator)
+    );
+    expect(renderFallbackStatusline('{not json')).toBe(
+      'Teamem | status unavailable'
+    );
+  });
+
+  it('reads only fresh matching Teamem statusline display cache records', () => {
+    const work = mkdtempSync(join(tmpdir(), 'teamem-statusline-cache-'));
+    const cachePath = join(work, TEAMEM_STATUSLINE_CACHE_RELATIVE_PATH);
+    mkdirSync(join(work, 'statusline'), { recursive: true });
+    try {
+      writeFileSync(
+        cachePath,
+        `${JSON.stringify({
+          format_version: 1,
+          updated_at: '2026-06-07T00:00:00.000Z',
+          fresh_until: '2026-06-07T00:05:00.000Z',
+          identity: {
+            project_key: 'proj-1',
+            session_id: 'sess-1',
+            workspace_current_dir: '/tmp/project'
+          },
+          space: { id: 'space-1', label: 'Alpha' }
+        })}\n`
+      );
+
+      expect(
+        readStatuslineDisplayCache(
+          { session_id: 'sess-1', workspace_current_dir: '/tmp/project' },
+          {
+            candidatePaths: [cachePath],
+            now: new Date('2026-06-07T00:01:00.000Z')
+          }
+        )
+      ).toEqual({ space: { id: 'space-1', label: 'Alpha' } });
+
+      expect(
+        readStatuslineDisplayCache(
+          { session_id: 'other', workspace_current_dir: '/tmp/project' },
+          {
+            candidatePaths: [cachePath],
+            now: new Date('2026-06-07T00:01:00.000Z')
+          }
+        )
+      ).toEqual({});
+
+      expect(
+        readStatuslineDisplayCache(
+          { session_id: 'sess-1', workspace_current_dir: '/tmp/project' },
+          {
+            candidatePaths: [cachePath],
+            now: new Date('2026-06-07T00:06:00.000Z')
+          }
+        )
+      ).toEqual({});
+    } finally {
+      rmSync(work, { recursive: true, force: true });
+    }
+  });
+
+  it('returns empty display state for malformed Teamem statusline cache records', () => {
+    const work = mkdtempSync(join(tmpdir(), 'teamem-statusline-malformed-'));
+    const cachePath = join(work, TEAMEM_STATUSLINE_CACHE_RELATIVE_PATH);
+    mkdirSync(join(work, 'statusline'), { recursive: true });
+    try {
+      writeFileSync(cachePath, '{not json');
+      expect(
+        readStatuslineDisplayCache(
+          { session_id: 'sess-1', workspace_current_dir: '/tmp/project' },
+          {
+            candidatePaths: [cachePath],
+            now: new Date('2026-06-07T00:01:00.000Z')
+          }
+        )
+      ).toEqual({});
+    } finally {
+      rmSync(work, { recursive: true, force: true });
+    }
+  });
+
+  it('renders Space and Claude context only from a fresh valid local cache', () => {
+    const work = mkdtempSync(join(tmpdir(), 'teamem-statusline-render-'));
+    const cachePath = join(work, TEAMEM_STATUSLINE_CACHE_RELATIVE_PATH);
+    mkdirSync(join(work, 'statusline'), { recursive: true });
+    try {
+      writeFileSync(
+        cachePath,
+        `${JSON.stringify({
+          format_version: 1,
+          updated_at: '2026-06-07T00:00:00.000Z',
+          fresh_until: '2026-06-07T00:05:00.000Z',
+          identity: {
+            session_id: 'sess-1',
+            workspace_current_dir: '/tmp/project'
+          },
+          space: { id: 'space-1', label: 'Alpha' },
+          monitor: { state: 'running' },
+          run: { state: 'active' }
+        })}\n`
+      );
+
+      expect(
+        renderFallbackStatusline(
+          JSON.stringify({
+            session_id: 'sess-1',
+            model: { display_name: 'Opus' },
+            workspace: { current_dir: '/tmp/project' },
+            context_window: { percent_available: 0.42 }
+          }),
+          {
+            candidatePaths: [cachePath],
+            now: new Date('2026-06-07T00:01:00.000Z')
+          }
+        )
+      ).toBe(
+        [
+          colorStatusline('Teamem', ANSI_TEAMEM_BROWN),
+          colorStatusline('Alpha', ANSI_SPACE_CYAN),
+          colorStatusline('ctx 42%', ANSI_CONTEXT_GREEN),
+          colorStatusline('Opus', ANSI_DIM_GRAY),
+          colorStatusline('project', ANSI_DIM_GRAY)
+        ].join(statuslineSeparator)
+      );
+
+      expect(
+        renderFallbackStatusline(
+          JSON.stringify({
+            session_id: 'sess-1',
+            model: { display_name: 'Opus' },
+            workspace: { current_dir: '/tmp/project' }
+          }),
+          {
+            candidatePaths: [cachePath],
+            now: new Date('2026-06-07T00:06:00.000Z')
+          }
+        )
+      ).toBe(
+        [
+          colorStatusline('Teamem', ANSI_TEAMEM_BROWN),
+          colorStatusline('Opus', ANSI_DIM_GRAY),
+          colorStatusline('project', ANSI_DIM_GRAY)
+        ].join(statuslineSeparator)
+      );
+    } finally {
+      rmSync(work, { recursive: true, force: true });
+    }
+  });
+
+  it('renders ctx from the documented Claude statusline context fields', () => {
+    expect(
+      renderFallbackStatusline(
+        JSON.stringify({
+          cwd: '/current/working/directory',
+          session_id: 'abc123',
+          model: {
+            id: 'claude-opus-4-8',
+            display_name: 'Opus'
+          },
+          workspace: {
+            current_dir: '/current/working/directory',
+            project_dir: '/original/project/directory',
+            added_dirs: []
+          },
+          context_window: {
+            total_input_tokens: 15500,
+            total_output_tokens: 1200,
+            context_window_size: 200000,
+            used_percentage: 8,
+            remaining_percentage: 92,
+            current_usage: {
+              input_tokens: 8500,
+              output_tokens: 1200,
+              cache_creation_input_tokens: 5000,
+              cache_read_input_tokens: 2000
+            }
+          }
+        })
+      )
+    ).toBe(
+      [
+        colorStatusline('Teamem', ANSI_TEAMEM_BROWN),
+        colorStatusline('ctx 8%', ANSI_CONTEXT_GREEN),
+        colorStatusline('Opus', ANSI_DIM_GRAY),
+        colorStatusline('directory', ANSI_DIM_GRAY)
+      ].join(statuslineSeparator)
+    );
+
+    expect(
+      renderFallbackStatusline(
+        JSON.stringify({
+          session_id: 'abc123',
+          model: { display_name: 'Sonnet' },
+          workspace: { current_dir: '/tmp/project' },
+          context_window: {
+            context_window_size: 200000,
+            current_usage: {
+              input_tokens: 8000,
+              output_tokens: 100000,
+              cache_creation_input_tokens: 2000,
+              cache_read_input_tokens: 0
+            }
+          }
+        })
+      )
+    ).toBe(
+      [
+        colorStatusline('Teamem', ANSI_TEAMEM_BROWN),
+        colorStatusline('ctx 5%', ANSI_CONTEXT_GREEN),
+        colorStatusline('Sonnet', ANSI_DIM_GRAY),
+        colorStatusline('project', ANSI_DIM_GRAY)
+      ].join(statuslineSeparator)
+    );
+  });
+
+  it('renders representative Claude statusline output with Teamem-owned ANSI colors', () => {
+    const work = mkdtempSync(join(tmpdir(), 'teamem-statusline-color-'));
+    const cachePath = join(work, TEAMEM_STATUSLINE_CACHE_RELATIVE_PATH);
+    mkdirSync(join(work, 'statusline'), { recursive: true });
+    try {
+      writeFileSync(
+        cachePath,
+        `${JSON.stringify({
+          format_version: 1,
+          updated_at: '2026-06-07T00:00:00.000Z',
+          fresh_until: '2026-06-07T00:05:00.000Z',
+          identity: {
+            session_id: 'sess-color',
+            workspace_current_dir: '/tmp/project'
+          },
+          space: { id: 'space-1', label: 'Alpha' },
+          sprint: {
+            sprint_id: 'sprint-1',
+            display_name: 'Launch Week'
+          }
+        })}\n`
+      );
+
+      expect(
+        renderClaudeStatusline(
+          JSON.stringify({
+            session_id: 'sess-color',
+            model: { display_name: 'Opus' },
+            workspace: { current_dir: '/tmp/project' },
+            context_window: { used_percentage: 72 }
+          }),
+          {
+            candidatePaths: [cachePath],
+            now: new Date('2026-06-07T00:01:00.000Z')
+          }
+        )
+      ).toBe(
+        `${[
+          colorStatusline('Teamem', ANSI_TEAMEM_BROWN),
+          colorStatusline('Alpha', ANSI_SPACE_CYAN),
+          `${colorStatusline('Sprint', ANSI_DIM_GRAY)} Launch Week`,
+          colorStatusline('ctx 72%', ANSI_CONTEXT_YELLOW),
+          colorStatusline('Opus', ANSI_DIM_GRAY),
+          colorStatusline('project', ANSI_DIM_GRAY)
+        ].join(statuslineSeparator)}\n`
+      );
+    } finally {
+      rmSync(work, { recursive: true, force: true });
+    }
+  });
+
+  it('colors ctx thresholds from official context_window.used_percentage values', () => {
+    const renderCtx = (usedPercentage: number) =>
+      renderFallbackStatusline(
+        JSON.stringify({
+          workspace: { current_dir: '/tmp/project' },
+          context_window: { used_percentage: usedPercentage }
+        }),
+        { candidatePaths: [] }
+      );
+
+    expect(renderCtx(69)).toBe(
+      [
+        colorStatusline('Teamem', ANSI_TEAMEM_BROWN),
+        colorStatusline('ctx 69%', ANSI_CONTEXT_GREEN),
+        colorStatusline('project', ANSI_DIM_GRAY)
+      ].join(statuslineSeparator)
+    );
+    expect(renderCtx(70)).toBe(
+      [
+        colorStatusline('Teamem', ANSI_TEAMEM_BROWN),
+        colorStatusline('ctx 70%', ANSI_CONTEXT_YELLOW),
+        colorStatusline('project', ANSI_DIM_GRAY)
+      ].join(statuslineSeparator)
+    );
+    expect(renderCtx(89)).toBe(
+      [
+        colorStatusline('Teamem', ANSI_TEAMEM_BROWN),
+        colorStatusline('ctx 89%', ANSI_CONTEXT_YELLOW),
+        colorStatusline('project', ANSI_DIM_GRAY)
+      ].join(statuslineSeparator)
+    );
+    expect(renderCtx(90)).toBe(
+      [
+        colorStatusline('Teamem', ANSI_TEAMEM_BROWN),
+        colorStatusline('ctx 90%', ANSI_CONTEXT_RED),
+        colorStatusline('project', ANSI_DIM_GRAY)
+      ].join(statuslineSeparator)
+    );
+  });
+
+  it('sanitizes dynamic ANSI and control text before applying Teamem colors', () => {
+    const work = mkdtempSync(join(tmpdir(), 'teamem-statusline-inject-'));
+    const cachePath = join(work, TEAMEM_STATUSLINE_CACHE_RELATIVE_PATH);
+    mkdirSync(join(work, 'statusline'), { recursive: true });
+    try {
+      writeFileSync(
+        cachePath,
+        `${JSON.stringify({
+          format_version: 1,
+          updated_at: '2026-06-07T00:00:00.000Z',
+          fresh_until: '2026-06-07T00:05:00.000Z',
+          identity: {
+            session_id: 'sess-inject',
+            workspace_current_dir: '/tmp/project'
+          },
+          space: { label: 'Alpha\u001b[31m red\u0007' },
+          sprint: {
+            display_name: 'Launch\u001b]0;owned\u0007 Week\nNext'
+          }
+        })}\n`
+      );
+
+      const rendered = renderFallbackStatusline(
+        JSON.stringify({
+          session_id: 'sess-inject',
+          model: { display_name: 'Opus\u001b[31m red\u0007' },
+          workspace: { current_dir: '/tmp/project\u001b[2J' },
+          context_window: { used_percentage: 12 }
+        }),
+        {
+          candidatePaths: [cachePath],
+          now: new Date('2026-06-07T00:01:00.000Z')
+        }
+      );
+
+      expect(rendered).toBe(
+        [
+          colorStatusline('Teamem', ANSI_TEAMEM_BROWN),
+          colorStatusline('Alpha red', ANSI_SPACE_CYAN),
+          `${colorStatusline('Sprint', ANSI_DIM_GRAY)} Launch Week Next`,
+          colorStatusline('ctx 12%', ANSI_CONTEXT_GREEN),
+          colorStatusline('Opus red', ANSI_DIM_GRAY),
+          colorStatusline('project', ANSI_DIM_GRAY)
+        ].join(statuslineSeparator)
+      );
+      expect(rendered).not.toContain('\x1b[31m');
+      expect(rendered).not.toContain('\x1b[2J');
+      expect(rendered).not.toContain('\x1b]0;owned');
+      expect(rendered).not.toContain('\u0007');
+    } finally {
+      rmSync(work, { recursive: true, force: true });
+    }
+  });
+
+  it('renders Sprint only from fresh matching Sprint-mode cache data', () => {
+    const work = mkdtempSync(join(tmpdir(), 'teamem-statusline-sprint-'));
+    const cachePath = join(work, TEAMEM_STATUSLINE_CACHE_RELATIVE_PATH);
+    mkdirSync(join(work, 'statusline'), { recursive: true });
+    const input = JSON.stringify({
+      session_id: 'sess-sprint',
+      model: { display_name: 'Opus' },
+      workspace: { current_dir: '/tmp/project' }
+    });
+    const render = (now: string) =>
+      renderFallbackStatusline(input, {
+        candidatePaths: [cachePath],
+        now: new Date(now)
+      });
+    try {
+      writeFileSync(
+        cachePath,
+        `${JSON.stringify({
+          format_version: 1,
+          updated_at: '2026-06-07T00:00:00.000Z',
+          fresh_until: '2026-06-07T00:05:00.000Z',
+          identity: {
+            session_id: 'sess-sprint',
+            workspace_current_dir: '/tmp/project'
+          },
+          space: { id: 'space-1', label: 'Alpha' },
+          sprint: {
+            sprint_id: 'sprint-1',
+            slug: 'launch-week',
+            display_name: 'Launch Week'
+          },
+          monitor: { health: 'red', run_state: 'running' },
+          run: { state: 'active', pid: 1234 }
+        })}\n`
+      );
+
+      expect(render('2026-06-07T00:01:00.000Z')).toBe(
+        [
+          colorStatusline('Teamem', ANSI_TEAMEM_BROWN),
+          colorStatusline('Alpha', ANSI_SPACE_CYAN),
+          `${colorStatusline('Sprint', ANSI_DIM_GRAY)} Launch Week`,
+          colorStatusline('Opus', ANSI_DIM_GRAY),
+          colorStatusline('project', ANSI_DIM_GRAY)
+        ].join(statuslineSeparator)
+      );
+      expect(render('2026-06-07T00:06:00.000Z')).toBe(
+        [
+          colorStatusline('Teamem', ANSI_TEAMEM_BROWN),
+          colorStatusline('Opus', ANSI_DIM_GRAY),
+          colorStatusline('project', ANSI_DIM_GRAY)
+        ].join(statuslineSeparator)
+      );
+
+      writeFileSync(
+        cachePath,
+        `${JSON.stringify({
+          format_version: 1,
+          updated_at: '2026-06-07T00:00:00.000Z',
+          fresh_until: '2026-06-07T00:05:00.000Z',
+          identity: {
+            session_id: 'other-session',
+            workspace_current_dir: '/tmp/project'
+          },
+          space: { id: 'space-1', label: 'Alpha' },
+          sprint: { display_name: 'Wrong Context' }
+        })}\n`
+      );
+      expect(render('2026-06-07T00:01:00.000Z')).toBe(
+        [
+          colorStatusline('Teamem', ANSI_TEAMEM_BROWN),
+          colorStatusline('Opus', ANSI_DIM_GRAY),
+          colorStatusline('project', ANSI_DIM_GRAY)
+        ].join(statuslineSeparator)
+      );
+
+      writeFileSync(
+        cachePath,
+        `${JSON.stringify({
+          format_version: 1,
+          updated_at: '2026-06-07T00:00:00.000Z',
+          fresh_until: '2026-06-07T00:05:00.000Z',
+          identity: {
+            session_id: 'sess-sprint',
+            workspace_current_dir: '/tmp/project'
+          },
+          space: { id: 'space-1', label: 'Alpha' },
+          sprint: null
+        })}\n`
+      );
+      expect(render('2026-06-07T00:01:00.000Z')).toBe(
+        [
+          colorStatusline('Teamem', ANSI_TEAMEM_BROWN),
+          colorStatusline('Alpha', ANSI_SPACE_CYAN),
+          colorStatusline('Opus', ANSI_DIM_GRAY),
+          colorStatusline('project', ANSI_DIM_GRAY)
+        ].join(statuslineSeparator)
+      );
+
+      writeFileSync(
+        cachePath,
+        `${JSON.stringify({
+          format_version: 1,
+          updated_at: '2026-06-07T00:00:00.000Z',
+          fresh_until: '2026-06-07T00:05:00.000Z',
+          identity: {
+            session_id: 'sess-sprint',
+            workspace_current_dir: '/tmp/project'
+          },
+          space: { id: 'space-1', label: 'Alpha' },
+          sprint: { monitor_state: 'running' }
+        })}\n`
+      );
+      expect(render('2026-06-07T00:01:00.000Z')).toBe(
+        [
+          colorStatusline('Teamem', ANSI_TEAMEM_BROWN),
+          colorStatusline('Alpha', ANSI_SPACE_CYAN),
+          colorStatusline('Opus', ANSI_DIM_GRAY),
+          colorStatusline('project', ANSI_DIM_GRAY)
+        ].join(statuslineSeparator)
+      );
+
+      writeFileSync(cachePath, '{not json');
+      expect(render('2026-06-07T00:01:00.000Z')).toBe(
+        [
+          colorStatusline('Teamem', ANSI_TEAMEM_BROWN),
+          colorStatusline('Opus', ANSI_DIM_GRAY),
+          colorStatusline('project', ANSI_DIM_GRAY)
+        ].join(statuslineSeparator)
+      );
+    } finally {
+      rmSync(work, { recursive: true, force: true });
+    }
+  });
+
+  it('renders safely without server or MCP access when cache is absent', () => {
+    expect(
+      renderClaudeStatusline(
+        JSON.stringify({
+          session_id: 'sess-no-cache',
+          model: { display_name: 'Sonnet' },
+          workspace: { current_dir: '/tmp/no-cache' },
+          context: { percentage: 87 }
+        }),
+        { candidatePaths: [] }
+      )
+    ).toBe(
+      `${[
+        colorStatusline('Teamem', ANSI_TEAMEM_BROWN),
+        colorStatusline('ctx 87%', ANSI_CONTEXT_YELLOW),
+        colorStatusline('Sonnet', ANSI_DIM_GRAY),
+        colorStatusline('no-cache', ANSI_DIM_GRAY)
+      ].join(statuslineSeparator)}\n`
+    );
+  });
+
   it('excludes Teamem shim directory when detecting the real Claude Code path', () => {
     const launcherFileSystem = createLauncherFileSystem({
       executableFiles: [
@@ -3759,7 +4868,13 @@ describe('runCli', () => {
     });
 
     const exitCode = runCli(
-      ['init', '--scope', 'local', '--skip-git-hooks'],
+      [
+        'init',
+        '--scope',
+        'local',
+        '--skip-git-hooks',
+        '--skip-claude-statusline'
+      ],
       {
         stdout: {
           write(text: string) {
@@ -3987,6 +5102,387 @@ describe('runCli', () => {
     expect(skippedExitCode).toBe(0);
     expect(skippedWrites.join('')).toContain(
       'Claude launcher: skipped by --skip-claude-launcher'
+    );
+  });
+
+  it('offers the Claude statusline after interactive init setup and installs on accepted choice', () => {
+    const writes: string[] = [];
+    const prompts: string[] = [];
+    const launcherFileSystem = createLauncherFileSystem();
+
+    const exitCode = runCli(
+      [
+        'init',
+        '--scope',
+        'local',
+        '--skip-git-hooks',
+        '--skip-claude-launcher'
+      ],
+      {
+        stdout: {
+          write(text: string) {
+            writes.push(text);
+          }
+        },
+        stderr: { write() {} }
+      },
+      createSuccessfulInitEnvironment({
+        launcherFileSystem,
+        pathEnv: '/opt/claude/bin',
+        promptEnvironment: {
+          isInteractive: () => true,
+          prompt(message) {
+            prompts.push(message);
+            return '';
+          }
+        }
+      })
+    );
+
+    expect(exitCode).toBe(0);
+    expect(prompts).toEqual(['Install the Teamem Claude statusline? [Y/n]: ']);
+    expect(
+      launcherFileSystem.files.get('/tmp/project/.claude/settings.local.json')
+    ).toContain(TEAMEM_STATUSLINE_COMMAND);
+    expect(writes.join('')).toContain('Status: installed');
+    expect(writes.join('')).toContain('Scope: local');
+  });
+
+  it('uses the prompted init scope when accepted statusline install writes settings', () => {
+    const writes: string[] = [];
+    const prompts: string[] = [];
+    const launcherFileSystem = createLauncherFileSystem();
+    const scopePrompter: ScopePrompter = () => 'local';
+
+    const exitCode = runCli(
+      ['init', '--skip-git-hooks', '--skip-claude-launcher'],
+      {
+        stdout: {
+          write(text: string) {
+            writes.push(text);
+          }
+        },
+        stderr: { write() {} }
+      },
+      {
+        ...createSuccessfulInitEnvironment({
+          launcherFileSystem,
+          pathEnv: '/opt/claude/bin',
+          promptEnvironment: {
+            isInteractive: () => true,
+            prompt(message) {
+              prompts.push(message);
+              return '';
+            }
+          }
+        }),
+        scopePrompter
+      }
+    );
+
+    expect(exitCode).toBe(0);
+    expect(prompts).toEqual(['Install the Teamem Claude statusline? [Y/n]: ']);
+    expect(writes.join('')).toContain('Selected plugin scope: local (prompt)');
+    expect(
+      launcherFileSystem.files.get('/tmp/project/.claude/settings.local.json')
+    ).toContain(TEAMEM_STATUSLINE_COMMAND);
+    expect(
+      launcherFileSystem.files.get('/tmp/project/.claude/settings.json')
+    ).toBeUndefined();
+    expect(writes.join('')).toContain('Scope: local');
+  });
+
+  it('prints the later-enable hint exactly when the init statusline offer is declined', () => {
+    const writes: string[] = [];
+    const launcherFileSystem = createLauncherFileSystem();
+
+    const exitCode = runCli(
+      [
+        'init',
+        '--scope',
+        'local',
+        '--skip-git-hooks',
+        '--skip-claude-launcher'
+      ],
+      {
+        stdout: {
+          write(text: string) {
+            writes.push(text);
+          }
+        },
+        stderr: { write() {} }
+      },
+      createSuccessfulInitEnvironment({
+        launcherFileSystem,
+        pathEnv: '/opt/claude/bin',
+        promptEnvironment: {
+          isInteractive: () => true,
+          prompt() {
+            return 'n';
+          }
+        }
+      })
+    );
+
+    expect(exitCode).toBe(0);
+    expect(launcherFileSystem.files.size).toBe(0);
+    expect(writes.join('')).toContain(
+      'You can enable the Teamem statusline later with: teamem claude statusline install\n'
+    );
+  });
+
+  it('returns nonzero when the accepted statusline install reports a conflict', () => {
+    const writes: string[] = [];
+    const launcherFileSystem = createLauncherFileSystem({
+      files: {
+        '/tmp/project/.claude/settings.local.json':
+          '{"statusLine":{"type":"command","command":"custom-status"}}\n'
+      }
+    });
+
+    const exitCode = runCli(
+      [
+        'init',
+        '--scope',
+        'local',
+        '--skip-git-hooks',
+        '--skip-claude-launcher'
+      ],
+      {
+        stdout: {
+          write(text: string) {
+            writes.push(text);
+          }
+        },
+        stderr: { write() {} }
+      },
+      createSuccessfulInitEnvironment({
+        launcherFileSystem,
+        pathEnv: '/opt/claude/bin',
+        promptEnvironment: {
+          isInteractive: () => true,
+          prompt() {
+            return 'yes';
+          }
+        }
+      })
+    );
+
+    expect(exitCode).toBe(1);
+    expect(writes.join('')).toContain('Status: foreign');
+    expect(writes.join('')).toContain(
+      'ERROR: Refusing to overwrite a non-Teamem Claude statusline.'
+    );
+    expect(
+      launcherFileSystem.files.get('/tmp/project/.claude/settings.local.json')
+    ).toBe('{"statusLine":{"type":"command","command":"custom-status"}}\n');
+  });
+
+  it('skips Claude statusline install during non-interactive init by default or explicit skip', () => {
+    const defaultWrites: string[] = [];
+    const defaultFileSystem = createLauncherFileSystem();
+
+    const defaultExitCode = runCli(
+      [
+        'init',
+        '--scope',
+        'local',
+        '--skip-git-hooks',
+        '--skip-claude-launcher'
+      ],
+      {
+        stdout: {
+          write(text: string) {
+            defaultWrites.push(text);
+          }
+        },
+        stderr: { write() {} }
+      },
+      createSuccessfulInitEnvironment({
+        launcherFileSystem: defaultFileSystem,
+        pathEnv: '/opt/claude/bin'
+      })
+    );
+
+    expect(defaultExitCode).toBe(0);
+    expect(defaultFileSystem.files.size).toBe(0);
+    expect(defaultWrites.join('')).toContain(
+      'Claude statusline was not installed because this session is non-interactive'
+    );
+
+    const skipWrites: string[] = [];
+    const skipFileSystem = createLauncherFileSystem();
+    const skipExitCode = runCli(
+      [
+        'init',
+        '--scope',
+        'local',
+        '--skip-git-hooks',
+        '--skip-claude-launcher',
+        '--skip-claude-statusline'
+      ],
+      {
+        stdout: {
+          write(text: string) {
+            skipWrites.push(text);
+          }
+        },
+        stderr: { write() {} }
+      },
+      createSuccessfulInitEnvironment({
+        launcherFileSystem: skipFileSystem,
+        pathEnv: '/opt/claude/bin'
+      })
+    );
+
+    expect(skipExitCode).toBe(0);
+    expect(skipFileSystem.files.size).toBe(0);
+    expect(skipWrites.join('')).toContain(
+      'Claude statusline skipped by --skip-claude-statusline.'
+    );
+    expect(skipWrites.join('')).not.toContain(
+      'Claude statusline was not installed because this session is non-interactive'
+    );
+  });
+
+  it('forces Claude statusline install during non-interactive init only with an explicit flag', () => {
+    const launcherFileSystem = createLauncherFileSystem();
+
+    const exitCode = runCli(
+      [
+        'init',
+        '--scope',
+        'local',
+        '--skip-git-hooks',
+        '--skip-claude-launcher',
+        '--install-claude-statusline'
+      ],
+      { stdout: { write() {} }, stderr: { write() {} } },
+      createSuccessfulInitEnvironment({
+        launcherFileSystem,
+        pathEnv: '/opt/claude/bin'
+      })
+    );
+
+    expect(exitCode).toBe(0);
+    expect(
+      launcherFileSystem.files.get('/tmp/project/.claude/settings.local.json')
+    ).toContain(TEAMEM_STATUSLINE_COMMAND);
+  });
+
+  it('returns nonzero when forced init statusline install reports a conflict', () => {
+    const writes: string[] = [];
+    const launcherFileSystem = createLauncherFileSystem({
+      files: {
+        '/tmp/project/.claude/settings.local.json':
+          '{"statusLine":{"type":"command","command":"custom-status"}}\n'
+      }
+    });
+
+    const exitCode = runCli(
+      [
+        'init',
+        '--scope',
+        'local',
+        '--skip-git-hooks',
+        '--skip-claude-launcher',
+        '--install-claude-statusline'
+      ],
+      {
+        stdout: {
+          write(text: string) {
+            writes.push(text);
+          }
+        },
+        stderr: { write() {} }
+      },
+      createSuccessfulInitEnvironment({
+        launcherFileSystem,
+        pathEnv: '/opt/claude/bin'
+      })
+    );
+
+    expect(exitCode).toBe(1);
+    expect(writes.join('')).toContain('Status: foreign');
+    expect(writes.join('')).toContain(
+      'ERROR: Refusing to overwrite a non-Teamem Claude statusline.'
+    );
+    expect(
+      launcherFileSystem.files.get('/tmp/project/.claude/settings.local.json')
+    ).toBe('{"statusLine":{"type":"command","command":"custom-status"}}\n');
+  });
+
+  it('reports init Claude statusline dry-run offer, force, and skip without writing settings', () => {
+    const offerWrites: string[] = [];
+    const offerFileSystem = createLauncherFileSystem();
+    const offerExitCode = runCli(
+      ['init', '--dry-run', '--scope', 'local'],
+      {
+        stdout: {
+          write(text: string) {
+            offerWrites.push(text);
+          }
+        },
+        stderr: { write() {} }
+      },
+      createSuccessfulInitEnvironment({
+        launcherFileSystem: offerFileSystem,
+        pathEnv: '/opt/claude/bin'
+      })
+    );
+
+    expect(offerExitCode).toBe(0);
+    expect(offerFileSystem.files.size).toBe(0);
+    expect(offerWrites.join('')).toContain(
+      'Claude statusline: would be offered after setup in an interactive init'
+    );
+
+    const forcedWrites: string[] = [];
+    const forcedFileSystem = createLauncherFileSystem();
+    const forcedExitCode = runCli(
+      ['init', '--dry-run', '--scope', 'local', '--install-claude-statusline'],
+      {
+        stdout: {
+          write(text: string) {
+            forcedWrites.push(text);
+          }
+        },
+        stderr: { write() {} }
+      },
+      createSuccessfulInitEnvironment({
+        launcherFileSystem: forcedFileSystem,
+        pathEnv: '/opt/claude/bin'
+      })
+    );
+
+    expect(forcedExitCode).toBe(0);
+    expect(forcedFileSystem.files.size).toBe(0);
+    expect(forcedWrites.join('')).toContain(
+      'Claude statusline: forced by --install-claude-statusline'
+    );
+
+    const skippedWrites: string[] = [];
+    const skippedFileSystem = createLauncherFileSystem();
+    const skippedExitCode = runCli(
+      ['init', '--dry-run', '--scope', 'local', '--skip-claude-statusline'],
+      {
+        stdout: {
+          write(text: string) {
+            skippedWrites.push(text);
+          }
+        },
+        stderr: { write() {} }
+      },
+      createSuccessfulInitEnvironment({
+        launcherFileSystem: skippedFileSystem,
+        pathEnv: '/opt/claude/bin'
+      })
+    );
+
+    expect(skippedExitCode).toBe(0);
+    expect(skippedFileSystem.files.size).toBe(0);
+    expect(skippedWrites.join('')).toContain(
+      'Claude statusline: skipped by --skip-claude-statusline'
     );
   });
 
@@ -5067,6 +6563,22 @@ describe('teamem bin', () => {
     );
     expect(result.stdout).toBe('');
   });
+
+  it('renders statusline fallback through the package bin entry', () => {
+    const result = spawnSync(
+      'bun',
+      ['run', BIN_PATH, 'claude', 'statusline', 'render'],
+      {
+        cwd: PACKAGE_ROOT,
+        encoding: 'utf8',
+        input: '{not json'
+      }
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toBe('Teamem | status unavailable\n');
+    expect(result.stderr).not.toContain('Error');
+  });
 });
 
 function createFakeRunner(
@@ -5756,6 +7268,7 @@ function createSuccessfulInitEnvironment(options: {
   readonly setupRunner?: SetupCommandRunner;
   readonly launcherFileSystem?: ClaudeLauncherFileSystem;
   readonly pathEnv?: string;
+  readonly promptEnvironment?: CliEnvironment['promptEnvironment'];
 }) {
   const commandRunner = createFakeRunner({
     'claude --version': ok('1.0.0'),
@@ -5782,6 +7295,9 @@ function createSuccessfulInitEnvironment(options: {
     setupRunner: options.setupRunner ?? createSetupRunnerStub(),
     ...(options.launcherFileSystem
       ? { claudeLauncherFileSystem: options.launcherFileSystem }
+      : {}),
+    ...(options.promptEnvironment
+      ? { promptEnvironment: options.promptEnvironment }
       : {}),
     pathEnv: options.pathEnv,
     homeDir: '/tmp/home',

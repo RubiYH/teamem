@@ -20,7 +20,7 @@ import {
   statSync
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import { marketplaceEnv } from '../helpers/marketplace-env.js';
 
 const REPO_ROOT = resolve(import.meta.dir, '../..');
@@ -62,6 +62,10 @@ function stageFakePlugin(
     join(workdir, 'plugin/scripts/space-rules-file.js')
   );
   copyFileSync(
+    join(REPO_ROOT, 'plugin/scripts/statusline-cache-writer.js'),
+    join(workdir, 'plugin/scripts/statusline-cache-writer.js')
+  );
+  copyFileSync(
     join(REPO_ROOT, 'plugin/scripts/session-start.sh'),
     join(workdir, 'plugin/scripts/session-start.sh')
   );
@@ -75,6 +79,7 @@ function stageFakePlugin(
   );
   chmodSync(join(workdir, 'plugin/scripts/session-start.sh'), 0o755);
   chmodSync(join(workdir, 'plugin/scripts/space-rules-file.js'), 0o755);
+  chmodSync(join(workdir, 'plugin/scripts/statusline-cache-writer.js'), 0o755);
   chmodSync(join(workdir, 'plugin/bin/teamem-flag'), 0o755);
 
   const sentinel = join(workdir, 'argv.log');
@@ -155,6 +160,379 @@ function runSessionStart(
 }
 
 describe('session-start.sh offline notification delivery (slice #35)', () => {
+  it('writes statusline Space display cache from session_sync response data', () => {
+    const work = mkdtempSync(join(tmpdir(), 'teamem-sessstart-statusline-'));
+    try {
+      const { sentinel } = stageFakePlugin(
+        work,
+        {
+          ok: true,
+          data: {
+            space: { id: 'space-A', label: 'Alpha Space' },
+            space_rules_snapshot: {
+              has_server_rules: false,
+              rendered_rules_body: '',
+              metadata: {
+                format_version: 1,
+                source: 'none',
+                managed_begin: '<!-- BEGIN TEAMEM SPACE RULES -->',
+                managed_end: '<!-- END TEAMEM SPACE RULES -->',
+                rules_version: 0,
+                rules_hash:
+                  'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+                generated_at: '2026-05-10T00:00:00.000Z',
+                space_id: 'space-A',
+                space_label: 'Alpha Space',
+                source_event_id: null,
+                snapshot_updated_at: null,
+                snapshot_updated_by: null
+              }
+            },
+            decision_replays: [],
+            gotcha_notices: []
+          }
+        },
+        []
+      );
+      const sessionId = 'sess-statusline-cache';
+      activateSession(work, sessionId, 'space-A');
+
+      const result = runSessionStart(work, sessionId, work, 'startup');
+
+      expect(result.status).toBe(0);
+      const cachePath = join(work, 'plugin-data/statusline/display.json');
+      expect(existsSync(cachePath)).toBeTrue();
+      const cache = JSON.parse(readFileSync(cachePath, 'utf8'));
+      expect(cache).toMatchObject({
+        format_version: 1,
+        identity: {
+          session_id: sessionId
+        },
+        space: { id: 'space-A', label: 'Alpha Space' }
+      });
+      expect(basename(cache.identity.workspace_current_dir)).toBe(
+        basename(work)
+      );
+      expect(Date.parse(cache.updated_at)).toBeGreaterThan(0);
+      expect(Date.parse(cache.fresh_until)).toBeGreaterThan(
+        Date.parse(cache.updated_at)
+      );
+
+      const bridgeCalls = readFileSync(sentinel, 'utf8')
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line));
+      expect(bridgeCalls.map((argv) => argv[1])).toEqual([
+        'teamem.session_sync',
+        'teamem.fetch_unread_notifications'
+      ]);
+    } finally {
+      rmSync(work, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  it('does not write statusline Sprint cache from production session_sync response data', () => {
+    const work = mkdtempSync(join(tmpdir(), 'teamem-sessstart-sprint-cache-'));
+    try {
+      const { sentinel } = stageFakePlugin(
+        work,
+        {
+          ok: true,
+          data: {
+            space: { id: 'space-A', label: 'Alpha Space' },
+            space_rules_snapshot: {
+              has_server_rules: false,
+              rendered_rules_body: '',
+              metadata: {
+                format_version: 1,
+                source: 'none',
+                managed_begin: '<!-- BEGIN TEAMEM SPACE RULES -->',
+                managed_end: '<!-- END TEAMEM SPACE RULES -->',
+                rules_version: 0,
+                rules_hash:
+                  'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+                generated_at: '2026-05-10T00:00:00.000Z',
+                space_id: 'space-A',
+                space_label: 'Alpha Space',
+                source_event_id: null,
+                snapshot_updated_at: null,
+                snapshot_updated_by: null
+              }
+            },
+            decision_replays: [],
+            gotcha_notices: []
+          }
+        },
+        []
+      );
+      const sessionId = 'sess-statusline-sprint-cache';
+      activateSession(work, sessionId, 'space-A');
+
+      const result = runSessionStart(work, sessionId, work, 'startup');
+
+      expect(result.status).toBe(0);
+      const cachePath = join(work, 'plugin-data/statusline/display.json');
+      expect(existsSync(cachePath)).toBeTrue();
+      const cache = JSON.parse(readFileSync(cachePath, 'utf8'));
+      expect(cache).toMatchObject({
+        format_version: 1,
+        identity: {
+          session_id: sessionId
+        },
+        space: { id: 'space-A', label: 'Alpha Space' }
+      });
+      expect(cache.sprint).toBeUndefined();
+
+      const bridgeCalls = readFileSync(sentinel, 'utf8')
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line));
+      expect(bridgeCalls.map((argv) => argv[1])).toEqual([
+        'teamem.session_sync',
+        'teamem.fetch_unread_notifications'
+      ]);
+    } finally {
+      rmSync(work, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  it('does not write statusline Sprint cache from a non-current Sprint payload', () => {
+    const work = mkdtempSync(
+      join(tmpdir(), 'teamem-sessstart-noncurrent-sprint-')
+    );
+    try {
+      stageFakePlugin(
+        work,
+        {
+          ok: true,
+          data: {
+            space: { id: 'space-A', label: 'Alpha Space' },
+            context: { mode: 'space' },
+            sprint: {
+              sprint_id: 'archived-sprint',
+              slug: 'archived',
+              display_name: 'Archived Sprint'
+            },
+            decision_replays: [],
+            gotcha_notices: []
+          }
+        },
+        []
+      );
+      const sessionId = 'sess-statusline-noncurrent-sprint';
+      activateSession(work, sessionId, 'space-A');
+
+      const result = runSessionStart(work, sessionId, work, 'startup');
+
+      expect(result.status).toBe(0);
+      const cachePath = join(work, 'plugin-data/statusline/display.json');
+      expect(existsSync(cachePath)).toBeTrue();
+      const cache = JSON.parse(readFileSync(cachePath, 'utf8'));
+      expect(cache.space).toEqual({ id: 'space-A', label: 'Alpha Space' });
+      expect(cache.sprint).toBeUndefined();
+    } finally {
+      rmSync(work, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  it('does not write stale statusline Sprint cache from leave response old_context', () => {
+    const work = mkdtempSync(
+      join(tmpdir(), 'teamem-sessstart-leave-sprint-cache-')
+    );
+    try {
+      stageFakePlugin(
+        work,
+        {
+          ok: true,
+          data: {
+            space: { id: 'space-A', label: 'Alpha Space' },
+            old_context: {
+              mode: 'sprint',
+              sprint: {
+                sprint_id: 'old-sprint',
+                slug: 'old',
+                display_name: 'Old Sprint'
+              }
+            },
+            new_context: {
+              mode: 'space',
+              space: { id: 'space-A', label: 'Alpha Space' }
+            },
+            decision_replays: [],
+            gotcha_notices: []
+          }
+        },
+        []
+      );
+      const sessionId = 'sess-statusline-leave-sprint';
+      activateSession(work, sessionId, 'space-A');
+
+      const result = runSessionStart(work, sessionId, work, 'startup');
+
+      expect(result.status).toBe(0);
+      const cachePath = join(work, 'plugin-data/statusline/display.json');
+      expect(existsSync(cachePath)).toBeTrue();
+      const cache = JSON.parse(readFileSync(cachePath, 'utf8'));
+      expect(cache.space).toEqual({ id: 'space-A', label: 'Alpha Space' });
+      expect(cache.sprint).toBeUndefined();
+    } finally {
+      rmSync(work, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  it('does not write Sprint cache from fake session_sync new_context data', () => {
+    const work = mkdtempSync(
+      join(tmpdir(), 'teamem-sessstart-switch-sprint-cache-')
+    );
+    try {
+      stageFakePlugin(
+        work,
+        {
+          ok: true,
+          data: {
+            space: { id: 'space-A', label: 'Alpha Space' },
+            old_context: {
+              mode: 'sprint',
+              sprint: {
+                sprint_id: 'old-sprint',
+                slug: 'old',
+                display_name: 'Old Sprint'
+              }
+            },
+            new_context: {
+              mode: 'sprint',
+              sprint: {
+                sprint_id: 'new-sprint',
+                slug: 'new',
+                display_name: 'New Sprint'
+              }
+            },
+            decision_replays: [],
+            gotcha_notices: []
+          }
+        },
+        []
+      );
+      const sessionId = 'sess-statusline-switch-sprint';
+      activateSession(work, sessionId, 'space-A');
+
+      const result = runSessionStart(work, sessionId, work, 'startup');
+
+      expect(result.status).toBe(0);
+      const cachePath = join(work, 'plugin-data/statusline/display.json');
+      expect(existsSync(cachePath)).toBeTrue();
+      const cache = JSON.parse(readFileSync(cachePath, 'utf8'));
+      expect(cache.space).toEqual({ id: 'space-A', label: 'Alpha Space' });
+      expect(cache.sprint).toBeUndefined();
+    } finally {
+      rmSync(work, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  it('clears a fresh Sprint cache from session_sync when the active Space changes', () => {
+    const work = mkdtempSync(
+      join(tmpdir(), 'teamem-sessstart-preserve-sprint-cache-')
+    );
+    try {
+      stageFakePlugin(
+        work,
+        {
+          ok: true,
+          data: {
+            space: { id: 'space-B', label: 'Beta Space' },
+            space_rules_snapshot: {
+              has_server_rules: false,
+              rendered_rules_body: '',
+              metadata: {
+                space_id: 'space-B',
+                space_label: 'Beta Space'
+              }
+            },
+            decision_replays: [],
+            gotcha_notices: []
+          }
+        },
+        []
+      );
+      const sessionId = 'sess-statusline-preserve-sprint';
+      activateSession(work, sessionId, 'space-B');
+      const cachePath = join(work, 'plugin-data/statusline/display.json');
+      mkdirSync(join(work, 'plugin-data/statusline'), { recursive: true });
+      const existingCache = {
+        format_version: 1,
+        updated_at: '2026-06-08T00:00:00.000Z',
+        fresh_until: '2099-06-08T00:05:00.000Z',
+        identity: {
+          session_id: sessionId,
+          workspace_current_dir: work
+        },
+        space: { id: 'space-A', label: 'Alpha Space' },
+        sprint: {
+          sprint_id: 'sprint-current',
+          slug: 'current',
+          display_name: 'Current Sprint'
+        }
+      };
+      writeFileSync(cachePath, `${JSON.stringify(existingCache, null, 2)}\n`);
+
+      const result = runSessionStart(work, sessionId, work, 'startup');
+
+      expect(result.status).toBe(0);
+      const cache = JSON.parse(readFileSync(cachePath, 'utf8'));
+      expect(cache.space).toEqual({ id: 'space-B', label: 'Beta Space' });
+      expect(cache.sprint).toBeUndefined();
+      expect(cache.updated_at).not.toBe(existingCache.updated_at);
+    } finally {
+      rmSync(work, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  it('does not write statusline cache from resolved session Space when session_sync has no Space data', () => {
+    const work = mkdtempSync(
+      join(tmpdir(), 'teamem-sessstart-statusline-no-space-')
+    );
+    try {
+      const { sentinel } = stageFakePlugin(
+        work,
+        {
+          ok: true,
+          data: {
+            decisions: [],
+            gotcha_notices: []
+          }
+        },
+        []
+      );
+      const sessionId = 'sess-statusline-cache-no-space';
+      activateSession(work, sessionId, 'space-A');
+
+      const result = runSessionStart(
+        work,
+        sessionId,
+        work,
+        'startup',
+        'space-default'
+      );
+
+      expect(result.status).toBe(0);
+      expect(result.stdout).toBe(expectedBriefingPrompt('space-A'));
+      expect(
+        existsSync(join(work, 'plugin-data/statusline/display.json'))
+      ).toBe(false);
+
+      const bridgeCalls = readFileSync(sentinel, 'utf8')
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line));
+      expect(bridgeCalls.map((argv) => argv[1])).toEqual([
+        'teamem.session_sync',
+        'teamem.fetch_unread_notifications'
+      ]);
+    } finally {
+      rmSync(work, { recursive: true, force: true });
+    }
+  }, 30_000);
+
   it('injects the exact one-line briefing prompt on startup and resume only', () => {
     const work = mkdtempSync(join(tmpdir(), 'teamem-sessstart-prompt-'));
     try {

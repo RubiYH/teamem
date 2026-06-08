@@ -20,9 +20,10 @@ teamem claude install
 ```
 
 `teamem init` checks prerequisites, installs `teamem@teamem-alpha`, runs setup,
-and can install git hooks. `teamem claude install` installs the Teamem-owned
-`claude` shim. It prints the PATH line to add, but does not edit shell startup
-files by default:
+can install git hooks, and offers the opt-in Teamem Claude statusline in
+interactive setup. `teamem claude install` installs the Teamem-owned `claude`
+shim. It prints the PATH line to add, but does not edit shell startup files by
+default:
 
 ```bash
 export PATH="$HOME/.teamem/bin:$PATH"
@@ -39,6 +40,22 @@ Once the shim directory is first on PATH, launch Claude Code as usual with
 pure. A Teamem launch blocks before opening Claude Code when setup,
 credentials, plugin install, or runtime Space readiness is missing, and prints
 the repair command to run next.
+
+The Teamem Claude statusline is explicit and reversible:
+
+```bash
+teamem claude statusline install
+teamem claude statusline status
+teamem claude statusline uninstall
+```
+
+`teamem init` offers the statusline in interactive setup. Non-interactive setup
+skips it unless `--install-claude-statusline` is provided. If you skip or
+decline it, run `teamem claude statusline install` later. The default statusline
+scope follows setup scope resolution: project inside a git repository, user
+outside one, or the explicit `--scope project|user|local` you pass. Teamem
+refuses to overwrite non-Teamem statuslines. Backup/restore behavior and
+`--force` are out of scope for this first statusline slice.
 
 When you choose Teamem in the launcher, or pass `claude --teamem`, the shim
 passes activation intent and the selected Space into Claude Code. On

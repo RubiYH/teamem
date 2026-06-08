@@ -65,7 +65,9 @@ teamem_is_active || exit 0
 [ -f "$BRIDGE_JS" ] || exit 0
 STARTER_TEMPLATE="${PLUGIN_ROOT}/templates/TEAMEM.starter.md"
 SPACE_RULES_HELPER="${PLUGIN_ROOT}/scripts/space-rules-file.js"
+STATUSLINE_CACHE_HELPER="${PLUGIN_ROOT}/scripts/statusline-cache-writer.js"
 SESSION_SYNC_RESULT=""
+SESSION_SYNC_SPACE=""
 
 _inject_briefing_prompt() {
   case "${SESSION_SOURCE:-startup}" in
@@ -88,6 +90,7 @@ _fetch_session_sync() {
   [ -n "$SESSION_SYNC_RESULT" ] && return 0
   local space
   space=$(_teamem_resolve_space 2>/dev/null) || space=""
+  SESSION_SYNC_SPACE="$space"
   if [ -n "$space" ]; then
     SESSION_SYNC_RESULT=$(bun run "$BRIDGE_JS" call teamem.session_sync \
       --space "$space" --json '{}' 2>/dev/null) || SESSION_SYNC_RESULT=""
@@ -95,6 +98,15 @@ _fetch_session_sync() {
     SESSION_SYNC_RESULT=$(bun run "$BRIDGE_JS" call teamem.session_sync \
       --json '{}' 2>/dev/null) || SESSION_SYNC_RESULT=""
   fi
+}
+
+_write_statusline_display_cache() {
+  [ -f "$STATUSLINE_CACHE_HELPER" ] || return 0
+  _fetch_session_sync
+  [ -n "$SESSION_SYNC_RESULT" ] || return 0
+  printf '%s' "$SESSION_SYNC_RESULT" | bun "$STATUSLINE_CACHE_HELPER" \
+    "$TEAMEM_DATA" "$PROJECT_KEY" "$SESSION_ID" "$PWD" "$SESSION_SYNC_SPACE" \
+    2>/dev/null || true
 }
 
 _sync_space_rules() {
@@ -204,6 +216,7 @@ try {
 }
 
 _inject_briefing_prompt
+_write_statusline_display_cache
 _sync_space_rules
 _surface_decision_replays
 _surface_gotcha_notices

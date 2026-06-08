@@ -77,7 +77,10 @@ The bootstrapper diagnoses prerequisites, refreshes or adds the GitHub-hosted
 marketplace `teamem-alpha`, installs `teamem@teamem-alpha` at the selected
 scope, runs the installed setup bundle, and prompts about git hooks. To force
 hook installation in a repo without the prompt, run `teamem init
---install-git-hooks`.
+--install-git-hooks`. Interactive setup also offers the opt-in Teamem Claude
+statusline. To install it without prompting, run `teamem init
+--install-claude-statusline`; to enable it later, run `teamem claude statusline
+install`.
 
 Use `teamem update` later to refresh the marketplace and installed plugin. Use
 `teamem claude install` to install the Teamem-owned `claude` shim. Once the shim
@@ -93,6 +96,17 @@ Use `claude --teamem` or `claude --pure` for explicit launch choices;
 non-interactive `claude` defaults pure. A Teamem launch blocks before opening
 Claude Code when setup, credentials, plugin install, or runtime Space readiness
 is missing, and prints the repair command to run next.
+
+The statusline lifecycle is:
+
+```bash
+teamem claude statusline install
+teamem claude statusline status
+teamem claude statusline uninstall
+```
+
+Teamem refuses to overwrite non-Teamem statuslines. Backup/restore behavior and
+`--force` are deferred to a later installation/backups design.
 
 `teamem cc` is kept only as a compatibility error for older workflows. It no
 longer launches Claude Code; it points users toward the launcher migration.
@@ -138,12 +152,16 @@ out to a source tree.
 ### npm/bootstrapper users
 
 `teamem init` is the first-time setup path. It installs or updates the plugin,
-runs the create/join flow, and prompts to install git hooks in the current repo.
-After it completes:
+runs the create/join flow, prompts to install git hooks in the current repo, and
+offers the Teamem Claude statusline in interactive setup. After it completes:
 
 1. Run `teamem claude install` to install the Teamem-owned `claude` shim.
 2. Add the printed PATH line, then launch Claude Code normally with `claude`.
 3. Choose Teamem at the launch prompt, or run `claude --teamem` when you want the explicit Teamem path.
+
+If you decline the statusline offer, enable it later with `teamem claude
+statusline install`. Non-interactive `teamem init` installs the statusline only
+when `--install-claude-statusline` is provided.
 
 The launcher passes a one-shot Teamem launch intent into Claude Code. The
 plugin's SessionStart hook consumes that intent, writes the normal active

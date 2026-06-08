@@ -121,6 +121,30 @@ export {
   type ClaudeLauncherStatus
 } from './claude-launcher.js';
 export {
+  TEAMEM_STATUSLINE_COMMAND,
+  getClaudeStatuslineStatus,
+  installClaudeStatusline,
+  renderClaudeStatusline,
+  renderClaudeStatuslineReport,
+  renderFallbackStatusline,
+  uninstallClaudeStatusline,
+  type ClaudeStatuslineCommand,
+  type ClaudeStatuslineEnvironment,
+  type ClaudeStatuslineResult,
+  type ClaudeStatuslineStatus
+} from './claude-statusline.js';
+export {
+  TEAMEM_STATUSLINE_CACHE_FORMAT_VERSION,
+  TEAMEM_STATUSLINE_CACHE_RELATIVE_PATH,
+  readStatuslineDisplayCache,
+  resolveStatuslineRenderContext,
+  type StatuslineDisplayCacheIdentity,
+  type StatuslineDisplayCacheOptions,
+  type StatuslineDisplayCacheRecord,
+  type StatuslineDisplayState,
+  type StatuslineRenderContext
+} from './statusline-display-cache.js';
+export {
   createDevProfile,
   createNodeDevProfileActiveSessionDetector,
   createNodeDevProfileFileSystem,

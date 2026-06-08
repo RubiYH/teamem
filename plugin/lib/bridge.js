@@ -23486,6 +23486,203 @@ var TOOL_BINDINGS = {
   }
 };
 
+// src/bridge/statusline-cache.ts
+import { mkdirSync, readFileSync, writeFileSync } from "fs";
+import { basename, dirname as dirname2, join as join2 } from "path";
+var FORMAT_VERSION = 1;
+var DEFAULT_FRESHNESS_MS = 5 * 60 * 1000;
+var STATUSLINE_CACHE_RELATIVE_PATH = join2("statusline", "display.json");
+var CACHEABLE_TOOLS = new Set([
+  "teamem.whoami",
+  "teamem.session_sync",
+  "teamem.get_briefing",
+  "teamem.get_current_sprint",
+  "teamem.create_sprint",
+  "teamem.join_sprint",
+  "teamem.leave_sprint",
+  "teamem.reopen_sprint"
+]);
+var AUTHORITATIVE_CURRENT_CONTEXT_TOOLS = new Set([
+  "teamem.get_briefing",
+  "teamem.get_current_sprint",
+  "teamem.create_sprint",
+  "teamem.join_sprint",
+  "teamem.leave_sprint",
+  "teamem.reopen_sprint"
+]);
+function writeStatuslineDisplayCacheFromToolResponse(toolName, response, options = {}) {
+  if (!CACHEABLE_TOOLS.has(toolName))
+    return false;
+  const target = resolveCacheTarget(options.env ?? process.env);
+  if (!target)
+    return false;
+  if (!isOkToolResponse(response))
+    return false;
+  const data = response.data;
+  const canUpdateSprint = AUTHORITATIVE_CURRENT_CONTEXT_TOOLS.has(toolName);
+  const space = extractSpace(data) ?? normalizeSpace(options.credential ?? undefined);
+  const sprint = canUpdateSprint ? extractSprint(data) : undefined;
+  const canClearCurrentSprint = canUpdateSprint && hasCurrentSpaceContext(data);
+  if (!space && !sprint && !canClearCurrentSprint)
+    return false;
+  const now = options.now ?? new Date;
+  if (!canUpdateSprint) {
+    const cachedFreshSprintSpace = readFreshSprintCacheSpace(target, now);
+    if (cachedFreshSprintSpace && spaceMatches(space, cachedFreshSprintSpace)) {
+      return false;
+    }
+  }
+  const freshUntil = new Date(now.getTime() + (options.freshnessMs ?? DEFAULT_FRESHNESS_MS));
+  const record3 = {
+    format_version: FORMAT_VERSION,
+    updated_at: now.toISOString(),
+    fresh_until: freshUntil.toISOString(),
+    identity: {
+      ...stringProp("project_key", options.env?.TEAMEM_PROJECT_KEY),
+      ...stringProp("session_id", options.env?.CLAUDE_SESSION_ID),
+      ...stringProp("workspace_current_dir", options.cwd ?? options.env?.PWD ?? process.cwd())
+    },
+    ...space ? { space } : {},
+    ...sprint ? { sprint } : {}
+  };
+  try {
+    mkdirSync(dirname2(target), { recursive: true });
+    writeFileSync(target, `${JSON.stringify(record3, null, 2)}
+`);
+    return true;
+  } catch {
+    return false;
+  }
+}
+function resolveCacheTarget(env) {
+  if (env.TEAMEM_STATUSLINE_CACHE)
+    return env.TEAMEM_STATUSLINE_CACHE;
+  if (env.TEAMEM_DATA) {
+    return join2(env.TEAMEM_DATA, STATUSLINE_CACHE_RELATIVE_PATH);
+  }
+  if (env.CLAUDE_PLUGIN_DATA && looksLikeTeamemDataDir(env.CLAUDE_PLUGIN_DATA)) {
+    return join2(env.CLAUDE_PLUGIN_DATA, STATUSLINE_CACHE_RELATIVE_PATH);
+  }
+  return;
+}
+function looksLikeTeamemDataDir(value) {
+  return basename(value).toLowerCase().includes("teamem");
+}
+function readFreshSprintCacheSpace(target, now) {
+  try {
+    const parsed = JSON.parse(readFileSync(target, "utf8"));
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return;
+    }
+    const record3 = parsed;
+    if (record3.format_version !== FORMAT_VERSION)
+      return;
+    const freshUntil = typeof record3.fresh_until === "string" ? Date.parse(record3.fresh_until) : Number.NaN;
+    const hasFreshSprint = Number.isFinite(freshUntil) && freshUntil > now.getTime() && !!normalizeSprint(record3.sprint);
+    return hasFreshSprint ? normalizeSpace(record3.space) : undefined;
+  } catch {
+    return;
+  }
+}
+function isOkToolResponse(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const record3 = value;
+  return record3.ok === true && !!record3.data && typeof record3.data === "object" && !Array.isArray(record3.data);
+}
+function extractSpace(data) {
+  const candidates = [
+    data.space,
+    data.current_space,
+    nestedRecord(data.context, "space"),
+    data.whoami,
+    nestedRecord(data.space_rules_snapshot, "metadata"),
+    data
+  ];
+  for (const candidate of candidates) {
+    const normalized = normalizeSpace(candidate);
+    if (normalized)
+      return normalized;
+  }
+  return;
+}
+function extractSprint(data) {
+  const currentContexts = [
+    data.context,
+    data.current_context,
+    data.new_context
+  ];
+  for (const context of currentContexts) {
+    const normalized = normalizeSprintFromContext(context);
+    if (normalized)
+      return normalized;
+  }
+  return;
+}
+function hasCurrentSpaceContext(data) {
+  return [data.context, data.current_context, data.new_context].some((context) => {
+    if (!context || typeof context !== "object" || Array.isArray(context)) {
+      return false;
+    }
+    const mode = stringValue(context.mode) ?? stringValue(context.type);
+    return mode === "space";
+  });
+}
+function normalizeSprintFromContext(context) {
+  if (!context || typeof context !== "object" || Array.isArray(context)) {
+    return;
+  }
+  const record3 = context;
+  const mode = stringValue(record3.mode) ?? stringValue(record3.type);
+  if (mode !== "sprint")
+    return;
+  return normalizeSprint(record3.sprint);
+}
+function normalizeSprint(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return;
+  }
+  const record3 = value;
+  const id = stringValue(record3.sprint_id) ?? stringValue(record3.id);
+  const slug = stringValue(record3.slug);
+  const name = stringValue(record3.display_name) ?? stringValue(record3.name) ?? slug ?? id;
+  return name ? {
+    ...id ? { sprint_id: id } : {},
+    ...slug ? { slug } : {},
+    display_name: name
+  } : undefined;
+}
+function normalizeSpace(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return;
+  }
+  const record3 = value;
+  const id = stringValue(record3.id) ?? stringValue(record3.space_id) ?? stringValue(record3.spaceId);
+  const label = stringValue(record3.label) ?? stringValue(record3.space_label) ?? stringValue(record3.spaceLabel) ?? id;
+  return label ? { ...id ? { id } : {}, label } : undefined;
+}
+function spaceMatches(incoming, cached2) {
+  if (!incoming || !cached2)
+    return false;
+  if (incoming.id && cached2.id)
+    return incoming.id === cached2.id;
+  return incoming.label === cached2.label;
+}
+function nestedRecord(value, key) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return;
+  }
+  return value[key];
+}
+function stringValue(value) {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+function stringProp(key, value) {
+  const normalized = stringValue(value);
+  return normalized ? { [key]: normalized } : {};
+}
+
 // src/bridge/index.ts
 var SECONDS_PER_DAY = 86400;
 var EXPIRY_WARN_DAYS = 7;
@@ -23623,6 +23820,14 @@ async function startBridge(argv = process.argv.slice(2)) {
       const stamped = stampIdentity(rawInput, callEntry.space_id, callEntry.member_name);
       const parsed = binding.inputSchema.parse(stamped);
       result = await binding.handler(parsed, callClient);
+      writeStatuslineDisplayCacheFromToolResponse(name, result, {
+        credential: {
+          space_id: callEntry.space_id,
+          label: callEntry.label
+        },
+        env,
+        cwd: process.cwd()
+      });
     } catch (err) {
       if (err instanceof SpaceDisbandedError) {
         process.stderr.write(`Space ${err.space_id} (label: ${err.space_label}) was disbanded \u2014 removed from credentials.json
@@ -23701,6 +23906,14 @@ Available: ${Object.keys(TOOL_BINDINGS).join(", ")}
   const client = createBridgeClient(entry);
   try {
     const result = await binding.handler(parsed.data, client);
+    writeStatuslineDisplayCacheFromToolResponse(toolName, result, {
+      credential: {
+        space_id: entry.space_id,
+        label: entry.label
+      },
+      env,
+      cwd: process.cwd()
+    });
     process.stdout.write(JSON.stringify(result, null, 2) + `
 `);
   } catch (err) {

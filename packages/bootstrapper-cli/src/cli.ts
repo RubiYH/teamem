@@ -63,6 +63,14 @@ import {
   type ClaudeLauncherFileSystem
 } from './claude-launcher.js';
 import {
+  getClaudeStatuslineStatus,
+  installClaudeStatusline,
+  renderClaudeStatusline,
+  renderClaudeStatuslineReport,
+  uninstallClaudeStatusline,
+  type ClaudeStatuslineCommand
+} from './claude-statusline.js';
+import {
   createNodeDevProfileActiveSessionDetector,
   createNodeDevProfileFileSystem,
   deleteDevProfile,
@@ -125,6 +133,7 @@ export interface CliEnvironment {
   readonly setupRunner?: SetupCommandRunner;
   readonly gitHookPrompter?: GitHookPrompter;
   readonly claudeLauncherPrompter?: ClaudeLauncherPrompter;
+  readonly claudeStatuslinePrompter?: ClaudeStatuslinePrompter;
   readonly gitHookInstaller?: GitHookInstaller;
   readonly localStateFileSystem?: LocalStateFileSystem;
   readonly claudeLauncherFileSystem?: ClaudeLauncherFileSystem;
@@ -160,6 +169,7 @@ export interface ParsedCliArgs {
   readonly scope?: PluginScope;
   readonly claude?: {
     readonly lifecycleCommand: ClaudeLifecycleCommand;
+    readonly statuslineCommand?: ClaudeStatuslineCommand;
     readonly launchMode?: ClaudeLaunchMode;
     readonly claudeArgs?: readonly string[];
   };
@@ -176,6 +186,7 @@ export interface ParsedCliArgs {
   readonly setup?: SetupSelectionArgs;
   readonly gitHooks?: 'install' | 'skip';
   readonly claudeLauncher?: 'install' | 'skip';
+  readonly claudeStatusline?: 'install' | 'skip';
   readonly cc?: {
     readonly updateMode: LegacyCcUpdateMode;
     readonly claudeArgs: readonly string[];
@@ -200,10 +211,12 @@ export type ClaudeLifecycleCommand =
   | 'install'
   | 'status'
   | 'uninstall'
+  | 'statusline'
   | 'launch';
 export type DevSubcommand = 'claude' | 'status' | 'delete';
 type LegacyCcUpdateMode = 'prompt' | 'always' | 'never';
 type ClaudeLauncherPrompter = () => boolean;
+type ClaudeStatuslinePrompter = () => boolean;
 
 const HELP_FLAGS = new Set(['--help', '-h']);
 const DRY_RUN_FLAGS = new Set(['--dry-run', '-n']);
@@ -219,6 +232,7 @@ const CLAUDE_LIFECYCLE_COMMANDS = new Set<ClaudeLifecycleCommand>([
   'install',
   'status',
   'uninstall',
+  'statusline',
   'launch'
 ]);
 const DEV_SUBCOMMANDS = new Set<DevSubcommand>(['claude', 'status', 'delete']);
@@ -268,10 +282,12 @@ export function parseCliArgs(argv: readonly string[]): CliParseResult {
   let roomCode: string | undefined;
   let gitHooks: 'install' | 'skip' | undefined;
   let claudeLauncher: 'install' | 'skip' | undefined;
+  let claudeStatusline: 'install' | 'skip' | undefined;
   let ccUpdateMode: LegacyCcUpdateMode = 'prompt';
   let ccClaudeArgs: string[] = [];
   let keepCredentials = false;
   let claudeLifecycleCommand: ClaudeLifecycleCommand | undefined;
+  let claudeStatuslineCommand: ClaudeStatuslineCommand | undefined;
   let claudeLaunchMode: ClaudeLaunchMode = 'prompt';
   let claudeLaunchArgs: string[] = [];
   let devSubcommand: DevSubcommand | undefined;
@@ -304,6 +320,35 @@ export function parseCliArgs(argv: readonly string[]): CliParseResult {
       break;
     }
     if (first === 'claude') {
+      if (claudeLifecycleCommand === 'statusline') {
+        if (!claudeStatuslineCommand) {
+          if (isClaudeStatuslineCommand(arg)) {
+            claudeStatuslineCommand = arg;
+            continue;
+          }
+          return {
+            ok: false,
+            error: `Unknown teamem claude statusline command: ${arg}. Expected one of: install, status, uninstall`
+          };
+        }
+        if (arg === '--scope') {
+          const candidate = rest[index + 1];
+          if (!candidate || !isPluginScope(candidate)) {
+            return {
+              ok: false,
+              error:
+                'Invalid value for --scope. Expected one of: project, user, local'
+            };
+          }
+          scope = candidate;
+          index += 1;
+          continue;
+        }
+        return {
+          ok: false,
+          error: `Unknown option for claude statusline ${claudeStatuslineCommand}: ${arg}`
+        };
+      }
       if (claudeLifecycleCommand === 'launch' && arg === '--') {
         claudeLaunchArgs = rest.slice(index + 1);
         break;
@@ -567,6 +612,28 @@ export function parseCliArgs(argv: readonly string[]): CliParseResult {
         claudeLauncher = 'skip';
         continue;
       }
+      if (arg === '--install-claude-statusline') {
+        if (claudeStatusline === 'skip') {
+          return {
+            ok: false,
+            error:
+              'Choose only one Claude statusline mode: --install-claude-statusline or --skip-claude-statusline'
+          };
+        }
+        claudeStatusline = 'install';
+        continue;
+      }
+      if (arg === '--skip-claude-statusline') {
+        if (claudeStatusline === 'install') {
+          return {
+            ok: false,
+            error:
+              'Choose only one Claude statusline mode: --install-claude-statusline or --skip-claude-statusline'
+          };
+        }
+        claudeStatusline = 'skip';
+        continue;
+      }
     }
     if (first === 'cc') {
       if (arg === '--update') {
@@ -610,6 +677,18 @@ export function parseCliArgs(argv: readonly string[]): CliParseResult {
     };
   }
 
+  if (
+    first === 'claude' &&
+    claudeLifecycleCommand === 'statusline' &&
+    !claudeStatuslineCommand
+  ) {
+    return {
+      ok: false,
+      error:
+        'Missing teamem claude statusline command. Expected one of: install, status, uninstall'
+    };
+  }
+
   if (first === 'dev' && !devSubcommand) {
     return {
       ok: false,
@@ -627,6 +706,7 @@ export function parseCliArgs(argv: readonly string[]): CliParseResult {
       scope,
       gitHooks,
       claudeLauncher,
+      claudeStatusline,
       cc:
         first === 'cc'
           ? {
@@ -638,6 +718,9 @@ export function parseCliArgs(argv: readonly string[]): CliParseResult {
         first === 'claude' && claudeLifecycleCommand
           ? {
               lifecycleCommand: claudeLifecycleCommand,
+              ...(claudeLifecycleCommand === 'statusline'
+                ? { statuslineCommand: claudeStatuslineCommand }
+                : {}),
               ...(claudeLifecycleCommand === 'launch'
                 ? {
                     launchMode: claudeLaunchMode,
@@ -686,6 +769,9 @@ Commands:
   claude install   Install or refresh the opt-in Teamem-aware Claude launcher lifecycle
   claude status    Report Teamem-aware Claude launcher status
   claude uninstall Remove Teamem-owned Claude launcher lifecycle files
+  claude statusline install   Install the opt-in Teamem Claude statusline
+  claude statusline status    Report Teamem Claude statusline state and effective scope
+  claude statusline uninstall Remove Teamem-owned Claude statusline settings
   dev claude       Select or create a durable Teamem dev profile skeleton
   dev status       List Teamem dev profiles or show profile-owned paths
   dev delete       Delete a selected Teamem dev profile capsule
@@ -713,6 +799,8 @@ Options:
   --skip-git-hooks     Skip Teamem git hook installation after setup
   --install-claude-launcher  Install Teamem-aware Claude launcher after setup without prompting
   --skip-claude-launcher     Skip Teamem-aware Claude launcher installation after setup
+  --install-claude-statusline  Install Teamem Claude statusline after setup without prompting
+  --skip-claude-statusline     Skip Teamem Claude statusline installation after setup
   -h, --help      Show help
 `;
 }
@@ -844,6 +932,9 @@ export function runCli(
     );
     if (parsed.value.dryRun) {
       io.stdout.write(renderInitLauncherDryRun(parsed.value.claudeLauncher));
+      io.stdout.write(
+        renderInitStatuslineDryRun(parsed.value.claudeStatusline)
+      );
     }
     if (!execution.ok || parsed.value.dryRun) {
       return execution.ok ? 0 : 1;
@@ -884,6 +975,17 @@ export function runCli(
     });
     if (launcherExitCode !== 0) {
       return launcherExitCode;
+    }
+    const statuslineExitCode = runPostSetupClaudeStatuslineStep({
+      mode: parsed.value.claudeStatusline,
+      scope: resolvedScope,
+      cwd: installerEnvironment.cwd,
+      io,
+      environment,
+      commandRunner: installerEnvironment.commandRunner
+    });
+    if (statuslineExitCode !== 0) {
+      return statuslineExitCode;
     }
     return setupResult.exitCode;
   }
@@ -1330,6 +1432,37 @@ export function runCli(
       }
       return result.exitCode;
     }
+    if (lifecycleCommand === 'statusline') {
+      const statuslineCommand = parsed.value.claude?.statuslineCommand;
+      if (!statuslineCommand) {
+        io.stderr.write(
+          'Missing teamem claude statusline command. Expected one of: install, status, uninstall\n'
+        );
+        return 1;
+      }
+      if (statuslineCommand === 'render') {
+        io.stdout.write(renderClaudeStatusline());
+        return 0;
+      }
+      const statuslineEnvironment = {
+        cwd: environment.prerequisites.cwd,
+        homeDir: environment.homeDir,
+        fileSystem:
+          environment.claudeLauncherFileSystem ??
+          createNodeClaudeLauncherFileSystem(),
+        commandRunner: environment.prerequisites.commandRunner,
+        scope: parsed.value.scope,
+        dryRun: parsed.value.dryRun
+      };
+      const result =
+        statuslineCommand === 'install'
+          ? installClaudeStatusline(statuslineEnvironment)
+          : statuslineCommand === 'status'
+            ? getClaudeStatuslineStatus(statuslineEnvironment)
+            : uninstallClaudeStatusline(statuslineEnvironment);
+      io.stdout.write(renderClaudeStatuslineReport(result));
+      return result.ok ? 0 : 1;
+    }
     const launcherEnvironment = {
       homeDir: environment.homeDir,
       pathEnv: environment.pathEnv,
@@ -1409,6 +1542,17 @@ export function runCli(
   }
 
   return 1;
+}
+
+function isClaudeStatuslineCommand(
+  value: string
+): value is ClaudeStatuslineCommand {
+  return (
+    value === 'install' ||
+    value === 'status' ||
+    value === 'uninstall' ||
+    value === 'render'
+  );
 }
 
 type DevProfileCredentialSetupStatus =
@@ -1818,6 +1962,62 @@ function runPostSetupClaudeLauncherStep(options: {
   return result.ok ? 0 : 1;
 }
 
+function runPostSetupClaudeStatuslineStep(options: {
+  readonly mode?: 'install' | 'skip';
+  readonly scope?: PluginScope;
+  readonly cwd: string;
+  readonly io: CliIo;
+  readonly environment: CliEnvironment;
+  readonly commandRunner?: CommandRunner;
+}): number {
+  if (options.mode === 'skip') {
+    options.io.stdout.write(
+      'Claude statusline skipped by --skip-claude-statusline.\n'
+    );
+    return 0;
+  }
+
+  const shouldPrompt =
+    options.mode === undefined &&
+    (options.environment.claudeStatuslinePrompter !== undefined ||
+      isInteractiveTerminal(options.environment.promptEnvironment));
+  const shouldInstall =
+    options.mode === 'install'
+      ? true
+      : shouldPrompt
+        ? (
+            options.environment.claudeStatuslinePrompter ??
+            createInteractiveClaudeStatuslinePrompter(options.io, {
+              environment: options.environment.promptEnvironment
+            })
+          )()
+        : false;
+
+  if (!shouldInstall) {
+    options.io.stdout.write(
+      options.mode === undefined && shouldPrompt
+        ? 'You can enable the Teamem statusline later with: teamem claude statusline install\n'
+        : options.mode === undefined
+          ? 'Claude statusline was not installed because this session is non-interactive. Re-run `teamem init --install-claude-statusline` to force install or `--skip-claude-statusline` to silence this step.\n'
+          : 'Claude statusline skipped.\n'
+    );
+    return 0;
+  }
+
+  const result = installClaudeStatusline({
+    cwd: options.cwd,
+    homeDir: options.environment.homeDir,
+    fileSystem:
+      options.environment.claudeLauncherFileSystem ??
+      createNodeClaudeLauncherFileSystem(),
+    commandRunner: options.commandRunner,
+    scope: options.scope,
+    dryRun: false
+  });
+  options.io.stdout.write(renderClaudeStatuslineReport(result));
+  return result.ok ? 0 : 1;
+}
+
 function createInteractiveClaudeLauncherPrompter(
   io: CliIo,
   options: { readonly environment?: RuntimePromptEnvironment } = {}
@@ -1847,6 +2047,35 @@ function createInteractiveClaudeLauncherPrompter(
   };
 }
 
+function createInteractiveClaudeStatuslinePrompter(
+  io: CliIo,
+  options: { readonly environment?: RuntimePromptEnvironment } = {}
+): ClaudeStatuslinePrompter {
+  return () => {
+    if (!isInteractiveTerminal(options.environment)) {
+      return false;
+    }
+
+    while (true) {
+      const answer = (
+        promptWithRuntime(
+          'Install the Teamem Claude statusline? [Y/n]: ',
+          options.environment
+        ) ?? ''
+      )
+        .trim()
+        .toLowerCase();
+      if (answer.length === 0 || answer === 'y' || answer === 'yes') {
+        return true;
+      }
+      if (answer === 'n' || answer === 'no') {
+        return false;
+      }
+      io.stdout.write('Enter y, yes, n, no, or press Enter for yes.\n');
+    }
+  };
+}
+
 function renderInitLauncherDryRun(mode?: 'install' | 'skip'): string {
   if (mode === 'install') {
     return 'Claude launcher: forced by --install-claude-launcher; dry-run did not write launcher files.\n';
@@ -1855,4 +2084,14 @@ function renderInitLauncherDryRun(mode?: 'install' | 'skip'): string {
     return 'Claude launcher: skipped by --skip-claude-launcher; dry-run did not write launcher files.\n';
   }
   return 'Claude launcher: would be offered after setup in an interactive init; non-interactive init would skip unless --install-claude-launcher is provided.\n';
+}
+
+function renderInitStatuslineDryRun(mode?: 'install' | 'skip'): string {
+  if (mode === 'install') {
+    return 'Claude statusline: forced by --install-claude-statusline; dry-run did not write statusline settings.\n';
+  }
+  if (mode === 'skip') {
+    return 'Claude statusline: skipped by --skip-claude-statusline; dry-run did not write statusline settings.\n';
+  }
+  return 'Claude statusline: would be offered after setup in an interactive init; non-interactive init would skip unless --install-claude-statusline is provided.\n';
 }
