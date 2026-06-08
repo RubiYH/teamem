@@ -68,7 +68,14 @@ teamem init
 ```
 
 `teamem init` checks prerequisites, installs or refreshes the Claude Code
-plugin, runs create/join setup, and can install Teamem git hooks.
+plugin, runs create/join setup, can install Teamem git hooks, and offers the
+opt-in Teamem Claude statusline in interactive setup. Non-interactive setup
+skips the statusline unless you pass `--install-claude-statusline`. If you
+decline the offer, enable it later with:
+
+```bash
+teamem claude statusline install
+```
 
 ## 3. Prepare the launcher and start Claude Code
 
@@ -97,6 +104,20 @@ as `claude --teamem --print hi` or `claude --pure --print hi` select the mode
 before forwarding the remaining arguments to Claude Code. A Teamem launch
 blocks before opening Claude Code when setup, credentials, plugin install, or
 runtime Space readiness is missing, and prints the repair command to run next.
+
+Optional statusline lifecycle commands are:
+
+```bash
+teamem claude statusline install
+teamem claude statusline status
+teamem claude statusline uninstall
+```
+
+Inside a git repository, statusline installation defaults to project scope; use
+`--scope project|user|local` when you need a specific Claude settings scope.
+Teamem refuses to overwrite non-Teamem Claude statuslines and leaves them
+untouched. Backup/restore behavior and `--force` are not part of this first
+statusline slice.
 
 Normal onboarding starts Claude Code through the PATH shim: run `claude` and
 choose Teamem, or use `claude --teamem ...`. If an already-running session was

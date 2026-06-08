@@ -101,7 +101,22 @@ Non-interactive launches stay pure unless you pass `claude --teamem ...`; use
 opening Claude Code when setup, credentials, plugin install, or runtime Space
 readiness is missing, and prints the repair command to run next.
 
-### 4. Start working in Claude Code
+### 4. Optional: install the Teamem statusline
+
+Interactive `teamem init` offers to install the opt-in Teamem Claude statusline.
+Non-interactive setup skips it unless `--install-claude-statusline` is passed.
+If you skip it during setup, enable it later:
+
+```bash
+teamem claude statusline install
+teamem claude statusline status
+teamem claude statusline uninstall
+```
+
+Teamem refuses to overwrite non-Teamem statuslines. Backup/restore behavior and
+`--force` are intentionally out of scope for this first statusline slice.
+
+### 5. Start working in Claude Code
 
 > [!WARNING]
 > Teamem currently uses Claude Code's experimental Channels feature for live
@@ -177,7 +192,11 @@ full briefing before every edit.
 | `teamem init` | Install or update the Claude Code plugin and run onboarding. |
 | `teamem update` | Refresh the marketplace and installed plugin. |
 | `teamem claude install` | Install the opt-in Teamem-aware `claude` launcher. |
+| `teamem claude status` | Inspect Teamem-aware launcher state. |
 | `teamem claude uninstall` | Unwrap `claude` and restore the normal Claude Code command. |
+| `teamem claude statusline install` | Install the opt-in Teamem Claude statusline. |
+| `teamem claude statusline status` | Inspect selected and effective statusline state. |
+| `teamem claude statusline uninstall` | Remove Teamem-owned statusline settings. |
 | `teamem cc` | Compatibility error; it points existing users toward the launcher migration. |
 | `/teamem-off` | Silence Teamem for the current session. |
 | `/teamem-briefing` | Fetch the team context briefing. |

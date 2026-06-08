@@ -5,7 +5,7 @@
 
 ## Purpose
 
-Publishable npm package for the `teamem` CLI. This package is the first-run bootstrapper users install with `npm install -g @rubiyh05/teamem`; it prepares Claude Code marketplace/plugin state, delegates to Teamem setup, installs optional git hooks, updates or uninstalls the plugin, and owns the real machine-local install/status/uninstall lifecycle for the opt-in Teamem-aware Claude launcher.
+Publishable npm package for the `teamem` CLI. This package is the first-run bootstrapper users install with `npm install -g @rubiyh05/teamem`; it prepares Claude Code marketplace/plugin state, delegates to Teamem setup, installs optional git hooks, updates or uninstalls the plugin, and owns the real machine-local install/status/uninstall lifecycle for the opt-in Teamem-aware Claude launcher and Claude statusline.
 
 ## Key Files
 
@@ -15,6 +15,8 @@ Publishable npm package for the `teamem` CLI. This package is the first-run boot
 | `src/bin/teamem.ts` | executable entry point; must keep the Bun shebang |
 | `src/cli.ts` | command parser and command orchestration for `init`, `update`, `uninstall`, `claude`, and `cc` compatibility errors |
 | `src/plugin-installer.ts` | marketplace add/update/install flow, plugin scope resolution, scope memory |
+| `src/claude-statusline.ts` | scope-aware Teamem Claude statusline install/status/uninstall lifecycle and standalone renderer |
+| `src/statusline-display-cache.ts` | local display-cache reader for the standalone statusline renderer |
 | `src/claude-plugin-list.ts` | source of truth for parsing `claude plugin list --json` |
 | `src/setup-delegation.ts` | delegates create/join setup to the installed Teamem plugin setup bundle |
 | `src/git-hooks.ts` | optional post-setup git hook installer/uninstaller prompt and execution |
@@ -32,6 +34,9 @@ Publishable npm package for the `teamem` CLI. This package is the first-run boot
 - Keep marketplace defaults pinned to `https://github.com/RubiYH/teamem`, `teamem-alpha`, and `teamem@teamem-alpha`.
 - Preserve `--scope project|user|local` flags and `.teamem/bootstrapper.json` scope memory. Commands should prefer explicit flags, then remembered scope, then safe prompting/defaults.
 - Keep `--dry-run` useful: it should show planned external commands without mutating Claude Code, git hooks, credentials, or scope memory.
+- `teamem init` may offer the Teamem Claude statusline interactively after setup. Non-interactive init must skip it unless `--install-claude-statusline` is provided, and declined offers must print the later-enable command `teamem claude statusline install`.
+- `teamem claude statusline install/status/uninstall` is the Teamem Claude statusline lifecycle command family. It must refuse non-Teamem statuslines, must not provide `--force`, and must not claim backup/restore behavior until that design exists.
+- The standalone statusline renderer must stay local/cache-only. Do not add MCP calls, Teamem server calls, monitor calls, or cache writes to the render path.
 - Keep `teamem uninstall` comprehensive: uninstall the plugin, remove the marketplace source, uninstall Teamem-managed git hooks, remove bootstrapper scope memory, clear local run/cache/plugin data, and remove credentials unless `--keep-credentials` is set. Continue local cleanup after non-fatal Claude command failures.
 - Keep dist/package behavior in mind. Source changes are not enough; `bun run build` updates `dist/`, and package artifact tests should catch broken bin metadata.
 
@@ -52,6 +57,7 @@ Publishable npm package for the `teamem` CLI. This package is the first-run boot
   - `claude plugin install teamem@teamem-alpha --scope <scope>`
 - `teamem update` should refresh marketplace metadata before updating the plugin.
 - `teamem claude install`, `teamem claude status`, and `teamem claude uninstall` are the Teamem-aware Claude launcher lifecycle command family.
+- `teamem claude statusline install`, `teamem claude statusline status`, and `teamem claude statusline uninstall` are the Teamem Claude statusline lifecycle command family.
 - `teamem dev claude` launches the local source-checkout Channel server with
   `--dangerously-load-development-channels server:teamem-channel`. During the
   Claude Code Channels research preview, do not also pass

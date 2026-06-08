@@ -15,6 +15,7 @@ import {
   AmbiguousSpaceLabelError,
   type CredentialEntry
 } from './credentials.js';
+import { writeStatuslineDisplayCacheFromToolResponse } from './statusline-cache.js';
 
 const SECONDS_PER_DAY = 86_400;
 const EXPIRY_WARN_DAYS = 7;
@@ -227,6 +228,14 @@ export async function startBridge(argv: string[] = process.argv.slice(2)) {
       );
       const parsed = binding.inputSchema.parse(stamped);
       result = await binding.handler(parsed, callClient);
+      writeStatuslineDisplayCacheFromToolResponse(name, result, {
+        credential: {
+          space_id: callEntry.space_id,
+          label: callEntry.label
+        },
+        env,
+        cwd: process.cwd()
+      });
     } catch (err) {
       if (err instanceof SpaceDisbandedError) {
         process.stderr.write(
@@ -320,6 +329,14 @@ async function runArgvMode() {
 
   try {
     const result = await binding.handler(parsed.data, client);
+    writeStatuslineDisplayCacheFromToolResponse(toolName, result, {
+      credential: {
+        space_id: entry.space_id,
+        label: entry.label
+      },
+      env,
+      cwd: process.cwd()
+    });
     process.stdout.write(JSON.stringify(result, null, 2) + '\n');
   } catch (err) {
     if (err instanceof SpaceDisbandedError) {

@@ -20,7 +20,8 @@ teamem init
 
 `teamem init` diagnoses prerequisites, adds or updates the GitHub-hosted
 `teamem-alpha` marketplace, installs `teamem@teamem-alpha`, runs the installed
-plugin setup bundle, and prompts for Teamem git hooks.
+plugin setup bundle, prompts for Teamem git hooks, and offers the opt-in Teamem
+Claude statusline in interactive setup.
 
 ## Commands
 
@@ -31,6 +32,9 @@ plugin setup bundle, and prompts for Teamem git hooks.
 | `teamem claude install` | Install or refresh Teamem-owned machine-local launcher state and shim files. |
 | `teamem claude status` | Inspect the Teamem-aware Claude launcher lifecycle state. |
 | `teamem claude uninstall` | Remove Teamem-owned launcher state and shim files. |
+| `teamem claude statusline install` | Install the opt-in Teamem Claude statusline. |
+| `teamem claude statusline status` | Inspect selected and effective Teamem Claude statusline state. |
+| `teamem claude statusline uninstall` | Remove Teamem-owned Claude statusline settings. |
 | `teamem dev claude` | Contributor-only source-checkout Claude Code launcher. |
 | `teamem dev status` | Inspect contributor dev profiles and launch boundaries. |
 | `teamem dev delete` | Delete one contributor dev profile capsule. |
@@ -60,6 +64,24 @@ force the pure path.
 Use `teamem init --install-claude-launcher` to force launcher installation, or
 `teamem init --skip-claude-launcher` to skip the offer. Non-interactive init
 does not install the launcher unless `--install-claude-launcher` is provided.
+
+`teamem init` also offers to install the Teamem Claude statusline after setup in
+interactive runs. Use `teamem init --install-claude-statusline` to force
+statusline installation, or `teamem init --skip-claude-statusline` to skip the
+offer. Non-interactive init does not install the statusline unless
+`--install-claude-statusline` is provided. If you decline the offer, enable it
+later with:
+
+```bash
+teamem claude statusline install
+```
+
+The statusline install uses the same resolved setup scope by default: project
+inside a git repository, user outside one, or an explicit `--scope
+project|user|local`. Teamem refuses to overwrite an existing non-Teamem Claude
+statusline and leaves it untouched. Backup/restore behavior and `--force` are
+out of scope for this slice; uninstall removes only Teamem's exact statusline
+setting.
 
 Teamem launch readiness is checked before opening Claude Code. If setup,
 credentials, plugin install, or runtime Space readiness is missing, the launcher
