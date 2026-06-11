@@ -1,12 +1,12 @@
 {
   "name": "teamem-alpha",
-  "version": "0.3.31",
+  "version": "0.3.32",
   "description": "GitHub-hosted Claude Code marketplace for Teamem alpha releases.",
   "owner": { "name": "Teamem" },
   "plugins": [
     {
       "name": "teamem",
-      "version": "0.3.31",
+      "version": "0.3.32",
       "description": "Team memory for humans and their coding agents — opt-in slash commands, Channels delivery, and queue-first conflict coordination.",
       "author": { "name": "Teamem" },
       "source": "./plugin",

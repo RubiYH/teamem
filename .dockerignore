@@ -1,0 +1,54 @@
+# Keep secrets and local runtime state out of the Docker build context.
+# The builder stage does `COPY . .` — anything not excluded here lands in a
+# cached image layer, even if the runtime stage never copies it.
+
+# Secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+
+# Local runtime state and databases
+data/
+.teamem/
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.sqlite-*
+*.sqlite3-*
+*.bak
+*.backup
+
+# Dependencies and build output (builder runs its own install/build)
+node_modules/
+dist/
+coverage/
+apps/web/.next/
+apps/web/.certs/
+apps/web/node_modules/
+packages/*/node_modules/
+*.tsbuildinfo
+*.tgz
+
+# Local tooling/scratch state
+.git/
+.github/
+.omc/
+.omx/
+.scratch/
+.claude/
+.cache/
+.playwright-mcp/
+.docs/
+logs/
+*.log
+
+# OS/editor noise
+.DS_Store
+.AppleDouble
+.LSOverride
+.idea/
+.vscode/

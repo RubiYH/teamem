@@ -396,3 +396,35 @@ describe('AC32 — unknown method returns JSON-RPC error', () => {
     expect(body.error.code).toBe(-32601);
   });
 });
+
+describe('initialize rate limit', () => {
+  it('throttles unauthenticated initialize after 10 attempts per window (429 + Retry-After)', async () => {
+    const { app } = buildApp();
+
+    // First 10 anonymous initialize calls succeed within the window.
+    for (let i = 0; i < 10; i++) {
+      const res = await postMcp(app, {
+        jsonrpc: '2.0',
+        id: i,
+        method: 'initialize',
+        params: {}
+      });
+      expect(res.status).toBe(200);
+    }
+
+    // 11th is rejected — without this gate an attacker could fill all
+    // MAX_SESSIONS slots with cheap anonymous calls and lock legitimate
+    // clients out of MCP initialization.
+    const blocked = await postMcp(app, {
+      jsonrpc: '2.0',
+      id: 11,
+      method: 'initialize',
+      params: {}
+    });
+    expect(blocked.status).toBe(429);
+    expect(blocked.headers.get('Retry-After')).toBeTruthy();
+    expect(((await blocked.json()) as { error: string }).error).toBe(
+      'rate_limited'
+    );
+  });
+});

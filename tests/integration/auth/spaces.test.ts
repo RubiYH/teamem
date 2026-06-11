@@ -183,6 +183,27 @@ describe('AC4 — POST /spaces/rotate-code', () => {
     });
     expect(joinNew.status).toBe(200);
   });
+
+  it('non-creator member cannot rotate (403 not_creator)', async () => {
+    const { app } = setupAuthApp();
+    const createRes = await post(app, '/spaces', { member_name: 'alice' });
+    const { room_code } = (await createRes.json()) as { room_code: string };
+
+    const joinRes = await post(app, '/spaces/join', {
+      room_code,
+      member_name: 'bob'
+    });
+    expect(joinRes.status).toBe(200);
+    const { jwt: bobJwt } = (await joinRes.json()) as { jwt: string };
+
+    // Rotation invalidates the standing invite code for everyone, so it is
+    // creator-only like disband/wipe/kick.
+    const rotateRes = await post(app, '/spaces/rotate-code', {}, bobJwt);
+    expect(rotateRes.status).toBe(403);
+    expect(((await rotateRes.json()) as { error: string }).error).toBe(
+      'not_creator'
+    );
+  });
 });
 
 // ── AC5: POST /spaces/leave ──────────────────────────────────────────────────

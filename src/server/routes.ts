@@ -18,7 +18,7 @@ import {
   SCOPE_REJECT_KEYS,
   type AuthedMember
 } from './auth.js';
-import { createRateLimitMiddleware } from './rate-limit.js';
+import { checkRateLimit, createRateLimitMiddleware } from './rate-limit.js';
 import {
   createSpace,
   joinSpace,
@@ -64,8 +64,6 @@ export function createRouter(
   const app = new Hono<{ Variables: Variables }>();
   const registry = createToolRegistry(tools);
 
-  const requireMember =
-    db && jwtSecret ? createRequireMemberMiddleware(jwtSecret, db) : null;
   const requireCreator =
     db && jwtSecret ? createRequireCreatorMiddleware(jwtSecret, db) : null;
   const rateLimit = createRateLimitMiddleware();
@@ -328,8 +326,11 @@ export function createRouter(
       return c.json(result);
     });
 
-    // POST /spaces/rotate-code — requireMember
-    app.post('/spaces/rotate-code', requireMember!, async (c) => {
+    // POST /spaces/rotate-code — requireCreator. Rotation invalidates the
+    // standing invite code for everyone; like disband/wipe/kick it is a
+    // space-level control, so a non-creator member must not be able to
+    // grief pending joins by rotating at will.
+    app.post('/spaces/rotate-code', requireCreator!, async (c) => {
       const member = c.get('member');
       const result = await rotateRoomCode(db, {
         requester_member_id: member.member_id
@@ -702,6 +703,17 @@ export function createRouter(
     const clientProtocolVersion = c.req.header('MCP-Protocol-Version');
 
     if (method === 'initialize') {
+      // Per-IP rate limit on the unauthenticated initialize path only.
+      // Without this, an attacker can fill all MAX_SESSIONS slots with cheap
+      // anonymous calls and lock legitimate clients out of MCP initialization
+      // (sessions only expire after 30 min idle). Authenticated methods like
+      // tools/call fire on every edit and stay unthrottled.
+      const retryAfter = checkRateLimit(c);
+      if (retryAfter !== null) {
+        c.header('Retry-After', String(retryAfter));
+        return c.json({ error: 'rate_limited' }, 429);
+      }
+
       // Cap total sessions; reject with 503 on overflow
       if (mcpSessions.size >= MAX_SESSIONS) {
         return c.json({ error: 'session_limit_exceeded' }, 503);
