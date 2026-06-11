@@ -16,6 +16,6 @@ Steps:
    - **Recent decisions** — bullet list, most recent first, of `title` (and `kind` in parens if present).
    - **Active risks** — bullet list of open blockers + unresolved conflicts. Empty section means "none open".
    - **Recent progress** — bullet list of completed tasks.
-4. If the call fails, surface the error code and message verbatim and suggest `/teamem-setup`.
+4. If the call fails, surface the error code and message verbatim and suggest `/teamem:setup`.
 
 Keep the rendering compact. The user is reading this in a terminal.

@@ -156,11 +156,11 @@ describeLiveMultiProfileKnowledge(
           });
 
           const decisionPrompt = await aliceTester.slashCommandPrompt(
-            'teamem-decide',
+            'decide',
             `${decisionTitle} -- ${decisionSummary} --kind=process`
           );
           const gotchaPrompt = await aliceTester.slashCommandPrompt(
-            'teamem-gotcha',
+            'gotcha',
             `${gotchaSummary} #teamem-smoke #${runTag} --severity=info`
           );
 

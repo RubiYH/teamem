@@ -39,7 +39,7 @@ If any are missing, ask before doing anything.
 
 4. Release the user's claim via `mcp__teamem__release_scope` with the `claim_id`.
 
-5. Tell the user the recipient can pick the message up via SessionStart sync, `/teamem-status`, or optional channel delivery; they can run `/teamem-status` to see the discussion in their inbox.
+5. Tell the user the recipient can pick the message up via SessionStart sync, `/teamem:status`, or optional channel delivery; they can run `/teamem:status` to see the discussion in their inbox.
 
 ## Refusal cases
 

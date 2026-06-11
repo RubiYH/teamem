@@ -475,7 +475,7 @@ async function runChannelsLiveCase(
       personaPlan: alicePlan,
       env: alice.personaPlan.profileEnv,
       workspace: activeWorkspace
-    }).slashCommandPrompt('teamem-discuss', promptArgs);
+    }).slashCommandPrompt('discuss', promptArgs);
 
     await alice.session.submit(directPrompt, {
       delayMs: INTERACTIVE_TYPE_DELAY_MS

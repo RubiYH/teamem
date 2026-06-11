@@ -23128,7 +23128,7 @@ var TOOL_BINDINGS = {
     handler: async (input, client) => callServer(client, "/spaces/unwipe", input)
   },
   "teamem.space_leave": {
-    description: "Leave the current space. Marks `members.left_at = now`; the next API call from this principal returns 401 `member_left`. Creators cannot leave \u2014 they must `/teamem-disband` instead (returns 409 `creator_must_disband`).",
+    description: "Leave the current space. Marks `members.left_at = now`; the next API call from this principal returns 401 `member_left`. Creators cannot leave \u2014 they must `/teamem:disband` instead (returns 409 `creator_must_disband`).",
     inputSchema: exports_external.object({}).passthrough(),
     responseSchema: exports_external.object({
       ok: exports_external.literal(true),

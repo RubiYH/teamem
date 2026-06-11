@@ -194,10 +194,10 @@ describe('channel payload', () => {
     expect(envelope.summary).toContain('bob requests permission from alice');
     expect(envelope.summary).toContain('src/foo.ts');
     expect(envelope.summary).toContain('req req-123');
-    expect(envelope.summary).toContain('/teamem-grant req-123');
-    expect(envelope.summary).toContain('/teamem-deny req-123');
-    expect(envelope.instructions).toContain('/teamem-grant req-123');
-    expect(envelope.instructions).toContain('/teamem-deny req-123');
+    expect(envelope.summary).toContain('/teamem:grant req-123');
+    expect(envelope.summary).toContain('/teamem:deny req-123');
+    expect(envelope.instructions).toContain('/teamem:grant req-123');
+    expect(envelope.instructions).toContain('/teamem:deny req-123');
   });
 
   it('keeps full decision text in channel payloads for online broadcast delivery', () => {

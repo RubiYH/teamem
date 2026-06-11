@@ -1,5 +1,5 @@
 <!-- Parent: ../AGENTS.md -->
-<!-- Generated: 2026-05-09 | Updated: 2026-05-09 -->
+<!-- Generated: 2026-05-09 | Updated: 2026-06-11 -->
 
 # .claude-plugin
 
@@ -11,7 +11,7 @@ Plugin manifest and metadata for the Claude Code marketplace. Contains the singl
 
 | File | Description |
 |------|-------------|
-| `plugin.json` | Marketplace manifest: name `teamem`, version `0.3.19`, explicit `commands` and `agents` component lists, skills directory path, MCP servers declaration |
+| `plugin.json` | Marketplace manifest: name `teamem`, version `0.3.31`, explicit `commands` and `agents` component lists, skills directory path, MCP servers declaration |
 
 ## For AI Agents
 
@@ -19,8 +19,9 @@ Plugin manifest and metadata for the Claude Code marketplace. Contains the singl
 
 - **Version bumping** (critical): Every change to any bundled artifact in `lib/` or source code that affects plugin behavior MUST bump the version in `plugin.json`. Claude Code's cache integrity check silently rejects plugins with mismatched versions.
 - **Manifest structure**: The `plugin.json` is a JSON document with fields `name`, `version`, `description`, `author`, `homepage`, `license`, `keywords`, `commands` (explicit command markdown file list), `agents` (explicit agent prompt file list), `skills` (directory path), and `mcpServers` (path to MCP config). Adding unsupported fields or malformed entries can silently disable plugin surfaces — if a hook or command stops firing, bisect by stripping the manifest to minimal fields.
+- **Command namespace**: Claude Code always prefixes plugin commands with the manifest `name`. Keep command files short (`commands/sprint.md` becomes `/teamem:sprint`); never repeat the namespace in filenames such as `commands/teamem-sprint.md`.
 - **Component discovery hygiene**: Keep `commands` and `agents` as explicit file lists. Do not add `AGENTS.md` or other guidance markdown inside `plugin/commands/` or `plugin/agents/`; Claude plugin validation treats markdown files in those component directories as plugin components.
-- **Claim cleanup boundary**: Claim lifecycle cleanup is MCP/hook-driven. Do not add `/teamem-claims` or `/teamem-force-release` command entries unless a future product decision explicitly reopens human slash commands for this flow.
+- **Claim cleanup boundary**: Claim lifecycle cleanup is MCP/hook-driven. Do not add `/teamem:claims` or `/teamem:force-release` command entries unless a future product decision explicitly reopens human slash commands for this flow.
 - **MCP servers config**: The `mcpServers` field points to `../.mcp.json` (one level up in plugin root). This configures custom MCP servers like `teamem-channel` for the Channels POC.
 
 ### Common Patterns

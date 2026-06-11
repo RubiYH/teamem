@@ -559,7 +559,7 @@ async function runChannelsLiveCase(
       personaPlan: alicePlan,
       env: alice.personaPlan.profileEnv,
       workspace: activeWorkspace
-    }).slashCommandPrompt('teamem-discuss', promptArgs);
+    }).slashCommandPrompt('discuss', promptArgs);
 
     await alice.session.submit(directPrompt, {
       delayMs: INTERACTIVE_TYPE_DELAY_MS
@@ -866,7 +866,7 @@ async function positionSprintContexts(input: {
   });
 
   const createPrompt = await aliceTester.slashCommandPrompt(
-    'teamem-sprint',
+    'sprint',
     `create ${displayName} -- ${goal}`
   );
   const createCheckpoint = await currentMcpTraceOffset(input.alice.session);
@@ -888,7 +888,7 @@ async function positionSprintContexts(input: {
   expect(created.new_context.sprint?.sprint_id).toBe(sprint.sprint_id);
 
   const joinPrompt = await bobTester.slashCommandPrompt(
-    'teamem-sprint',
+    'sprint',
     `join ${sprint.slug}`
   );
   const joinCheckpoint = await currentMcpTraceOffset(input.bob.session);
@@ -905,10 +905,7 @@ async function positionSprintContexts(input: {
   expect(joined.new_context.mode).toBe('sprint');
   expect(joined.new_context.sprint?.sprint_id).toBe(sprint.sprint_id);
 
-  const leavePrompt = await carolTester.slashCommandPrompt(
-    'teamem-sprint',
-    'leave'
-  );
+  const leavePrompt = await carolTester.slashCommandPrompt('sprint', 'leave');
   const leaveCheckpoint = await currentMcpTraceOffset(input.carol.session);
   await input.carol.session.submit(leavePrompt, {
     delayMs: INTERACTIVE_TYPE_DELAY_MS
@@ -962,10 +959,7 @@ async function readCurrentSprintThroughPlugin(input: {
   readonly session: InteractiveSession;
   readonly marker: string;
 }): Promise<CurrentSprintEvidence> {
-  const prompt = await input.tester.slashCommandPrompt(
-    'teamem-sprint',
-    'current'
-  );
+  const prompt = await input.tester.slashCommandPrompt('sprint', 'current');
   const checkpoint = await currentMcpTraceOffset(input.session);
   await input.session.submit(prompt, { delayMs: INTERACTIVE_TYPE_DELAY_MS });
   return waitForSprintToolEvidence<CurrentSprintEvidence>({

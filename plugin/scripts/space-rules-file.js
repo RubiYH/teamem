@@ -12,7 +12,7 @@ import path from 'node:path';
 
 const HEADING = '## Teamem Space Rules';
 const STARTER_PLACEHOLDER =
-  'Run `/teamem-rule init` to pull the latest server-authored Space Rules snapshot into a managed block below. Teamem only refreshes that managed block and leaves the rest of this file alone.';
+  'Run `/teamem:rule init` to pull the latest server-authored Space Rules snapshot into a managed block below. Teamem only refreshes that managed block and leaves the rest of this file alone.';
 
 function canonicalRulesBody(body) {
   return body.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trimEnd();

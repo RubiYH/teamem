@@ -132,7 +132,7 @@ Rules resolved for v1:
 - Reopening an already active Sprint is a no-op only when the actor is already in that Sprint. If the Sprint is active and the actor is not in it, `reopen` should tell the actor to use `join` instead.
 - Archived Sprints cannot be joined directly. A member must explicitly reopen the Sprint first, creating an auditable lifecycle transition back to active coordination.
 - Archived Sprint history remains visible through explicit history/audit commands. Archive ends active coordination and live routing for that Sprint; it does not erase the Sprint record.
-- `/teamem-sprint list` shows both active and archived Sprints by default, with clear state labels. Archived Sprints are not hidden behind a separate flag because Sprint names remain reserved and archived Sprints can be reopened. List is compact inventory, not a lifecycle log: it should show fields such as slug, display name, active/archived state, goal, current members, and last activity. Full lifecycle history belongs in explicit history/audit commands. V1 list is not capped or paginated; pagination is deferred until Spaces accumulate enough Sprints to need it.
+- `/teamem:sprint list` shows both active and archived Sprints by default, with clear state labels. Archived Sprints are not hidden behind a separate flag because Sprint names remain reserved and archived Sprints can be reopened. List is compact inventory, not a lifecycle log: it should show fields such as slug, display name, active/archived state, goal, current members, and last activity. Full lifecycle history belongs in explicit history/audit commands. V1 list is not capped or paginated; pagination is deferred until Spaces accumulate enough Sprints to need it.
 - A Sprint can be archived only after every member has left it. During archive, Teamem may force-release any remaining active claims tied to that Sprint as an explicit archive side effect, with normal audit-visible release events. Archive force-release sends direct cleanup notifications to affected claim owners, even if they already left the Sprint, but does not broadcast broad live cleanup notifications to current Space or Sprint members. Broader live announcement still requires explicit `**`.
 - Archiving an already archived Sprint is idempotent: return a clear no-op message such as `already archived <sprint>` and do not emit another archive event.
 - Sprint archive is non-interrupting by default. It emits durable/status-visible history, but live Space-wide closure announcements require an explicit `**` broadcast.
@@ -153,7 +153,7 @@ Ordinary Space-mode events do not live-interrupt members currently in Sprints. O
 
 Briefing follows the same context boundary. In Sprint mode, briefing is Sprint-first: current Sprint header, goal, members, active claims, decisions, gotchas, blockers, and progress; direct-to-me messages regardless of Sprint; explicit `**` Space-wide announcements; low-priority cross-Sprint overlap awareness; and a separate outside-current-context section for the member's own leftover claims. It does not include ordinary events from other Sprints, archived Sprint summaries, or ordinary Space-mode noise. Archived Sprint context appears only through explicit history/audit commands or when directly relevant to the member's leftover claims.
 
-Status stays compact and operational. In Sprint mode it shows Teamem activation, monitor health, Space label/id, mode `Sprint`, Sprint display name and slug, Sprint members, the member's active claims in the current context, the member's active claims outside the current context, recent notifications in the current routing set, and a cross-Sprint overlap count rather than full detail. `/teamem-status` does not list archived Sprints; archived inventory belongs in `/teamem-sprint list` and explicit history/audit commands.
+Status stays compact and operational. In Sprint mode it shows Teamem activation, monitor health, Space label/id, mode `Sprint`, Sprint display name and slug, Sprint members, the member's active claims in the current context, the member's active claims outside the current context, recent notifications in the current routing set, and a cross-Sprint overlap count rather than full detail. `/teamem:status` does not list archived Sprints; archived inventory belongs in `/teamem:sprint list` and explicit history/audit commands.
 
 Claims made in Sprint mode are coordinated against the current Sprint's claim picture. Overlapping work in a different Sprint is not a Teamem conflict in v1; the repository's normal git and merge workflow owns that later integration risk.
 
@@ -189,19 +189,19 @@ The first experimental Sprint implementation should stay thin: membership, event
 
 V1 Sprint command surface:
 
-- `/teamem-sprint create "<display name>" -- <goal>`
-- `/teamem-sprint join <slug-or-id>`
-- `/teamem-sprint leave`
-- `/teamem-sprint list`
-- `/teamem-sprint history <slug-or-id>`
-- `/teamem-sprint archive <slug-or-id>`
-- `/teamem-sprint reopen <slug-or-id>`
+- `/teamem:sprint create "<display name>" -- <goal>`
+- `/teamem:sprint join <slug-or-id>`
+- `/teamem:sprint leave`
+- `/teamem:sprint list`
+- `/teamem:sprint history <slug-or-id>`
+- `/teamem:sprint archive <slug-or-id>`
+- `/teamem:sprint reopen <slug-or-id>`
 
 Create accepts a human display name and derives the canonical slug, e.g. `"Plugin Release"` becomes `plugin-release`. Commands after creation should prefer the slug so users do not need quoted display names, while still accepting Sprint ids for ambiguity/debugging.
 
-`/teamem-sprint history <slug-or-id>` is read-only, explicit, and non-live. It exposes Sprint lifecycle/audit history without adding archived or non-current Sprint history to ordinary update, status, or briefing streams. V1 history is lifecycle-focused by default; broad coordination-event history is deferred so the command does not become a noisy Sprint feed. Archive force-release cleanup entries are included as lifecycle-adjacent audit effects tied to archive, without including the full claim event stream. History output is capped by default, for example latest 50 lifecycle entries, with an explicit `--limit` bounded by a sane maximum.
+`/teamem:sprint history <slug-or-id>` is read-only, explicit, and non-live. It exposes Sprint lifecycle/audit history without adding archived or non-current Sprint history to ordinary update, status, or briefing streams. V1 history is lifecycle-focused by default; broad coordination-event history is deferred so the command does not become a noisy Sprint feed. Archive force-release cleanup entries are included as lifecycle-adjacent audit effects tied to archive, without including the full claim event stream. History output is capped by default, for example latest 50 lifecycle entries, with an explicit `--limit` bounded by a sane maximum.
 
-There is no separate `/teamem-sprint use` or `/teamem-sprint off` in v1 because current Sprint is membership state. MCP tools mirror the command verbs: `teamem.create_sprint`, `teamem.join_sprint`, `teamem.leave_sprint`, `teamem.list_sprints`, `teamem.get_sprint_history`, `teamem.archive_sprint`, `teamem.reopen_sprint`, and `teamem.get_current_sprint`.
+There is no separate `/teamem:sprint use` or `/teamem:sprint off` in v1 because current Sprint is membership state. MCP tools mirror the command verbs: `teamem.create_sprint`, `teamem.join_sprint`, `teamem.leave_sprint`, `teamem.list_sprints`, `teamem.get_sprint_history`, `teamem.archive_sprint`, `teamem.reopen_sprint`, and `teamem.get_current_sprint`.
 
 ### Space mode
 
@@ -223,7 +223,7 @@ In Sprint mode, "scope conflict" means a claim collision within the same Sprint.
 
 | Mode | Protocol | Latency profile |
 | - | - | - |
-| `auto-skip` | **Async, active plugin mode.** PreToolUse denies immediately with an advisory hookSpecificOutput telling the latter to skip and proceed with other work. A `conflict_queued` event is recorded. Resolution is recoverable through `/teamem-status`, briefings, SessionStart sync/unread queues where applicable, and optional Channels. | Returns in tens of milliseconds. |
+| `auto-skip` | **Async, active plugin mode.** PreToolUse denies immediately with an advisory hookSpecificOutput telling the latter to skip and proceed with other work. A `conflict_queued` event is recorded. Resolution is recoverable through `/teamem:status`, briefings, SessionStart sync/unread queues where applicable, and optional Channels. | Returns in tens of milliseconds. |
 | `ask-claimant` | **Legacy/internal compatibility.** The server still has permission request/grant/deny primitives, but the active plugin gate no longer routes normal conflicts through this mode. | Not user-selectable. |
 | `auto-discuss` | **Roadmap/legacy compatibility.** Backend dispute primitives remain for direct tool compatibility and manual cleanup, but watcher/negotiator subagents are postponed. Stale `auto-discuss` rows degrade to the queued `auto-skip` path in the plugin gate. | Not an active plugin runtime. |
 
@@ -255,7 +255,7 @@ A server-side record produced when a latter hits a conflict and falls through to
 - Enqueue: latter's gate-claim hook on `auto-skip` calls `teamem.queue_pending_edit(blocking_claim_id, paths, intent)`. Server appends a `conflict_queued` event and inserts into `pending_edits`.
 - Resolve-on-release: when `release_scope` fires for `claim_X`, server scans `pending_edits` for rows whose `blocking_claim_id = claim_X` OR whose `paths` overlap the released scope. For each match, server emits `conflict_resolved` peer-event directed at `blocked_principal` with `payload: { pending_id, blocked_principal, blocking_claim_id, previously_blocked_paths, now_free: true }` and sets `resolved_at`. The event's top-level `principal` field is the **releaser** (e.g. alice — the one who fired the trigger); `payload.blocked_principal` is the **routing target** (e.g. bob). Auditors reading raw events should treat `payload.blocked_principal` as the recipient, not `principal`.
 - Resolve-on-expiry: when lease expires server-side, same projection logic fires.
-- Cancel: latter calls `/teamem-clear-queue` to remove their own entry; cleared rows produce no peer event.
+- Cancel: latter calls `/teamem:clear-queue` to remove their own entry; cleared rows produce no peer event.
 - GC: a periodic sweep removes rows where `expires_at < now AND resolved_at IS NULL`.
 
 **No auto-retry of the original Edit.** When a queued conflict resolves, Teamem records the event and makes the queue state visible through status/briefing surfaces, SessionStart sync/unread delivery where applicable, and optional Channels. The main agent decides whether and when to retry. Teamem does **not** synthesize a replay of the original Edit tool call.
@@ -265,8 +265,8 @@ A server-side record produced when a latter hits a conflict and falls through to
 `pending_edits` rows are visible to every member in the same coordination context, not just the blocked principal. Space remains the trust boundary, so explicit recovery/history views may inspect across contexts, but ordinary status and briefing stay context-scoped. Specifically:
 
 - Incumbents see who is queued behind their claim. Surfaces in the briefing's `active_claims` block as `claim_id … blocking [bob waiting on src/auth/, carol waiting on src/auth/utils.ts]`. This gives the incumbent a social signal to release sooner if they've reached a natural stopping point.
-- Other teammates in the same coordination context see the queue in `/teamem-briefing` so they understand the work-ordering picture.
-- Only the blocked principal can call `/teamem-clear-queue` to cancel their own entry. Other teammates cannot dequeue someone else.
+- Other teammates in the same coordination context see the queue in `/teamem:briefing` so they understand the work-ordering picture.
+- Only the blocked principal can call `/teamem:clear-queue` to cancel their own entry. Other teammates cannot dequeue someone else.
 
 ### Permission request (Mode 6.B mechanics, legacy/internal)
 
@@ -280,7 +280,7 @@ The latter's request to the incumbent for permission to edit a colliding scope. 
 4. **Configurable v2 extension:** a per-claim or per-space `auto_decide` flag delegates the decision to the incumbent's agent. Out of scope for v1.
 5. Server long-polls the latter's `request_edit_permission` for up to 60s. On any of `granted`, `denied`, or `expired`, the long-poll returns.
 
-**On grant (`/teamem-grant <req_id>`):**
+**On grant (`/teamem:grant <req_id>`):**
 
 Server runs one atomic transaction:
 - Narrows the incumbent's claim by subtracting the requested paths from its `scope.paths`. (See "Split release" below.)
@@ -288,7 +288,7 @@ Server runs one atomic transaction:
 - Appends `scope_claimed` event for the latter on those paths.
 - Fulfills the latter's long-poll with `{ ok: true, action: 'allow', claim_id, expires_at }`. The latter's PreToolUse returns 200 and the edit proceeds in the same tool call.
 
-**On deny (`/teamem-deny <req_id>`):**
+**On deny (`/teamem:deny <req_id>`):**
 
 Deny is **not terminal** — it routes the latter through the standard `auto-skip` flow. Server:
 - Marks the request as `denied` in the projection.
@@ -297,11 +297,11 @@ Deny is **not terminal** — it routes the latter through the standard `auto-ski
 
 **On timeout (no response within 60s):**
 
-Same as deny — falls through to `auto-skip`. The request is marked `expired`. Late responses (e.g., incumbent clicks `/teamem-grant` after 60s) are rejected as already resolved and do not narrow the incumbent's claim. The latter must re-attempt the edit normally or send a new permission request.
+Same as deny — falls through to `auto-skip`. The request is marked `expired`. Late responses (e.g., incumbent clicks `/teamem:grant` after 60s) are rejected as already resolved and do not narrow the incumbent's claim. The latter must re-attempt the edit normally or send a new permission request.
 
 **Idempotency:** each request carries a `request_id`. Once status is `granted`/`denied`/`expired`, subsequent response messages with the same id are recorded as historical but do not change state.
 
-**Authorization on response:** only a member whose `principal` matches the incumbent of the cited `blocking_claim_id` may call `respond_permission_request`. Anyone else gets `403 not_incumbent`. Slash commands `/teamem-grant` and `/teamem-deny` are thin wrappers around this MCP call.
+**Authorization on response:** only a member whose `principal` matches the incumbent of the cited `blocking_claim_id` may call `respond_permission_request`. Anyone else gets `403 not_incumbent`. Slash commands `/teamem:grant` and `/teamem:deny` are thin wrappers around this MCP call.
 
 **Compatibility scope:** request payload is just `paths`. No back-and-forth negotiation in the request itself ("can you wait 10 min?"). Parties wanting that depth use direct discussion messages today; automated Mode 6.C negotiators are postponed.
 
@@ -346,7 +346,7 @@ Each move is appended as a `discussion_posted` event with a structured payload; 
 
 | Condition | Behavior |
 | - | - |
-| **User override (5.3.C)** | Either party runs `/teamem-end-dispute <thread_id> <accept\|deny\|skip>` at any moment. Server applies chosen outcome, appends `dispute_user_terminated`, closes the thread. |
+| **User override (5.3.C)** | Either party runs `/teamem:end-dispute <thread_id> <accept\|deny\|skip>` at any moment. Server applies chosen outcome, appends `dispute_user_terminated`, closes the thread. |
 | **Explicit agreement (5.3.A)** | An `accept` move is posted on an open proposal. Server applies the agreed outcome (release/split/swap/wait), appends `dispute_resolved`, closes. |
 | **Round-trip cap (5.3.D, default N=4)** | After 4 total negotiator turns across both sides without an `accept`, server appends `dispute_max_turns`, falls through to `auto-skip`. |
 | **Wall-clock cap (5.3.B, default 5min)** | Backstop for stalled negotiators. Server appends `dispute_timeout`, falls through to `auto-skip`. |
@@ -355,7 +355,7 @@ Each space can disable any subset of the four conditions (`team.dispute_terminat
 
 **Roadmap auto-negotiator tool surface:** if the postponed `teamem-negotiator-auto` subagent returns, its only state-mutation tool should be `teamem.dispute_post_move(thread_id, move_type, payload)`. The server validates each move against the dispute state machine: cannot accept a non-existent proposal, cannot post twice in a row from the same side, cannot post after termination. Illegal moves are `409 invalid_move`. The auto-negotiator should have NO access to `claim_scope`, `release_scope`, `publish_event`, or `record_decision` — its only world is the dispute thread.
 
-**Visibility:** dispute threads are visible in `/teamem-status` and `/teamem-briefing` for the current coordination context. Explicit history/recovery views may inspect across contexts because Space remains the trust boundary. This helps identify recurring conflict patterns without turning ordinary Sprint briefing into an all-Space feed.
+**Visibility:** dispute threads are visible in `/teamem:status` and `/teamem:briefing` for the current coordination context. Explicit history/recovery views may inspect across contexts because Space remains the trust boundary. This helps identify recurring conflict patterns without turning ordinary Sprint briefing into an all-Space feed.
 
 ### Identity model
 
@@ -526,7 +526,7 @@ The set of typed tools agents use to share team-level information. v1 ships four
 
 **v2 extensions:**
 
-- Free-form direct messaging (`post_message` / `read_thread`) — active through `/teamem-discuss` and normal MCP calls. Channels can deliver live directed/broadcast messages; `teamem.read_thread` remains the durable fallback.
+- Free-form direct messaging (`post_message` / `read_thread`) — active through `/teamem:discuss` and normal MCP calls. Channels can deliver live directed/broadcast messages; `teamem.read_thread` remains the durable fallback.
 - Per-finding subscriptions (`teamem.subscribe(tags)`) — future work. Current gotchas/findings surface through briefings, SessionStart sync, targeted notices, and optional Channels.
 
 **`share_finding` schema:**

@@ -4,10 +4,10 @@ import { join, resolve } from 'node:path';
 
 const REPO_ROOT = resolve(import.meta.dir, '../..');
 
-describe('/teamem-discuss direct send contract', () => {
+describe('/teamem:discuss direct send contract', () => {
   it('uses only direct post_message and documents malformed-input stop cases', () => {
     const command = readFileSync(
-      join(REPO_ROOT, 'plugin/commands/teamem-discuss.md'),
+      join(REPO_ROOT, 'plugin/commands/discuss.md'),
       'utf-8'
     );
 
@@ -25,7 +25,7 @@ describe('/teamem-discuss direct send contract', () => {
 
   it('documents broadcast input without string-null ambiguity', () => {
     const command = readFileSync(
-      join(REPO_ROOT, 'plugin/commands/teamem-discuss.md'),
+      join(REPO_ROOT, 'plugin/commands/discuss.md'),
       'utf-8'
     );
 

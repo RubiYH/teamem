@@ -125,8 +125,8 @@ launched without Teamem activation, restart it through the launcher or use
 on-demand read commands:
 
 ```text
-/teamem-briefing
-/teamem-status
+/teamem:briefing
+/teamem:status
 ```
 
 The deprecated `/teamem-on` activation command is no longer shipped.
@@ -134,4 +134,4 @@ The deprecated `/teamem-on` activation command is no longer shipped.
 ## 4. Work normally
 
 Teamem hooks claim files before edits, release normal claims on commit, and
-surface team context through `/teamem-briefing` and `/teamem-status`.
+surface team context through `/teamem:briefing` and `/teamem:status`.

@@ -2,10 +2,10 @@ import { describe, expect, it } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-describe('/teamem-sprint command contract', () => {
+describe('/teamem:sprint command contract', () => {
   it('exposes lifecycle commands without use/off aliases', () => {
     const command = readFileSync(
-      join(process.cwd(), 'plugin/commands/teamem-sprint.md'),
+      join(process.cwd(), 'plugin/commands/sprint.md'),
       'utf-8'
     );
     const manifest = JSON.parse(
@@ -15,7 +15,7 @@ describe('/teamem-sprint command contract', () => {
       )
     ) as { commands: string[] };
 
-    expect(manifest.commands).toContain('./commands/teamem-sprint.md');
+    expect(manifest.commands).toContain('./commands/sprint.md');
     expect(command).toContain('mcp__teamem__teamem_create_sprint');
     expect(command).toContain('mcp__teamem__teamem_join_sprint');
     expect(command).toContain('mcp__teamem__teamem_leave_sprint');
@@ -33,8 +33,8 @@ describe('/teamem-sprint command contract', () => {
     expect(
       command.indexOf('mcp__plugin_teamem_teamem__teamem_create_sprint')
     ).toBeLessThan(command.indexOf('mcp__teamem__teamem_create_sprint'));
-    expect(command).not.toContain('/teamem-sprint use');
-    expect(command).not.toContain('/teamem-sprint off');
+    expect(command).not.toContain('/teamem:sprint use');
+    expect(command).not.toContain('/teamem:sprint off');
     expect(command).not.toContain('mcp__teamem__create_sprint');
     expect(command).not.toContain('mcp__teamem__teamem_use_sprint');
     expect(command).not.toContain('mcp__teamem__teamem_off_sprint');

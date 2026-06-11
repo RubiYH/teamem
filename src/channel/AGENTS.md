@@ -55,7 +55,7 @@ None.
 ### Common Patterns
 
 - **Polling loop**: prime to the latest event id on empty cursor, then fetch events since last cursor, advance cursor to the latest event id, filter and emit notifications, sleep before next poll.
-- **Event summarization**: `summarizeTeamemChannelEvent()` renders concise human-readable strings (e.g., "alice claimed scope [src/auth.ts, src/session.ts]"). `permission_requested` summaries must name requester, incumbent, requested paths, and `req_id`, and must urgently surface `/teamem-grant <req_id>` and `/teamem-deny <req_id>`.
+- **Event summarization**: `summarizeTeamemChannelEvent()` renders concise human-readable strings (e.g., "alice claimed scope [src/auth.ts, src/session.ts]"). `permission_requested` summaries must name requester, incumbent, requested paths, and `req_id`, and must urgently surface `/teamem:grant <req_id>` and `/teamem:deny <req_id>`.
 - **Notification structure**: Claude channel expects `{ method: "notifications/claude/channel", params: { content: string, meta: Record<string, string> } }`.
 
 ## Dependencies

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 const REPO_ROOT = resolve(import.meta.dir, '../..');
@@ -26,13 +26,50 @@ describe('teamem alpha marketplace contract', () => {
     // The plugin manifest remains the MCP authority; the marketplace file only
     // points Claude Code at the existing plugin bundle.
     expect(pluginManifest.mcpServers).toBe('./.mcp.json');
+    expect(pluginManifest.commands).not.toContain('./commands/claims.md');
     expect(pluginManifest.commands).not.toContain(
-      './commands/teamem-claims.md'
-    );
-    expect(pluginManifest.commands).not.toContain(
-      './commands/teamem-force-release.md'
+      './commands/force-release.md'
     );
     expect(pluginManifest.agents).toEqual(['./agents/teamem-briefer.md']);
     expect(marketplace.mcpServers).toBeUndefined();
+  });
+
+  it('maps every command file without repeating the plugin namespace', () => {
+    const pluginManifest = JSON.parse(
+      readFileSync(join(REPO_ROOT, 'plugin/.claude-plugin/plugin.json'), 'utf8')
+    ) as { name: string; commands: string[] };
+    const commandFiles = readdirSync(join(REPO_ROOT, 'plugin/commands'))
+      .filter((file) => file.endsWith('.md'))
+      .sort();
+
+    expect([...pluginManifest.commands].sort()).toEqual(
+      commandFiles.map((file) => `./commands/${file}`)
+    );
+    expect(
+      commandFiles.some((file) => file.startsWith(`${pluginManifest.name}-`))
+    ).toBe(false);
+  });
+
+  it('keeps live smoke command references aligned with short inventory names', () => {
+    const smokeFiles = readdirSync(join(REPO_ROOT, 'tests/plugin')).filter(
+      (file) =>
+        file.endsWith('-smoke.test.ts') ||
+        file === 'teamem-channels-evidence.test.ts'
+    );
+    const staleReferences = smokeFiles.flatMap((file) => {
+      const source = readFileSync(
+        join(REPO_ROOT, 'tests/plugin', file),
+        'utf8'
+      );
+      return [
+        source.match(/slashCommandPrompt\(\s*['"]teamem-/u)
+          ? `${file}: slashCommandPrompt`
+          : null,
+        source.includes('Skill(teamem:teamem-') ? `${file}: Skill` : null,
+        source.includes('/teamem:teamem-') ? `${file}: invocation` : null
+      ].filter((reference): reference is string => reference !== null);
+    });
+
+    expect(staleReferences).toEqual([]);
   });
 });

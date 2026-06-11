@@ -13,7 +13,7 @@ Prebuilt JavaScript bundles for runtime deployment. These are production artifac
 |------|-------------|
 | `bridge.js` | MCP stdio server + HTTP client bridge; compiled from `src/bridge/index.ts`; invoked by slash commands and hooks in argv mode |
 | `channel.js` | Channels POC runtime; compiled from `src/channel/index.ts`; optional MCP server for real-time discussion delivery |
-| `setup.js` | Interactive setup wizard; compiled from `src/cli/setup.ts`; invoked by `/teamem-setup` and the teamem-onboarding skill |
+| `setup.js` | Interactive setup wizard; compiled from `src/cli/setup.ts`; invoked by `/teamem:setup` and the teamem-onboarding skill |
 
 ## For AI Agents
 
@@ -34,7 +34,7 @@ Prebuilt JavaScript bundles for runtime deployment. These are production artifac
   - `bun run bridge.js call <tool> [args...]` — blocking tool invocation (return JSON)
   - `bun run bridge.js poll [--cursor ...]` — long-poll for team events (used by monitor)
   - CLI mode with `--space`, `--actor`, `--token-budget`, `--json '<payload>'` argument flags
-- **setup.js invocation**: Used by `/teamem-setup` slash command and the teamem-onboarding skill. Prompts user for space name, member name, and server URL. Returns JSON with created/joined space details.
+- **setup.js invocation**: Used by `/teamem:setup` slash command and the teamem-onboarding skill. Prompts user for space name, member name, and server URL. Returns JSON with created/joined space details.
 - **channel.js invocation**: Optional Channels POC runtime. Implements MCP server for real-time discussion delivery via Claude Code's custom channels. Disabled by default; enabled with `--dangerously-load-development-channels server:teamem-channel`.
 
 ### Bundle Size and Dependencies

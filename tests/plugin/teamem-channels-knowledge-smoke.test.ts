@@ -242,7 +242,7 @@ async function runChannelsDecisionLiveCase(): Promise<void> {
     const decisionPrompt = await createPersonaTester({
       personaPlan: alicePlan,
       workspace
-    }).slashCommandPrompt('teamem-decide', decisionArgs);
+    }).slashCommandPrompt('decide', decisionArgs);
 
     await alice.session.submit(decisionPrompt, {
       delayMs: INTERACTIVE_TYPE_DELAY_MS
@@ -468,7 +468,7 @@ async function runChannelsGotchaLiveCase(): Promise<void> {
     const gotchaPrompt = await createPersonaTester({
       personaPlan: alicePlan,
       workspace
-    }).slashCommandPrompt('teamem-gotcha', gotchaArgs);
+    }).slashCommandPrompt('gotcha', gotchaArgs);
 
     await alice.session.submit(gotchaPrompt, {
       delayMs: INTERACTIVE_TYPE_DELAY_MS
@@ -988,14 +988,14 @@ function assertGotchaCommandInvocationEvidence(input: {
   readonly severity: string;
 }): void {
   if (
-    input.transcript.includes('/teamem:teamem-gotcha') &&
+    input.transcript.includes('/teamem:gotcha') &&
     input.transcript.includes(input.summaryMarker) &&
     input.transcript.includes(`--severity=${input.severity}`)
   ) {
     return;
   }
   throw new GotchaMcpEvidenceError(
-    `Expected /teamem-gotcha command invocation evidence for marker ${input.summaryMarker} and severity ${input.severity}`,
+    `Expected /teamem:gotcha command invocation evidence for marker ${input.summaryMarker} and severity ${input.severity}`,
     { transient: true }
   );
 }

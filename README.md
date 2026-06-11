@@ -121,7 +121,7 @@ Teamem refuses to overwrite non-Teamem statuslines. Backup/restore behavior and
 > [!WARNING]
 > Teamem currently uses Claude Code's experimental Channels feature for live
 > delivery. Channel behavior may change, be unavailable in some environments,
-> or require fallback to `/teamem-briefing`, `/teamem-status`, and unread
+> or require fallback to `/teamem:briefing`, `/teamem:status`, and unread
 > notifications.
 
 Normal onboarding starts Claude Code through the PATH shim: run `claude` and
@@ -130,8 +130,8 @@ launched without Teamem activation, restart it through the launcher or use
 on-demand read commands:
 
 ```text
-/teamem-briefing
-/teamem-status
+/teamem:briefing
+/teamem:status
 ```
 
 The deprecated `/teamem-on` activation command is no longer shipped. From a
@@ -181,8 +181,8 @@ full briefing before every edit.
 | Briefings | Shows the current plan, active claims, recent decisions, risks, and progress. |
 | Scope claims | Lets agents reserve files or modules before editing them. |
 | Git handoffs | Releases normal claims on commit and pauses or resumes claims on branch checkout. |
-| Decisions and gotchas | Captures durable team knowledge through `/teamem-decide` and `/teamem-gotcha`. |
-| Discussions | Sends direct or broadcast coordination messages with `/teamem-discuss`. |
+| Decisions and gotchas | Captures durable team knowledge through `/teamem:decide` and `/teamem:gotcha`. |
+| Discussions | Sends direct or broadcast coordination messages with `/teamem:discuss`. |
 | Space rules | Exports team rules into a local `TEAMEM.md` cache for agent prompts. |
 
 ## Common Commands
@@ -198,12 +198,12 @@ full briefing before every edit.
 | `teamem claude statusline status` | Inspect selected and effective statusline state. |
 | `teamem claude statusline uninstall` | Remove Teamem-owned statusline settings. |
 | `teamem cc` | Compatibility error; it points existing users toward the launcher migration. |
-| `/teamem-off` | Silence Teamem for the current session. |
-| `/teamem-briefing` | Fetch the team context briefing. |
-| `/teamem-status` | Check activation, monitor health, and recent notifications. |
-| `/teamem-decide` | Record an architectural, product, plan, or process decision. |
-| `/teamem-discuss` | Send a direct or broadcast discussion message. |
-| `/teamem-space` | Manage membership actions such as leave, kick, and rotate code. |
+| `/teamem:off` | Silence Teamem for the current session. |
+| `/teamem:briefing` | Fetch the team context briefing. |
+| `/teamem:status` | Check activation, monitor health, and recent notifications. |
+| `/teamem:decide` | Record an architectural, product, plan, or process decision. |
+| `/teamem:discuss` | Send a direct or broadcast discussion message. |
+| `/teamem:space` | Manage membership actions such as leave, kick, and rotate code. |
 
 ## Roadmap
 

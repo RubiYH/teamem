@@ -1,6 +1,6 @@
 /**
  * Codex F7 regression — `plugin/lib/setup.js` must run without a source
- * tree. The `/teamem-setup` slash command spawns the bundled setup CLI via
+ * tree. The `/teamem:setup` slash command spawns the bundled setup CLI via
  * `bun run "${CLAUDE_PLUGIN_ROOT}/lib/setup.js"`. A marketplace install has
  * no source path; the bundle must be self-contained.
  *

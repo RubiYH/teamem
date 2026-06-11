@@ -1,5 +1,5 @@
 ---
-description: Disband the current space (creator only). Soft-tombstone with a 7-day grace window — data is retained and `/teamem-restore` can undo within that window. After grace, the space is hard-deleted by GC.
+description: Disband the current space (creator only). Soft-tombstone with a 7-day grace window — data is retained and `/teamem:restore` can undo within that window. After grace, the space is hard-deleted by GC.
 allowed-tools: mcp__teamem__space_disband, mcp__teamem__get_briefing
 argument-hint: "<exact-space-label>"
 ---
@@ -15,8 +15,8 @@ Steps:
 2. Call `mcp__teamem__space_disband` with `{ label_confirmation: "<arg>" }`. Do NOT pass any other fields — `space_id` and `principal` come from the verified JWT.
 
 3. Branch on the result:
-   - **success**: print "Space disbanded. Data is retained for 7 days; run `/teamem-restore` within that window to undo. After grace, GC will hard-delete everything." Note that the user's MCP calls will now reject with 410 until they restore.
-   - **`label_required` / `label_mismatch`**: tell the user the typed label didn't match. Do NOT guess at the correct label — ask them to verify with `/teamem-status` or by re-running this command with the exact label they remember.
+   - **success**: print "Space disbanded. Data is retained for 7 days; run `/teamem:restore` within that window to undo. After grace, GC will hard-delete everything." Note that the user's MCP calls will now reject with 410 until they restore.
+   - **`label_required` / `label_mismatch`**: tell the user the typed label didn't match. Do NOT guess at the correct label — ask them to verify with `/teamem:status` or by re-running this command with the exact label they remember.
    - **`not_creator`**: tell the user only the creator can disband and stop.
    - any other error: surface the typed code verbatim.
 

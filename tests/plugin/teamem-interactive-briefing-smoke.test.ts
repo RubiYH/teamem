@@ -59,8 +59,8 @@ const INTERACTIVE_WAIT_TIMEOUT_MS = 60_000;
 const INTERACTIVE_CLOSE_TIMEOUT_MS = 10_000;
 const INTERACTIVE_STARTUP_SETTLE_MS = 2_000;
 const INTERACTIVE_TYPE_DELAY_MS = 20;
-const statusSlashCommand = '/teamem:teamem-status';
-const briefingSlashCommand = '/teamem:teamem-briefing';
+const statusSlashCommand = '/teamem:status';
+const briefingSlashCommand = '/teamem:briefing';
 const pluginScopedToolPrefix = 'mcp__plugin_teamem_teamem__teamem_';
 const requiredStatusTools = [
   'whoami',
@@ -135,9 +135,8 @@ describeLiveInteractive(
           expect(workspace.demoWorkspaceLaunchCwd).not.toBe(teamemPluginDir);
           await expectOnlyTeamemMcpIsProxied(boot);
 
-          const statusPrompt = await tester.slashCommandPrompt('teamem-status');
-          const briefingPrompt =
-            await tester.slashCommandPrompt('teamem-briefing');
+          const statusPrompt = await tester.slashCommandPrompt('status');
+          const briefingPrompt = await tester.slashCommandPrompt('briefing');
           expect(statusPrompt).toBe(statusSlashCommand);
           expect(briefingPrompt).toBe(briefingSlashCommand);
 

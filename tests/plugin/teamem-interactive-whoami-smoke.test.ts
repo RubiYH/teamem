@@ -53,14 +53,14 @@ const INTERACTIVE_WAIT_TIMEOUT_MS = 45_000;
 const INTERACTIVE_CLOSE_TIMEOUT_MS = 10_000;
 const INTERACTIVE_STARTUP_SETTLE_MS = 2_000;
 const INTERACTIVE_TYPE_DELAY_MS = 20;
-const whoamiSlashCommand = '/teamem:teamem-whoami';
+const whoamiSlashCommand = '/teamem:whoami';
 const pluginScopedToolPrefix = 'mcp__plugin_teamem_teamem__teamem_';
 
 describeLiveInteractive(
   `Teamem interactive whoami live smoke${runtimePrerequisite.ok ? '' : ` (${runtimePrerequisite.reason})`}`,
   () => {
     it(
-      'types /teamem:teamem-whoami through the Claude Code TTY',
+      'types /teamem:whoami through the Claude Code TTY',
       async () => {
         const cwd = await mkdtemp(join(tmpdir(), 'teamem-interactive-cwd-'));
         const artifactsDir = await mkdtemp(
@@ -89,8 +89,7 @@ describeLiveInteractive(
 
           await expectOnlyTeamemMcpIsProxied(boot);
 
-          const commandPrompt =
-            await tester.slashCommandPrompt('teamem-whoami');
+          const commandPrompt = await tester.slashCommandPrompt('whoami');
           expect(commandPrompt).toBe(whoamiSlashCommand);
 
           session = await tester.launchInteractive({

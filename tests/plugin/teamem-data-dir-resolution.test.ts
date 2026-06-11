@@ -296,7 +296,7 @@ describe('Teamem plugin data directory resolution', () => {
     }
   }, 30_000);
 
-  it('lets /teamem-off silence the current session without clearing project auto-on', () => {
+  it('lets /teamem:off silence the current session without clearing project auto-on', () => {
     const work = join(
       tmpdir(),
       `teamem-persist-disable-${Date.now()}-${Math.random().toString(16).slice(2)}`

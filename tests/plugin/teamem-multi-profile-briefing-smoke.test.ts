@@ -155,10 +155,8 @@ describeLiveMultiProfile(
               launchCwd: workspace.demoWorkspaceLaunchCwd
             });
 
-            const statusPrompt =
-              await tester.slashCommandPrompt('teamem-status');
-            const briefingPrompt =
-              await tester.slashCommandPrompt('teamem-briefing');
+            const statusPrompt = await tester.slashCommandPrompt('status');
+            const briefingPrompt = await tester.slashCommandPrompt('briefing');
             const session = await tester.launchInteractive({
               useInstrumentedMcpConfig: true,
               strictMcpConfig: true,

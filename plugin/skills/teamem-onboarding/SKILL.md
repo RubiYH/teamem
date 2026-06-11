@@ -1,6 +1,6 @@
 ---
 name: teamem-onboarding
-description: Walk a first-time user through Teamem setup — create or join a space, write credentials, verify the bridge resolves. Use when the user has just installed the plugin and has no `~/.teamem/credentials.json` yet, or when `/teamem-setup` is invoked.
+description: Walk a first-time user through Teamem setup — create or join a space, write credentials, verify the bridge resolves. Use when the user has just installed the plugin and has no `~/.teamem/credentials.json` yet, or when `/teamem:setup` is invoked.
 ---
 
 # Teamem Onboarding
@@ -45,6 +45,6 @@ You are guiding a first-time user through Teamem onboarding. The whole flow runs
 ## Common failure modes
 
 - **server unreachable**: ask the user to verify the server URL with `curl <url>/health`. If they're running local-docker, suggest `docker compose up -d` from a Teamem source checkout.
-- **invalid_code / code_expired**: room code is wrong or older than 24h. Ask the creator to run `/teamem-space rotate-code` and resend.
+- **invalid_code / code_expired**: room code is wrong or older than 24h. Ask the creator to run `/teamem:space rotate-code` and resend.
 - **bridge_bundle_missing**: the plugin's `lib/setup.js` or `lib/bridge.js` is absent. Run `teamem update` or `teamem init` to reinstall the current marketplace plugin; source-checkout developers should run `bun run build:plugin` and load with `claude --plugin-dir /absolute/path/to/teamem/plugin`.
 - **setup mid-flight failure**: tell the user to delete `~/.teamem/credentials.json` and retry.

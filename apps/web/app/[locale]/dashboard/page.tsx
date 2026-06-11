@@ -389,7 +389,7 @@ function ExistingSpaceState({
               {copy.setup.launchSuffix}
               <code className="mx-1 text-foreground">claude</code>
               {copy.setup.verifyPrefix}
-              <code className="ml-1 text-foreground">/teamem-status</code>.
+              <code className="ml-1 text-foreground">/teamem:status</code>.
             </p>
           </div>
         </>

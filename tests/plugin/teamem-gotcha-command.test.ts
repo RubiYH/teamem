@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process';
 
 const COMMAND_PATH = resolve(
   import.meta.dir,
-  '../../plugin/commands/teamem-gotcha.md'
+  '../../plugin/commands/gotcha.md'
 );
 const SCRIPT_PATH = resolve(
   import.meta.dir,
@@ -33,7 +33,7 @@ function frontmatter(text: string): Record<string, string> {
   return Object.fromEntries(entries);
 }
 
-describe('/teamem-gotcha slash command', () => {
+describe('/teamem:gotcha slash command', () => {
   it('uses the bundled bash script so tags are sent as JSON arrays', () => {
     expect(existsSync(COMMAND_PATH)).toBe(true);
     const text = readFileSync(COMMAND_PATH, 'utf-8');

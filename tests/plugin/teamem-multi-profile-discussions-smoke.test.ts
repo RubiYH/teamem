@@ -161,11 +161,11 @@ describeLiveMultiProfileDiscussions(
           });
 
           const directPrompt = await aliceTester.slashCommandPrompt(
-            'teamem-discuss',
+            'discuss',
             `${bobRuntime.whoami.principal} -- ${directBody}`
           );
           const broadcastPrompt = await aliceTester.slashCommandPrompt(
-            'teamem-discuss',
+            'discuss',
             `** -- ${broadcastBody}`
           );
 

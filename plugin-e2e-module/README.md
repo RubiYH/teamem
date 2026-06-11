@@ -21,7 +21,7 @@ first real consumer. The delivered branch history is:
   `--verbose` whenever `--output-format stream-json` is used, and preserved
   failed live-smoke artifacts for diagnosis.
 - `e0becd6` locked Teamem live smokes to Claude Code's observed local-plugin
-  naming: namespaced slash commands such as `/teamem:teamem-whoami` and
+  naming: namespaced slash commands such as `/teamem:whoami` and
   plugin-scoped MCP tools such as `mcp__plugin_teamem_teamem__teamem_whoami`.
 - `3585344` proved the interactive TTY path against real Teamem by routing
   Bun through a Node `@lydell/node-pty` bridge, submitting carriage-return
@@ -32,7 +32,7 @@ first real consumer. The delivered branch history is:
   the default and failing fast for unsupported modes.
 
 The current live Teamem coverage includes plugin load, runtime
-`/teamem:teamem-whoami`, interactive `/teamem:teamem-whoami`, an interactive
+`/teamem:whoami`, interactive `/teamem:whoami`, an interactive
 permission-mode override smoke, multi-profile durable Teamem flows, and a
 focused opt-in Channels live slice in the Teamem consumer tests. Broader command
 flows such as reporters, custom matchers, package publishing, and
@@ -172,10 +172,10 @@ Current Teamem consumer tiers under `tests/plugin/` prove:
   instrument the core `teamem` MCP server, observe `SessionStart`, avoid forcing
   `CLAUDE_PLUGIN_DATA`, and avoid `teamem-channel` noise without requiring a
   Teamem Space.
-- Runtime `/teamem:teamem-whoami` smoke: when credentials and a runtime Space
+- Runtime `/teamem:whoami` smoke: when credentials and a runtime Space
   are available, a small Teamem command flow can invoke the core Teamem MCP path
   and return identity-oriented output.
-- Interactive `/teamem:teamem-whoami` smoke: when credentials and a runtime
+- Interactive `/teamem:whoami` smoke: when credentials and a runtime
   Space are available, real Claude Code can start in a TTY, accept a typed
   slash command, emit terminal transcript evidence, and produce MCP trace
   evidence through the core Teamem proxy. This is gated separately from

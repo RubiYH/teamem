@@ -352,41 +352,34 @@ describeLiveInteractiveStateful(
 
               const prompts = {
                 create: await tester.slashCommandPrompt(
-                  'teamem-sprint',
+                  'sprint',
                   `create ${displayName} -- ${goal}`
                 ),
-                sprintStatus: await tester.slashCommandPrompt('teamem-status'),
+                sprintStatus: await tester.slashCommandPrompt('status'),
                 sprintBriefing: await tester.slashCommandPrompt(
-                  'teamem-briefing',
+                  'briefing',
                   '2200'
                 ),
-                leave: await tester.slashCommandPrompt(
-                  'teamem-sprint',
-                  'leave'
-                ),
-                spaceStatus: await tester.slashCommandPrompt('teamem-status'),
+                leave: await tester.slashCommandPrompt('sprint', 'leave'),
+                spaceStatus: await tester.slashCommandPrompt('status'),
                 spaceBriefing: await tester.slashCommandPrompt(
-                  'teamem-briefing',
+                  'briefing',
                   '2200'
                 )
               };
-              expect(prompts.create).toStartWith(
-                '/teamem:teamem-sprint create '
-              );
-              expect(prompts.sprintStatus).toBe('/teamem:teamem-status');
-              expect(prompts.sprintBriefing).toBe(
-                '/teamem:teamem-briefing 2200'
-              );
-              expect(prompts.leave).toBe('/teamem:teamem-sprint leave');
+              expect(prompts.create).toStartWith('/teamem:sprint create ');
+              expect(prompts.sprintStatus).toBe('/teamem:status');
+              expect(prompts.sprintBriefing).toBe('/teamem:briefing 2200');
+              expect(prompts.leave).toBe('/teamem:sprint leave');
 
               session = await tester.launchInteractive({
                 permissionMode: interactivePermissionMode,
                 useInstrumentedMcpConfig: true,
                 strictMcpConfig: true,
                 allowedTools: [
-                  'Skill(teamem:teamem-sprint)',
-                  'Skill(teamem:teamem-status)',
-                  'Skill(teamem:teamem-briefing)',
+                  'Skill(teamem:sprint)',
+                  'Skill(teamem:status)',
+                  'Skill(teamem:briefing)',
                   'Bash(${CLAUDE_PLUGIN_ROOT}/bin/teamem-flag:*)',
                   ...allowedTeamemToolNames.map(
                     (toolName) => `${canonicalToolPrefix}${toolName}`
@@ -1573,7 +1566,7 @@ async function assertSprintStatusRenderedOutput(input: {
         input.evidence.claim.claim_id
       ]
     ],
-    label: 'Sprint /teamem-status output'
+    label: 'Sprint /teamem:status output'
   });
   assertVisibleCommandOutputPattern(output, /\bmode\b/i, {
     label: 'Sprint status mode label',
@@ -1594,7 +1587,7 @@ async function assertSpaceStatusRenderedOutput(input: {
     checkpoint: input.checkpoint,
     expectedText: [],
     expectedAnyText: [['Space', 'space']],
-    label: 'Space /teamem-status output'
+    label: 'Space /teamem:status output'
   });
   assertVisibleCommandOutputPattern(output, /\bmode\b/i, {
     label: 'Space status mode label',
@@ -1719,7 +1712,7 @@ function assertVisibleCommandOutput(
 ): void {
   if (!outputIncludesTerminalText(output, expectedText)) {
     throw new Error(
-      `Expected /teamem-status or /teamem-briefing output to include ${input.label}: ${JSON.stringify(expectedText)}. ${input.artifacts}`
+      `Expected /teamem:status or /teamem:briefing output to include ${input.label}: ${JSON.stringify(expectedText)}. ${input.artifacts}`
     );
   }
 }
@@ -1745,7 +1738,7 @@ function assertVisibleCommandOutputPattern(
 ): void {
   if (!expectedPattern.test(output)) {
     throw new Error(
-      `Expected /teamem-status output to include ${input.label} matching ${expectedPattern}. ${input.artifacts}`
+      `Expected /teamem:status output to include ${input.label} matching ${expectedPattern}. ${input.artifacts}`
     );
   }
 }

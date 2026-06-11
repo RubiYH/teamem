@@ -6,7 +6,7 @@
  * Original bug: the skill body said "if `CLAUDE_PLUGIN_OPTION_TEAMEM_ROOT`
  * is unset, stop and instruct the user to set it." Marketplace users
  * without source checkout failed at the skill stage even though the
- * `/teamem-setup` slash command shell was clean post-#18.
+ * `/teamem:setup` slash command shell was clean post-#18.
  *
  * Fix: the skill body now references `${CLAUDE_PLUGIN_ROOT}/lib/setup.js`
  * directly. No `CLAUDE_PLUGIN_OPTION_TEAMEM_ROOT` precondition. No

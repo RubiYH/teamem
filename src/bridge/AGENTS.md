@@ -25,7 +25,7 @@ None.
 ### Working In This Directory
 
 - **Credential resolution priority**: `--space` flag → `TEAMEM_SPACE` env → `default_space_id` in credentials.json. Unsubstituted placeholders (e.g. `${user_config.space}`) are treated as "not provided".
-- **Persona isolation for local E2E**: `TEAMEM_CREDENTIALS` overrides the default credentials path. Use it only for Alice/Bob testing on one machine; on distinct computers, the normal default `~/.teamem/credentials.json` is correct. Without separate paths on one machine, `/teamem-setup` in one Claude Code session overwrites the default persona and the other session silently acts as the wrong member.
+- **Persona isolation for local E2E**: `TEAMEM_CREDENTIALS` overrides the default credentials path. Use it only for Alice/Bob testing on one machine; on distinct computers, the normal default `~/.teamem/credentials.json` is correct. Without separate paths on one machine, `/teamem:setup` in one Claude Code session overwrites the default persona and the other session silently acts as the wrong member.
 - **Space by label** (issue #20 — Codex F11): when the user passes a label that matches multiple entries, throw `AmbiguousSpaceLabelError` listing the ULIDs so the user can disambiguate with `--space <id>`.
 - **JWT expiry warning**: emit a 7-day advance warning to stderr if `jwt_exp` is within 7 days; user can re-run setup to refresh.
 - **Tool binding contract**: `responseSchema` in `tool-bindings.ts` is documentation-only — it is NOT runtime-validated. The `inputSchema.parse()` enforces shape on input only. When tool output shapes change (e.g., adding a nullable field), update the schema by hand and keep it accurate for downstream SDKs (e.g., Claude Code plugin manifest).

@@ -18,7 +18,7 @@ behavior.
   private design history, ADRs, and implementation plans under `.docs/`.
 - When docs mention a command, verify the command exists in the relevant surface:
   `package.json` scripts, `src/cli/teamem.ts`, `packages/bootstrapper-cli`,
-  or `plugin/commands/teamem-*.md`.
+  or `plugin/commands/*.md`.
 - When docs mention env vars, keep the matching `.env.example` file aligned:
   root `.env.example` for the runtime, `apps/web/.env.example` for Teamem Cloud.
 - Keep Cloud/control-plane wording separate from runtime/plugin identity. Teamem

@@ -473,7 +473,7 @@ describe('Mode 6.C — termination conditions', () => {
     });
     if (!m1.ok) throw new Error('m1 failed');
 
-    // The user (alice — the target) overrides via /teamem-end-dispute accept.
+    // The user (alice — the target) overrides via /teamem:end-dispute accept.
     const r = tools.endDispute({
       space_id: SPACE,
       principal: 'alice',

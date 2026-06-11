@@ -10,7 +10,7 @@
  *   3. Mallory has a leaked copy of the room code.
  *   4. Mallory POSTs `/spaces/join` with the leaked code → join succeeds,
  *      member row inserted (disbanded JWT issued is unusable).
- *   5. Alice realises the disband was a mistake, runs `/teamem-restore`
+ *   5. Alice realises the disband was a mistake, runs `/teamem:restore`
  *      within grace.
  *   6. Restore flips `disbanded_at = NULL`. Mallory's JWT now works.
  *   7. Mallory has full space access.
@@ -80,7 +80,7 @@ describe('F27 — disbanded spaces refuse room-code joins', () => {
     expect(mallBody.error).toBe('space_disbanded');
 
     // 4. CRITICAL: mallory's failed join must NOT have left a member row.
-    //    If it did, a subsequent /teamem-restore would activate her access.
+    //    If it did, a subsequent /teamem:restore would activate her access.
     const mallRow = db
       .prepare(
         'SELECT id, left_at FROM members WHERE space_id = ? AND name = ?'

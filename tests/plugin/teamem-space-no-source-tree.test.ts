@@ -1,5 +1,5 @@
 /**
- * Codex F10 regression — `plugin/commands/teamem-space.md` must not gate
+ * Codex F10 regression — `plugin/commands/space.md` must not gate
  * on `CLAUDE_PLUGIN_OPTION_TEAMEM_ROOT`, and the four governance MCP
  * tools (`teamem.space_leave`, `teamem.space_kick`,
  * `teamem.space_rotate_code`, plus the existing `teamem.space_disband`)
@@ -25,14 +25,8 @@ import { TOOL_BINDINGS } from '../../src/bridge/tool-bindings.js';
 
 const TEST_JWT_SECRET = 'test-secret-32bytes-padded-xxxxx';
 
-const SLASH_PATH = resolve(
-  import.meta.dir,
-  '../../plugin/commands/teamem-space.md'
-);
-const RESET_PATH = resolve(
-  import.meta.dir,
-  '../../plugin/commands/teamem-reset.md'
-);
+const SLASH_PATH = resolve(import.meta.dir, '../../plugin/commands/space.md');
+const RESET_PATH = resolve(import.meta.dir, '../../plugin/commands/reset.md');
 
 function buildApp() {
   resetRateLimitBuckets();

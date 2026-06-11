@@ -27,6 +27,6 @@ Steps:
    - `update`: report that the local draft was published and `TEAMEM.md` was rewritten from the regenerated server snapshot
    - if the server rejects the publish as stale or unauthorized, show that failure directly instead of trying to recover locally
 
-5. If the user passed anything else, stop and tell them `/teamem-rule` currently supports only `init` and `update`.
+5. If the user passed anything else, stop and tell them `/teamem:rule` currently supports only `init` and `update`.
 
-6. If the script fails because credentials or membership are missing, direct the user to `/teamem-setup` or to restart Claude Code with `claude --teamem`.
+6. If the script fails because credentials or membership are missing, direct the user to `/teamem:setup` or to restart Claude Code with `claude --teamem`.

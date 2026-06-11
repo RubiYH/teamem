@@ -34,7 +34,7 @@ const repoRoot = process.argv[1];
 const teamemPath = path.join(repoRoot, "TEAMEM.md");
 const heading = "## Teamem Space Rules";
 const starterPlaceholder =
-  "Run `/teamem-rule init` to pull the latest server-authored Space Rules snapshot into a managed block below. Teamem only refreshes that managed block and leaves the rest of this file alone.";
+  "Run `/teamem:rule init` to pull the latest server-authored Space Rules snapshot into a managed block below. Teamem only refreshes that managed block and leaves the rest of this file alone.";
 
 const begin = "<!-- BEGIN TEAMEM SPACE RULES -->";
 const end = "<!-- END TEAMEM SPACE RULES -->";
@@ -46,7 +46,7 @@ function stableHash(body) {
 }
 
 if (!fs.existsSync(teamemPath)) {
-  console.error("teamem-rule: TEAMEM.md does not exist; run /teamem-rule init first.");
+  console.error("teamem-rule: TEAMEM.md does not exist; run /teamem:rule init first.");
   process.exit(1);
 }
 

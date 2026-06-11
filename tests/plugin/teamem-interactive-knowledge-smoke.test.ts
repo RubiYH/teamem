@@ -74,9 +74,9 @@ const INTERACTIVE_CLOSE_TIMEOUT_MS = 10_000;
 const INTERACTIVE_STARTUP_SETTLE_MS = 2_000;
 const INTERACTIVE_TYPE_DELAY_MS = 20;
 const LIVE_RUNTIME_POLL_TIMEOUT_MS = 45_000;
-const decisionSlashCommand = '/teamem:teamem-decide';
-const gotchaSlashCommand = '/teamem:teamem-gotcha';
-const briefingSlashCommand = '/teamem:teamem-briefing';
+const decisionSlashCommand = '/teamem:decide';
+const gotchaSlashCommand = '/teamem:gotcha';
+const briefingSlashCommand = '/teamem:briefing';
 const pluginScopedToolPrefix = 'mcp__plugin_teamem_teamem__teamem_';
 const briefingSectionKeys = [
   'current_plan',
@@ -144,15 +144,15 @@ describeLiveInteractiveStateful(
               await expectOnlyTeamemMcpIsProxied(boot);
 
               const decisionPrompt = await tester.slashCommandPrompt(
-                'teamem-decide',
+                'decide',
                 decisionArgs
               );
               const gotchaPrompt = await tester.slashCommandPrompt(
-                'teamem-gotcha',
+                'gotcha',
                 gotchaArgs
               );
               const briefingPrompt = await tester.slashCommandPrompt(
-                'teamem-briefing',
+                'briefing',
                 '1600'
               );
               expect(decisionPrompt).toBe(

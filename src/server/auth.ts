@@ -211,7 +211,7 @@ export function createRequireMemberMiddleware(
           principal,
           hint:
             'Your principal is no longer a member of this space (left or kicked). ' +
-            "Re-join via `/teamem-setup` with the space's room code, or ask the creator to re-add you."
+            "Re-join via `/teamem:setup` with the space's room code, or ask the creator to re-add you."
         },
         401
       );

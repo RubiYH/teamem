@@ -9,7 +9,7 @@ User input: `$ARGUMENTS`
 Parse `$ARGUMENTS` as `<principal|*|**> -- <topic>`.
 
 Fail closed on malformed input:
-- If `--` is missing, stop and tell the user to use `/teamem-discuss <principal|*|**> -- <topic>`.
+- If `--` is missing, stop and tell the user to use `/teamem:discuss <principal|*|**> -- <topic>`.
 - If the recipient token before `--` is empty, stop and ask for a recipient principal, `*`, or `**`.
 - If the topic after `--` is empty or whitespace-only, stop and ask for a non-empty message body.
 

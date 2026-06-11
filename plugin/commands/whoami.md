@@ -18,6 +18,6 @@ Steps:
    (this identity is read from your JWT — to see which credentials file is active, check ~/.teamem/credentials.json or your TEAMEM_CREDENTIALS_PATH override)
    ```
 
-3. On `ok: false` with `error.code === "space_not_found"`: surface the server's enriched payload — print the `space_id`, `principal`, and `hint` fields verbatim. Then add: `Run /teamem-setup or rejoin via the CLI to recover.`
+3. On `ok: false` with `error.code === "space_not_found"`: surface the server's enriched payload — print the `space_id`, `principal`, and `hint` fields verbatim. Then add: `Run /teamem:setup or rejoin via the CLI to recover.`
 
-4. On any other error: print the error code and message verbatim and tell the user to check `/teamem-status` and the server log.
+4. On any other error: print the error code and message verbatim and tell the user to check `/teamem:status` and the server log.

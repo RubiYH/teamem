@@ -8,7 +8,7 @@ function read(path: string) {
 
 describe('Sprint plugin docs contract', () => {
   it('documents the shipped Sprint command verbs and discussion routing markers', () => {
-    const command = read('plugin/commands/teamem-sprint.md');
+    const command = read('plugin/commands/sprint.md');
     const pluginReadme = read('plugin/README.md');
     const publicPluginDoc = read('docs/integrations/claude-code-plugin.md');
 
@@ -22,8 +22,8 @@ describe('Sprint plugin docs contract', () => {
       'reopen'
     ]) {
       expect(command).toContain(`\`${verb}`);
-      expect(pluginReadme).toContain(`/teamem-sprint ${verb}`);
-      expect(publicPluginDoc).toContain(`/teamem-sprint ${verb}`);
+      expect(pluginReadme).toContain(`/teamem:sprint ${verb}`);
+      expect(publicPluginDoc).toContain(`/teamem:sprint ${verb}`);
     }
 
     for (const doc of [pluginReadme, publicPluginDoc]) {
@@ -39,9 +39,9 @@ describe('Sprint plugin docs contract', () => {
       expect(doc).toContain('non-private');
     }
 
-    expect(pluginReadme).not.toContain('/teamem-sprint use');
-    expect(pluginReadme).not.toContain('/teamem-sprint off');
-    expect(publicPluginDoc).not.toContain('/teamem-sprint use');
-    expect(publicPluginDoc).not.toContain('/teamem-sprint off');
+    expect(pluginReadme).not.toContain('/teamem:sprint use');
+    expect(pluginReadme).not.toContain('/teamem:sprint off');
+    expect(publicPluginDoc).not.toContain('/teamem:sprint use');
+    expect(publicPluginDoc).not.toContain('/teamem:sprint off');
   });
 });

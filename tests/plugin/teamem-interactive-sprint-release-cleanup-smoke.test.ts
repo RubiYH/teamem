@@ -1711,7 +1711,7 @@ async function archiveSprintAndAssertCleanup(input: {
   runId: string;
 }): Promise<SprintArchiveData> {
   const archivePrompt = await input.session.slashCommandPrompt(
-    'teamem-sprint',
+    'sprint',
     `archive ${input.sprint.slug}`
   );
   const archived = await submitAndWaitForToolResponse<SprintArchiveData>({
@@ -1783,7 +1783,7 @@ async function waitForNextSuccessfulToolResponse(input: {
   }
 
   throw new Error(
-    `Timed out waiting for /teamem-sprint MCP response ${input.toolName}. Last trace summary: ${lastTraceSummary}. Artifacts: ${input.session.artifacts.dir}`
+    `Timed out waiting for /teamem:sprint MCP response ${input.toolName}. Last trace summary: ${lastTraceSummary}. Artifacts: ${input.session.artifacts.dir}`
   );
 }
 

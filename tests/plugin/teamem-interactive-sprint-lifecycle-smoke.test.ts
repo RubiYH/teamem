@@ -201,7 +201,7 @@ describeLiveInteractiveStateful(
   `Teamem interactive Sprint lifecycle live smoke${liveInteractiveStatefulGateEnabled ? '' : ` (${formatInteractiveStatefulGateReason()})`}`,
   () => {
     it(
-      'drives create/current/list/history/join/leave/archive/reopen through /teamem-sprint',
+      'drives create/current/list/history/join/leave/archive/reopen through /teamem:sprint',
       async () => {
         if (!runtimePrerequisite.ok) {
           throw new Error(runtimePrerequisite.reason);
@@ -217,7 +217,7 @@ describeLiveInteractiveStateful(
           async () => {
             const runId = createRunId();
             const displayName = `Sprint lifecycle ${runId}`;
-            const goal = `Prove /teamem-sprint lifecycle smoke ${runId}`;
+            const goal = `Prove /teamem:sprint lifecycle smoke ${runId}`;
             let workspace: DemoRepositoryWorkspace | undefined;
             const artifactsDir = await mkdtemp(
               join(tmpdir(), 'teamem-interactive-sprint-lifecycle-artifacts-')
@@ -267,26 +267,21 @@ describeLiveInteractiveStateful(
 
               const prompts = {
                 create: await tester.slashCommandPrompt(
-                  'teamem-sprint',
+                  'sprint',
                   `create ${displayName} -- ${goal}`
                 ),
-                current: await tester.slashCommandPrompt(
-                  'teamem-sprint',
-                  'current'
-                ),
-                list: await tester.slashCommandPrompt('teamem-sprint', 'list'),
-                leave: await tester.slashCommandPrompt('teamem-sprint', 'leave')
+                current: await tester.slashCommandPrompt('sprint', 'current'),
+                list: await tester.slashCommandPrompt('sprint', 'list'),
+                leave: await tester.slashCommandPrompt('sprint', 'leave')
               };
-              expect(prompts.create).toStartWith(
-                '/teamem:teamem-sprint create '
-              );
+              expect(prompts.create).toStartWith('/teamem:sprint create ');
 
               session = await tester.launchInteractive({
                 permissionMode: interactivePermissionMode,
                 useInstrumentedMcpConfig: true,
                 strictMcpConfig: true,
                 allowedTools: [
-                  'Skill(teamem:teamem-sprint)',
+                  'Skill(teamem:sprint)',
                   'Bash(${CLAUDE_PLUGIN_ROOT}/bin/teamem-flag:*)',
                   ...sprintToolNames.map(
                     (toolName) => `${canonicalToolPrefix}${toolName}`
@@ -375,7 +370,7 @@ describeLiveInteractiveStateful(
               ).toBe(true);
 
               const historyPrompt = await tester.slashCommandPrompt(
-                'teamem-sprint',
+                'sprint',
                 `history ${createdSprint.slug} --limit 10`
               );
               const initialHistory =
@@ -410,7 +405,7 @@ describeLiveInteractiveStateful(
               expect(leaveAfterCreate.message).toContain(createdSprint.slug);
 
               const joinPrompt = await tester.slashCommandPrompt(
-                'teamem-sprint',
+                'sprint',
                 `join ${createdSprint.slug}`
               );
               const joinResponse =
@@ -454,7 +449,7 @@ describeLiveInteractiveStateful(
               expect(leaveBeforeArchive.new_context.mode).toBe('space');
 
               const archivePrompt = await tester.slashCommandPrompt(
-                'teamem-sprint',
+                'sprint',
                 `archive ${createdSprint.slug}`
               );
               const archiveResponse =
@@ -469,7 +464,7 @@ describeLiveInteractiveStateful(
               expect(Array.isArray(archiveResponse.released_claims)).toBe(true);
 
               const reopenPrompt = await tester.slashCommandPrompt(
-                'teamem-sprint',
+                'sprint',
                 `reopen ${createdSprint.slug}`
               );
               const reopenResponse =
@@ -498,7 +493,7 @@ describeLiveInteractiveStateful(
               expect(currentAfterReopen.sprint?.slug).toBe(createdSprint.slug);
 
               const finalHistoryPrompt = await tester.slashCommandPrompt(
-                'teamem-sprint',
+                'sprint',
                 `history ${createdSprint.slug} --limit 20`
               );
               const finalHistory =
@@ -826,7 +821,7 @@ async function waitForNextSuccessfulToolResponse(input: {
   }
 
   throw new Error(
-    `Timed out waiting for /teamem-sprint MCP response ${input.toolName} after ${INTERACTIVE_WAIT_TIMEOUT_MS}ms. Last trace summary: ${lastTraceSummary}. Artifacts: ${input.session.artifacts.dir}. Permission mode env: ${TEAMEM_INTERACTIVE_PERMISSION_MODE_ENV}`
+    `Timed out waiting for /teamem:sprint MCP response ${input.toolName} after ${INTERACTIVE_WAIT_TIMEOUT_MS}ms. Last trace summary: ${lastTraceSummary}. Artifacts: ${input.session.artifacts.dir}. Permission mode env: ${TEAMEM_INTERACTIVE_PERMISSION_MODE_ENV}`
   );
 }
 
@@ -1207,7 +1202,7 @@ function assertVisibleCommandOutput(
 ): void {
   if (!outputIncludesTerminalText(output, expectedText)) {
     throw new Error(
-      `Expected /teamem-sprint output to include ${input.label}: ${JSON.stringify(expectedText)}. ${input.artifacts}`
+      `Expected /teamem:sprint output to include ${input.label}: ${JSON.stringify(expectedText)}. ${input.artifacts}`
     );
   }
 }

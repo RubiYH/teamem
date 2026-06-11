@@ -788,7 +788,7 @@ describe('Teamem Channels evidence assertions', () => {
       deliveryScope: 'direct'
     });
     const prefix = 'checkpointed transcript\n';
-    const directPrompt = `/teamem:teamem-discuss bob -- human text ${expected.marker}`;
+    const directPrompt = `/teamem:discuss bob -- human text ${expected.marker}`;
     const body = `human text ${expected.marker}`;
     const checkpoint: TeamemChannelsTranscriptCheckpoint = {
       rawOffset: prefix.length,
@@ -807,7 +807,7 @@ describe('Teamem Channels evidence assertions', () => {
     ).not.toThrow();
 
     const wrappedPromptEcho = [
-      `${prefix}> /teamem:teamem-discuss bob -- human text`,
+      `${prefix}> /teamem:discuss bob -- human text`,
       expected.marker,
       'Propagating...'
     ].join('\n');
@@ -823,7 +823,7 @@ describe('Teamem Channels evidence assertions', () => {
     ).not.toThrow();
 
     const compactPromptEcho = [
-      `${prefix}/teamem:teamem-discussbob--humantext`,
+      `${prefix}/teamem:discussbob--humantext`,
       expected.marker
     ].join('\n');
     expect(() =>
@@ -914,7 +914,7 @@ describe('Teamem Channels evidence assertions', () => {
       body: 'Decision body marker-run-1-decision-live-allowed-echo'
     });
     const prefix = 'ready\n';
-    const prompt = `/teamem-decide ${expected.title} -- ${expected.body} --kind=process`;
+    const prompt = `/teamem:decide ${expected.title} -- ${expected.body} --kind=process`;
 
     expect(() =>
       assertTeamemNoSenderEchoEvidence({
@@ -931,7 +931,7 @@ describe('Teamem Channels evidence assertions', () => {
     ).not.toThrow();
 
     const wrappedPrompt = [
-      `${prefix}/teamem:teamem-decide ${expected.title}`,
+      `${prefix}/teamem:decide ${expected.title}`,
       `-- ${expected.body}`,
       '--kind=process'
     ].join('\n');

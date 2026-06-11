@@ -254,9 +254,9 @@ describe('channel runtime integration', () => {
       blocking_claim_id: 'claim-9',
       intent: 'land the auth fix'
     });
-    expect(envelope.summary).toContain('/teamem-grant req-123');
-    expect(envelope.summary).toContain('/teamem-deny req-123');
-    expect(envelope.instructions).toContain('/teamem-grant req-123');
+    expect(envelope.summary).toContain('/teamem:grant req-123');
+    expect(envelope.summary).toContain('/teamem:deny req-123');
+    expect(envelope.instructions).toContain('/teamem:grant req-123');
     expect(nextCursor).toBe('evt-ordinary');
     expect(persistedCursors).toEqual(['evt-ordinary']);
   });

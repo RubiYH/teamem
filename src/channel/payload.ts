@@ -95,7 +95,7 @@ export function summarizeTeamemChannelEvent(ev: TeamemChannelEvent): string {
       const reqId = String(ev.payload?.req_id ?? ev.event_id);
       const pathText =
         paths && paths.length > 0 ? paths.join(', ') : 'the requested paths';
-      return `${p} requests permission from ${incumbent} for ${pathText} (req ${reqId}). Urgent: /teamem-grant ${reqId} or /teamem-deny ${reqId}`;
+      return `${p} requests permission from ${incumbent} for ${pathText} (req ${reqId}). Urgent: /teamem:grant ${reqId} or /teamem:deny ${reqId}`;
     }
     case 'blocker_raised':
       return `${p} raised blocker: ${String(ev.payload?.summary ?? '')}`;
@@ -154,7 +154,7 @@ export function createTeamemChannelEnvelope(
     summary: summarizeTeamemChannelEvent(ev),
     ...(reqId
       ? {
-          instructions: `Urgent: run /teamem-grant ${reqId} to allow the edit or /teamem-deny ${reqId} to reject it.`
+          instructions: `Urgent: run /teamem:grant ${reqId} to allow the edit or /teamem:deny ${reqId} to reject it.`
         }
       : {})
   };

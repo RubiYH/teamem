@@ -9,7 +9,7 @@ Steps:
 1. Call `mcp__teamem__space_restore` with `{}`. Do NOT pass any fields — `space_id` and `principal` come from the verified JWT.
 
 2. Branch on the result:
-   - **success**: print "Space restored. JWTs work again and all data is intact." Recommend the user run `/teamem-status` to confirm.
+   - **success**: print "Space restored. JWTs work again and all data is intact." Recommend the user run `/teamem:status` to confirm.
    - **`not_creator`**: tell the user only the creator can restore and stop.
    - **`not_disbanded`**: tell the user the space is already active; nothing to restore. Stop.
    - **`grace_expired`**: tell the user the 7-day grace window has elapsed — the space has been hard-deleted by GC and cannot be recovered. Suggest creating a fresh space via `bun run setup`.

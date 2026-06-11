@@ -21,4 +21,4 @@ Steps:
 
 4. On `invalid_coord_pref` error: print the error and the single active value.
 
-5. On any other error: print the error code/message and tell the user to check `/teamem-status`.
+5. On any other error: print the error code/message and tell the user to check `/teamem:status`.

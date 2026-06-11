@@ -15,7 +15,7 @@ BEGIN;
 --     blocking_claim_id matches OR paths overlap the released scope) or by
 --     the lease-expiry projection sweep.
 --   - Deleted by GC sweep when expires_at < now AND resolved_at IS NULL.
---   - Deleted by the latter's own /teamem-clear-queue (own rows only).
+--   - Deleted by the latter's own /teamem:clear-queue (own rows only).
 --
 -- Visibility: every member of the space sees pending_edits via getBriefing
 -- so incumbents see who is queued behind their claims and other teammates

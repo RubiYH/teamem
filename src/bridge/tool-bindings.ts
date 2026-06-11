@@ -1097,7 +1097,7 @@ export const TOOL_BINDINGS: Record<string, ToolBinding> = {
 
   'teamem.space_leave': {
     description:
-      'Leave the current space. Marks `members.left_at = now`; the next API call from this principal returns 401 `member_left`. Creators cannot leave — they must `/teamem-disband` instead (returns 409 `creator_must_disband`).',
+      'Leave the current space. Marks `members.left_at = now`; the next API call from this principal returns 401 `member_left`. Creators cannot leave — they must `/teamem:disband` instead (returns 409 `creator_must_disband`).',
     inputSchema: z.object({}).passthrough(),
     responseSchema: z.object({
       ok: z.literal(true),

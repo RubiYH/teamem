@@ -130,7 +130,7 @@ describe('Teamem Cloud dashboard setup view', () => {
     expect(messagesSource).not.toContain('until the #41');
     expect(messagesSource).not.toContain('follow-up #41');
     expect(koreanMessagesSource).not.toContain('#41 launch policy');
-    expect(dashboardSource).toContain('/teamem-status');
+    expect(dashboardSource).toContain('/teamem:status');
   });
 
   it('copies provided field values through the browser clipboard API', () => {

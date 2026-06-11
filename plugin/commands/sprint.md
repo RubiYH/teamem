@@ -15,7 +15,7 @@ Steps:
 3. Branch:
    - `current` or empty input: call `mcp__plugin_teamem_teamem__teamem_get_current_sprint` with `{}`. Installed fallback: `mcp__teamem__teamem_get_current_sprint`.
    - `list`: call `mcp__plugin_teamem_teamem__teamem_list_sprints` with `{}`. Installed fallback: `mcp__teamem__teamem_list_sprints`.
-   - `create <name> -- <goal>`: split on the first `--`. Trim both sides. If either side is empty, stop and tell the user to use `/teamem-sprint create <name> -- <goal>`. Call `mcp__plugin_teamem_teamem__teamem_create_sprint` with `{ "display_name": "<name>", "goal": "<goal>" }`. Installed fallback: `mcp__teamem__teamem_create_sprint`.
+   - `create <name> -- <goal>`: split on the first `--`. Trim both sides. If either side is empty, stop and tell the user to use `/teamem:sprint create <name> -- <goal>`. Call `mcp__plugin_teamem_teamem__teamem_create_sprint` with `{ "display_name": "<name>", "goal": "<goal>" }`. Installed fallback: `mcp__teamem__teamem_create_sprint`.
    - `join <slug-or-id>`: trim the remaining argument. If empty, stop and ask for a Sprint slug or id. Call `mcp__plugin_teamem_teamem__teamem_join_sprint` with `{ "sprint": "<slug-or-id>" }`. Installed fallback: `mcp__teamem__teamem_join_sprint`.
    - `leave`: call `mcp__plugin_teamem_teamem__teamem_leave_sprint` with `{}`. Installed fallback: `mcp__teamem__teamem_leave_sprint`.
    - `archive <slug-or-id>`: trim the remaining argument. If empty, stop and ask for a Sprint slug or id. Call `mcp__plugin_teamem_teamem__teamem_archive_sprint` with `{ "sprint": "<slug-or-id>" }`. Installed fallback: `mcp__teamem__teamem_archive_sprint`.
@@ -35,4 +35,4 @@ Steps:
 
 6. On duplicate create (`sprint_already_exists`), print the server message and the `hint` from `error.details` (`join` for active Sprints, `reopen` for archived Sprints).
 
-7. On other errors, surface the typed error code/message verbatim and suggest `/teamem-status` only for auth or membership errors.
+7. On other errors, surface the typed error code/message verbatim and suggest `/teamem:status` only for auth or membership errors.

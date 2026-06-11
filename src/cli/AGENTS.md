@@ -30,7 +30,7 @@ None.
 - **Non-interactive setup** (`--json`): accept a JSON object with `flow` (create|join), `serverUrl`, `memberName`, `roomCode`, `spaceLabel`, and `credPath`; used by E2E tests and automation.
 - **Interactive setup**: use @clack/prompts for human-friendly UX; prefill member name with `suggestMemberNameDefault()`; keep the current queue-first coordination default (`auto-skip`) and do not reintroduce `auto-discuss` without restoring a real plugin runtime for it.
 - **Space label handling**: server is the source of truth for space label (security review P2#3); fallback to local label, then ULID, only if the server omits it.
-- **Coordination preference**: non-fatal to fail application (user can always re-set via `/teamem-coord-pref`); the current setup flow keeps `auto-skip` and skips the POST because that is the DB default.
+- **Coordination preference**: non-fatal to fail application (user can always re-set via `/teamem:coord-pref`); the current setup flow keeps `auto-skip` and skips the POST because that is the DB default.
 - **Git hook installer** (issue #2): resolve `bridge_dir` from credentials.json or `TEAMEM_BRIDGE_DIR` env; install via `core.hooksPath` (respects worktrees); use `.teamem-backup` marker on first install; abort with clear error if backup exists and incumbent file is non-teamem.
 - **Bridge dir assumption**: F5 design decision — marketplace installs have no source-tree path to resolve; the plugin owns hook lifecycle in v1; do not enforce a local bridge_dir for fresh installs.
 

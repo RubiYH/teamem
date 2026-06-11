@@ -13,10 +13,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 const REPO_ROOT = resolve(import.meta.dir, '../..');
-const COMMAND_PATH = resolve(
-  import.meta.dir,
-  '../../plugin/commands/teamem-rule.md'
-);
+const COMMAND_PATH = resolve(import.meta.dir, '../../plugin/commands/rule.md');
 const SCRIPT_PATH = resolve(
   import.meta.dir,
   '../../plugin/scripts/teamem-rule-update.sh'

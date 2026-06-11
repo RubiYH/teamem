@@ -43,7 +43,7 @@ Structured skill for handing off claimed scope to a specific teammate. Guides th
 - **Tool sequence**:
   1. `mcp__teamem__post_message` with recipient and formatted note
   2. `mcp__teamem__release_scope` with claim ID
-  3. User is told to check `/teamem-status` to see discussion in their inbox
+  3. User is told to check `/teamem:status` to see discussion in their inbox
 
 ## Dependencies
 

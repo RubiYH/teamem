@@ -11,7 +11,7 @@ Smoke tests and end-to-end walkthroughs that verify complete user journeys and d
 
 | File | Description |
 |------|-------------|
-| `claim-lifecycle-v2.md` | Reproducible 8-story manual smoke walkthrough for claim-lifecycle v2 — covers acquire, release, pause/resume, branch switch, and conflict handling; slash command shapes must stay in lockstep with `plugin/commands/teamem-*.md` |
+| `claim-lifecycle-v2.md` | Reproducible 8-story manual smoke walkthrough for claim-lifecycle v2 — covers acquire, release, pause/resume, branch switch, and conflict handling; slash command shapes must stay in lockstep with `plugin/commands/*.md` |
 
 ## For AI Agents
 
@@ -31,7 +31,7 @@ Smoke tests and end-to-end walkthroughs that verify complete user journeys and d
 ### Common Patterns
 
 - **Story structure**: setup → action → expected output → next story.
-- **Slash command reference**: `/teamem-<name>` maps to `plugin/commands/teamem-<name>.md`.
+- **Slash command reference**: `/teamem:<name>` maps to `plugin/commands/<name>.md`.
 - **Claim state verification**: use `teamem.list_claims` output to assert claim lifecycle state (active, paused, released).
 - **Branch context**: document which branch or environment each story uses.
 
@@ -39,7 +39,7 @@ Smoke tests and end-to-end walkthroughs that verify complete user journeys and d
 
 ### Internal
 
-- `plugin/commands/teamem-*.md` — slash command definitions (referenced in walkthroughs)
+- `plugin/commands/*.md` — slash command definitions (referenced in walkthroughs)
 - `src/domain/claim-lifecycle*.ts` — claim lifecycle implementation
 - `src/cli/teamem.ts` — CLI command dispatcher
 

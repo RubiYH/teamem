@@ -11,13 +11,13 @@ dependency, no per-machine path configuration.
 | Capability | How |
 | --- | --- |
 | **Self-contained install** | `plugin/lib/bridge.js` is a single-file `bun build` artifact bundled with the marketplace plugin. `teamem init` / `teamem update` install it on any machine that has Bun and Claude Code. |
-| **Slash commands** | `/teamem-off`, `/teamem-status`, `/teamem-briefing`, `/teamem-decide`, `/teamem-sprint`, `/teamem-discuss`, `/teamem-space`, `/teamem-setup`, `/teamem-reset`, `/teamem-disband`, `/teamem-restore`, `/teamem-gotcha`, `/teamem-coord-pref`, `/teamem-grant`, `/teamem-deny`, `/teamem-end-dispute`, `/teamem-clear-queue`. |
+| **Slash commands** | `/teamem:off`, `/teamem:status`, `/teamem:briefing`, `/teamem:decide`, `/teamem:sprint`, `/teamem:discuss`, `/teamem:space`, `/teamem:setup`, `/teamem:reset`, `/teamem:disband`, `/teamem:restore`, `/teamem:gotcha`, `/teamem:coord-pref`, `/teamem:grant`, `/teamem:deny`, `/teamem:end-dispute`, `/teamem:clear-queue`. Claude Code supplies the `/teamem:` plugin namespace; command filenames intentionally omit a second `teamem-` prefix. |
 | **Agent-driven claims** | Claims are managed through MCP tools and hooks, not human slash commands. Edit gates auto-claim in `on_commit` mode; agents use `teamem.claim_scope`, `teamem.list_claims`, `teamem.release_scope`, and `teamem.force_release` for natural-language claim requests. |
 | **Queue-first coordination + legacy permission primitives** | `auto-skip` is the active user-facing coordination preference. Stored or legacy `auto-discuss` values are treated as queued fallbacks in the current plugin build while negotiator automation is postponed. Legacy permission-request / grant / deny primitives still exist for compatibility and alert handling. |
 | **Soft-by-default destructive ops** | `wipe` masks projection rows but retains them; `unwipe` recovers. `disband` tombstones the space for 7 days; `restore` undoes within the grace window. `wipe --hard` is the compliance escape hatch. |
 | **Information-sharing primitives** | `share_finding` (tag-faceted, severity-labeled, 7-day TTL — surfaced through SessionStart sync, briefing, and optional channel flows), `share_artifact` (durable references), `agent_focus_changed` (replaces synthetic `task_started`). |
-| **Discussion delivery** | `/teamem-discuss` stores direct or broadcast discussion messages durably. Phase 1 Channels POC can deliver them live when enabled; otherwise they remain available through SessionStart sync, `teamem.read_thread`, `/teamem-status`, and unread notifications. |
-| **Briefing-on-demand** | `/teamem-briefing` and the `teamem-briefer` Haiku agent fetch the current plan, active claims, recent decisions, active risks, recent progress, and recent findings/artifacts. |
+| **Discussion delivery** | `/teamem:discuss` stores direct or broadcast discussion messages durably. Phase 1 Channels POC can deliver them live when enabled; otherwise they remain available through SessionStart sync, `teamem.read_thread`, `/teamem:status`, and unread notifications. |
+| **Briefing-on-demand** | `/teamem:briefing` and the `teamem-briefer` Haiku agent fetch the current plan, active claims, recent decisions, active risks, recent progress, and recent findings/artifacts. |
 
 ## Space mode and Sprint mode
 
@@ -29,20 +29,20 @@ Sprint is not a privacy boundary: Space members can explicitly list Sprints and
 read Sprint history, but non-members are not live-interrupted by ordinary Sprint
 events.
 
-Use `/teamem-sprint` for Sprint lifecycle:
+Use `/teamem:sprint` for Sprint lifecycle:
 
 ```text
-/teamem-sprint create <name> -- <goal>
-/teamem-sprint join <slug-or-id>
-/teamem-sprint leave
-/teamem-sprint list
-/teamem-sprint history <slug-or-id> [--limit N]
-/teamem-sprint archive <slug-or-id>
-/teamem-sprint reopen <slug-or-id>
+/teamem:sprint create <name> -- <goal>
+/teamem:sprint join <slug-or-id>
+/teamem:sprint leave
+/teamem:sprint list
+/teamem:sprint history <slug-or-id> [--limit N]
+/teamem:sprint archive <slug-or-id>
+/teamem:sprint reopen <slug-or-id>
 ```
 
 Direct messages always reach the addressed teammate regardless of Sprint
-membership. For `/teamem-discuss`, `*` broadcasts to the current Sprint in
+membership. For `/teamem:discuss`, `*` broadcasts to the current Sprint in
 Sprint mode and to the Space in Space mode; `**` is an explicit Space-wide
 escalation that reaches teammates currently working inside Sprints too.
 Archived Sprint history remains available through explicit history/list
@@ -173,7 +173,7 @@ sessions.
 If you are developing the plugin from this repository instead of using the npm
 bootstrapper:
 
-1. Run `/teamem-setup` in Claude Code. The `teamem-onboarding` skill walks you through creating or joining a space. Your member name is pre-filled from `git config --global user.name`, falling back to `$USER`. Generic shared-host values (`root`, `ubuntu`, `admin`, etc.) force a manual entry.
+1. Run `/teamem:setup` in Claude Code. The `teamem-onboarding` skill walks you through creating or joining a space. Your member name is pre-filled from `git config --global user.name`, falling back to `$USER`. Generic shared-host values (`root`, `ubuntu`, `admin`, etc.) force a manual entry.
 2. Install git hooks from the checkout when you need source-tree hook testing:
    ```bash
    bun run teamem install-git-hooks
@@ -196,15 +196,15 @@ The deprecated `/teamem-on` activation command is no longer shipped. Restart pur
 sessions through `claude --teamem` when hooks and monitor delivery are needed.
 The plugin's hooks and monitor poll only when the current session has an
 `active` flag or the project has `auto-on`, unless the session has a `disabled`
-override from `/teamem-off`.
+override from `/teamem:off`.
 
 ```text
 claude --teamem → SessionStart writes active flag → startup sync → done
-/teamem-off     → write disabled override → monitor idles → MCP stays up
+/teamem:off     → write disabled override → monitor idles → MCP stays up
 ```
 
 The MCP server stays connected even when "off" so ad-hoc commands like
-`/teamem-briefing` still work.
+`/teamem:briefing` still work.
 
 ## Phase 1 Channels POC
 
@@ -213,7 +213,7 @@ existing monitor path. When the optional `teamem-channel` runtime is enabled,
 the documented manual sender is:
 
 ```text
-/teamem-discuss <principal|*|**> -- <topic>
+/teamem:discuss <principal|*|**> -- <topic>
 ```
 
 Delivery expectations for this POC:
@@ -222,8 +222,8 @@ Delivery expectations for this POC:
 - `*` discussion broadcasts are visible to non-senders in the current Sprint when the sender is in Sprint mode, and to non-senders in the Space when the sender is in Space mode.
 - `**` discussion broadcasts are explicit Space-wide escalations and may live-interrupt Space members even when they are currently in Sprints.
 - Normal queue-first file-claim conflicts do not send Channel alerts; they continue through the hook denial and pending-edit queue path.
-- Legacy permission requests may also surface as urgent incumbent-only channel alerts carrying the exact metadata fields `req_id`, `blocking_claim_id`, `incumbent_principal`, `event_id`, `event_type`, and `principal`. The JSON content retains the full payload and scope and must surface `/teamem-grant <req_id>` and `/teamem-deny <req_id>`.
-- `teamem.read_thread`, `/teamem-status`, unread notifications, and the next SessionStart sync remain the fallback path when the channel runtime is disabled, unavailable, or not yet enabled in a session.
+- Legacy permission requests may also surface as urgent incumbent-only channel alerts carrying the exact metadata fields `req_id`, `blocking_claim_id`, `incumbent_principal`, `event_id`, `event_type`, and `principal`. The JSON content retains the full payload and scope and must surface `/teamem:grant <req_id>` and `/teamem:deny <req_id>`.
+- `teamem.read_thread`, `/teamem:status`, unread notifications, and the next SessionStart sync remain the fallback path when the channel runtime is disabled, unavailable, or not yet enabled in a session.
 - Local `--plugin-dir` channel sessions poll whenever `teamem-channel` starts successfully. Set `TEAMEM_CHANNEL_REQUIRE_ACTIVE=1` only when you specifically want channel polling gated by the session active flag.
 - Teamem space membership is the default trust boundary. For stricter sender gating during local tests, set `TEAMEM_CHANNEL_ALLOWED_SENDERS=bob,alice`; messages from other principals are dropped before `notifications/claude/channel`.
 
@@ -265,7 +265,7 @@ Delivery expectations for this POC:
    `claude --teamem`.
 7. From Bob, send the manual smoke message:
    ```text
-   /teamem-discuss alice -- Can you see this over the Teamem channel?
+   /teamem:discuss alice -- Can you see this over the Teamem channel?
    ```
 8. Verify:
    - Alice receives the directed Teamem `<channel ...>` event.
@@ -285,7 +285,7 @@ bun run lint
 
 ### Fallback and rollback
 
-- Fallback: if `teamem-channel` is unavailable, disabled, or not yet active for a session, use `teamem.read_thread`, `/teamem-status`, unread notifications, and the next SessionStart sync.
+- Fallback: if `teamem-channel` is unavailable, disabled, or not yet active for a session, use `teamem.read_thread`, `/teamem:status`, unread notifications, and the next SessionStart sync.
 - Rollback: remove or disable the `teamem-channel` entry in `plugin/.mcp.json`, stop rebuilding `plugin/lib/channel.js`, reinstall the plugin, and keep the existing `teamem` bridge/monitor/hook flow unchanged.
 
 ## Claim lifecycle (agent-driven, git-released)
@@ -337,15 +337,15 @@ that later integration risk.
 ## Coordination prefs (the conflict story)
 
 The active user-facing preference, editable any time via
-`/teamem-coord-pref`, is:
+`/teamem:coord-pref`, is:
 
 | Mode | What happens when *you* are the latter and *they* are the incumbent |
 | --- | --- |
-| `auto-skip` | Halt this edit; Teamem queues it; you proceed with other work. When the incumbent releases, the queued work can be rediscovered through `/teamem-status`, unread notifications, or the next SessionStart sync. |
+| `auto-skip` | Halt this edit; Teamem queues it; you proceed with other work. When the incumbent releases, the queued work can be rediscovered through `/teamem:status`, unread notifications, or the next SessionStart sync. |
 
 `auto-discuss` remains in backend contracts for compatibility and roadmap work, but the plugin no longer opens background negotiator disputes. If a stale stored preference resolves to `auto-discuss`, the gate degrades it to the same queued path as `auto-skip`.
 
-Legacy/internal permission-request flows still exist behind the scenes for compatibility and alert handling. When they surface, the incumbent responds with `/teamem-grant <req_id>` or `/teamem-deny <req_id>`.
+Legacy/internal permission-request flows still exist behind the scenes for compatibility and alert handling. When they surface, the incumbent responds with `/teamem:grant <req_id>` or `/teamem:deny <req_id>`.
 
 **Incumbent's preference wins.** The interrupted party's tolerance governs disruption.
 
@@ -353,8 +353,8 @@ Legacy/internal permission-request flows still exist behind the scenes for compa
 
 | Primitive | Tool | When to use |
 | --- | --- | --- |
-| Decision | `record_decision` (`/teamem-decide`) | Policy / architecture choices. Plan-kind decisions supersede prior plan decisions. Persistent. |
-| Gotcha | `share_finding` (`/teamem-gotcha`) | Persistent lessons learned during work, tag-faceted. Short notices replay on SessionStart and remain available in briefings/threads; details are fetched by id. |
+| Decision | `record_decision` (`/teamem:decide`) | Policy / architecture choices. Plan-kind decisions supersede prior plan decisions. Persistent. |
+| Gotcha | `share_finding` (`/teamem:gotcha`) | Persistent lessons learned during work, tag-faceted. Short notices replay on SessionStart and remain available in briefings/threads; details are fetched by id. |
 | Artifact | `share_artifact` | Durable references (specs, fixtures, docs, snippets). No expiration. |
 | Focus | `agent_focus_changed` | Auto-emitted by the gate-claim hook when scope shifts. Deduped within 60s on `(member, scope_hash)`. |
 
@@ -373,7 +373,7 @@ Legacy/internal permission-request flows still exist behind the scenes for compa
 ```text
 ┌─ Claude Code ────────────────────────────────────────────────────┐
 │                                                                  │
-│  /teamem-* commands  →  MCP tools (TOOL_BINDINGS)                │
+│  /teamem:* commands  →  MCP tools (TOOL_BINDINGS)                │
 │                            ↓                                      │
 │                   ${CLAUDE_PLUGIN_ROOT}/lib/bridge.js (bundle)   │
 │                            ↓                                      │
@@ -401,13 +401,13 @@ Legacy/internal permission-request flows still exist behind the scenes for compa
 
 ## Configuration
 
-The plugin has zero required configuration — install it, run `/teamem-setup`, install the Teamem launcher shim, then launch normal `claude` and choose Teamem. The env vars below tune behavior at the edges; all are optional.
+The plugin has zero required configuration — install it, run `/teamem:setup`, install the Teamem launcher shim, then launch normal `claude` and choose Teamem. The env vars below tune behavior at the edges; all are optional.
 
 ### Hook behavior
 
 | Env var | Default | Effect |
 | --- | --- | --- |
-| `TEAMEM_HOOK_DISABLE` | unset | When `=1`, the PreToolUse hook short-circuits before any work. Use this to debug whether a problem is hook-related; faster than `/teamem-off`. |
+| `TEAMEM_HOOK_DISABLE` | unset | When `=1`, the PreToolUse hook short-circuits before any work. Use this to debug whether a problem is hook-related; faster than `/teamem:off`. |
 | `TEAMEM_HOOK_QUIET` | unset | When `=1`, suppresses all `teamem: <class> — <cause>` warning lines from hook stderr. Keeps the trace log entries. |
 | `TEAMEM_WARN_RATE_SECS` | `60` | Per-warn-class rate limit, in seconds, for the stderr surface. A broken bridge that fires every keystroke surfaces one line per minute, not one per edit. |
 | `TEAMEM_PROJECT_ID` | unset | Override the auto-derived project key. Useful when monorepo subdirectories should be treated as separate projects, or when a fresh `git init` has no remote. The default resolution prefers `git config remote.origin.url` so multiple clones of the same repo share a key. |

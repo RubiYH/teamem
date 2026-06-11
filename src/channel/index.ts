@@ -230,7 +230,7 @@ function resolveSpaceInput(): string | undefined {
 async function resolveCredential(): Promise<CredentialEntry> {
   const creds = await loadCredentials();
   if (!creds) {
-    throw new Error("No credentials found. Run '/teamem-setup' first.");
+    throw new Error("No credentials found. Run '/teamem:setup' first.");
   }
 
   try {

@@ -5,7 +5,7 @@
 
 ## Purpose
 
-Interactive onboarding skill for creating or joining a Teamem space. Guides the user through: space setup (create new or join existing), member name configuration, git hook installation, and Teamem-aware Claude launcher activation guidance. Used by the `/teamem-setup` slash command.
+Interactive onboarding skill for creating or joining a Teamem space. Guides the user through: space setup (create new or join existing), member name configuration, git hook installation, and Teamem-aware Claude launcher activation guidance. Used by the `/teamem:setup` slash command.
 
 ## Key Files
 
@@ -17,7 +17,7 @@ Interactive onboarding skill for creating or joining a Teamem space. Guides the 
 
 ### Working In This Directory
 
-- **Skill invocation**: Invoked by `/teamem-setup` slash command or manually via skill delegation.
+- **Skill invocation**: Invoked by `/teamem:setup` slash command or manually via skill delegation.
 - **Input collection**: Prompts for:
   1. Space action: create new space or join existing
   2. Space name (for new) or room code (for join)
@@ -45,7 +45,7 @@ Interactive onboarding skill for creating or joining a Teamem space. Guides the 
 After the skill completes, the user should:
 1. Run `bun run teamem install-git-hooks` (git hook installation)
 2. Launch `claude` and choose Teamem, or run `claude --teamem ...`
-3. Use `/teamem-status` to verify activation and monitor state after launch
+3. Use `/teamem:status` to verify activation and monitor state after launch
 
 ## Dependencies
 

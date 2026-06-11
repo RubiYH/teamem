@@ -8,7 +8,7 @@ User input: `$ARGUMENTS`
 
 Steps:
 
-1. Parse `$ARGUMENTS` as `<req_id>`. If empty, ask the user to copy the `req_id` from `/teamem-status`, the unread queue, or the relevant discussion record.
+1. Parse `$ARGUMENTS` as `<req_id>`. If empty, ask the user to copy the `req_id` from `/teamem:status`, the unread queue, or the relevant discussion record.
 
 2. Call `mcp__teamem__respond_permission_request` with `{ "req_id": "<id>", "decision": "accept" }`. Do NOT pass `space_id` / `principal` / `actor` / `delegation` — the server reads them from your JWT.
 
@@ -17,5 +17,5 @@ Steps:
 4. On error:
    - `not_incumbent` → "You are not the incumbent on the cited claim. Only the holder of the blocking claim can grant."
    - `already_resolved` → "Request was already granted, denied, or expired. Nothing to do."
-   - `permission_request_not_found` → "No request with that id. Check `/teamem-status` for active permission requests."
+   - `permission_request_not_found` → "No request with that id. Check `/teamem:status` for active permission requests."
    - other → print the error code/message verbatim.

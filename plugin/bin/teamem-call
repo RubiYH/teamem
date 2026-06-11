@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # teamem-call — thin wrapper that invokes the plugin's bundled MCP bridge
 # in argv mode. Used by slash commands that need to call MCP tools
-# synchronously (e.g. /teamem-briefing, /teamem-gotcha).
+# synchronously (e.g. /teamem:briefing, /teamem:gotcha).
 #
 # Usage:
 #   teamem-call <tool> [--space SPACE] [--actor X] [--delegation D]

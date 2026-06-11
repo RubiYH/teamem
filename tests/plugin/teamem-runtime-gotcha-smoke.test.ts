@@ -64,7 +64,7 @@ const describeLiveRuntime =
 const repoRoot = process.cwd();
 const teamemPluginDir = join(repoRoot, 'plugin');
 const LIVE_SMOKE_TEST_TIMEOUT_MS = 240_000;
-const gotchaSlashCommand = '/teamem:teamem-gotcha';
+const gotchaSlashCommand = '/teamem:gotcha';
 const pluginScopedToolPrefix = 'mcp__plugin_teamem_teamem__teamem_';
 const ulidPattern = /^[0-9A-HJKMNP-TV-Z]{26}$/u;
 const LIVE_RUNTIME_POLL_TIMEOUT_MS = 45_000;
@@ -109,7 +109,7 @@ describeLiveRuntime(
           await expectOnlyTeamemMcpIsProxied(boot);
 
           const commandPrompt = await tester.slashCommandPrompt(
-            'teamem-gotcha',
+            'gotcha',
             gotchaArgs
           );
           expect(commandPrompt.startsWith(`${gotchaSlashCommand} `)).toBe(true);

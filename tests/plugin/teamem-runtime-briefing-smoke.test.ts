@@ -32,7 +32,7 @@ const describeLiveRuntime =
 const repoRoot = process.cwd();
 const teamemPluginDir = join(repoRoot, 'plugin');
 const LIVE_SMOKE_TEST_TIMEOUT_MS = 180_000;
-const briefingSlashCommand = '/teamem:teamem-briefing';
+const briefingSlashCommand = '/teamem:briefing';
 const pluginScopedToolPrefix = 'mcp__plugin_teamem_teamem__teamem_';
 const briefingSectionHeadings = [
   'Current plan',
@@ -55,7 +55,7 @@ describeLiveRuntime(
   `Teamem runtime briefing live smoke${runtimePrerequisite.ok ? '' : ` (${runtimePrerequisite.reason})`}`,
   () => {
     it(
-      'invokes /teamem:teamem-briefing through the core Teamem MCP proxy',
+      'invokes /teamem:briefing through the core Teamem MCP proxy',
       async () => {
         if (!runtimePrerequisite.ok) {
           throw new Error(runtimePrerequisite.reason);
@@ -86,8 +86,7 @@ describeLiveRuntime(
           expect(boot.plugin.pluginDir).toBe(teamemPluginDir);
           await expectOnlyTeamemMcpIsProxied(boot);
 
-          const commandPrompt =
-            await tester.slashCommandPrompt('teamem-briefing');
+          const commandPrompt = await tester.slashCommandPrompt('briefing');
           expect(commandPrompt).toBe(briefingSlashCommand);
 
           const result = await tester.prompt(commandPrompt, {

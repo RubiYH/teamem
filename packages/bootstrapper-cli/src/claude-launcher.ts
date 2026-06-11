@@ -38,10 +38,10 @@ const TEAMEM_DEVELOPMENT_CHANNEL_ARGS = [
   'plugin:teamem@teamem-alpha'
 ] as const;
 const REQUIRED_TEAMEM_COMMANDS = [
-  './commands/teamem-setup.md',
-  './commands/teamem-off.md',
-  './commands/teamem-status.md',
-  './commands/teamem-briefing.md'
+  './commands/setup.md',
+  './commands/off.md',
+  './commands/status.md',
+  './commands/briefing.md'
 ] as const;
 const REQUIRED_SESSION_START_SCRIPT = 'scripts/session-start.sh';
 const REQUIRED_SESSION_START_HOOK_COMMAND =

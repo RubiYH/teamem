@@ -4399,9 +4399,9 @@ describe('runCli', () => {
         name: 'teamem',
         version: '0.3.20',
         commands: [
-          './commands/teamem-setup.md',
-          './commands/teamem-status.md',
-          './commands/teamem-briefing.md'
+          './commands/setup.md',
+          './commands/status.md',
+          './commands/briefing.md'
         ],
         skills: './skills/',
         mcpServers: './.mcp.json'
@@ -4415,7 +4415,7 @@ describe('runCli', () => {
     expect(result.invocations).toEqual([]);
     expect(result.stderr).toContain('plugin install is incomplete or stale');
     expect(result.stderr).toContain(
-      'missing required command entry: ./commands/teamem-off.md'
+      'missing required command entry: ./commands/off.md'
     );
   });
 
@@ -7367,21 +7367,21 @@ function createInstalledLauncherFileSystem(options?: {
         name: 'teamem',
         version: '0.3.20',
         commands: [
-          './commands/teamem-setup.md',
-          './commands/teamem-off.md',
-          './commands/teamem-status.md',
-          './commands/teamem-briefing.md'
+          './commands/setup.md',
+          './commands/off.md',
+          './commands/status.md',
+          './commands/briefing.md'
         ],
         skills: './skills/',
         mcpServers: './.mcp.json'
       }),
-      '/plugins/teamem/commands/teamem-setup.md':
+      '/plugins/teamem/commands/setup.md':
         '---\ndescription: Setup Teamem\n---\n',
-      '/plugins/teamem/commands/teamem-off.md':
+      '/plugins/teamem/commands/off.md':
         '---\ndescription: Deactivate Teamem\n---\n',
-      '/plugins/teamem/commands/teamem-status.md':
+      '/plugins/teamem/commands/status.md':
         '---\ndescription: Check Teamem status\n---\n',
-      '/plugins/teamem/commands/teamem-briefing.md':
+      '/plugins/teamem/commands/briefing.md':
         '---\ndescription: Fetch Teamem briefing\n---\n',
       '/plugins/teamem/hooks/hooks.json': JSON.stringify({
         hooks: {

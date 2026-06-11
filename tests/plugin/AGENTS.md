@@ -1,5 +1,5 @@
 <!-- Parent: ../AGENTS.md -->
-<!-- Generated: 2026-05-09 | Updated: 2026-06-02 -->
+<!-- Generated: 2026-05-09 | Updated: 2026-06-11 -->
 
 # plugin
 
@@ -12,6 +12,7 @@ Claude Code plugin tests that verify the integration between the bridge, git hoo
 | File | Description |
 |------|-------------|
 | `bundle-freshness.test.ts` | AC-18 — verifies plugin bundles (`plugin/lib/{bridge,setup,channel}.js`) are byte-equivalent to freshly built sources; fails if `bun build` output doesn't match committed bundles |
+| `marketplace-contract.test.ts` | Verifies mirrored marketplace identity and that every command manifest entry maps to a short command filename without repeating the `teamem` namespace |
 | `gate-claim-git-state.test.ts` | `gate-claim.sh` logic when git state is dirty, working tree uncommitted, or HEAD unchanged |
 | `gate-claim-branch.test.ts` | Claim lifecycle across branch switch (acquire on one branch, check behavior on another) |
 | `gate-claim-auto-discuss.test.ts` | Auto-discuss compatibility path — stale `auto-discuss` prefs degrade to queued work instead of opening disputes |
@@ -23,8 +24,8 @@ Claude Code plugin tests that verify the integration between the bridge, git hoo
 | `post-commit-release.test.ts` | `post-commit` hook releases claims whose commit SHAs validate via `evaluateRelease` |
 | `release-claims-stop-noop.test.ts` | Releasing already-released claims is idempotent; no side effects |
 | `session-start-unread-notifications.test.ts` | `fetchUnreadNotifications()` on session start; notifications queued while offline |
-| `teamem-rule-init.test.ts` | `/teamem-rule init` managed TEAMEM.md creation/refresh and metadata safety |
-| `teamem-rule-update.test.ts` | `/teamem-rule update` publish + rewrite from server snapshot |
+| `teamem-rule-init.test.ts` | `/teamem:rule init` managed TEAMEM.md creation/refresh and metadata safety |
+| `teamem-rule-update.test.ts` | `/teamem:rule update` publish + rewrite from server snapshot |
 | `install-flow.test.ts` | `install-git-hooks` command — creates/updates `.git/hooks/` with teamem-managed hooks |
 | `install-flow.test.ts` | Git hooks installed with `# teamem-managed-hook` marker; backup on first install, abort if incumbent non-teamem |
 | `teamem-call-no-source-tree.test.ts` | CLI fallback (no source tree) — `bun run dist/bridge.js call <tool>` invocation |
@@ -47,8 +48,8 @@ Claude Code plugin tests that verify the integration between the bridge, git hoo
 | `teamem-channels-sprint-smoke.test.ts` | Opt-in L5 live Channels smoke covering Sprint-aware direct, `*`, and `**` discussion delivery with Alice/Bob/Carol sessions |
 | `teamem-channels-claim-conflict-smoke.test.ts` | Opt-in L5 live Channels smoke proving normal file-claim conflicts stay queue-first and Channel-quiet |
 | `teamem-channels-knowledge-smoke.test.ts` | Opt-in L5 live Channels smoke covering real decision and gotcha slash-command delivery to passive recipients without Alice echo |
-| `teamem-setup-no-source-tree.test.ts` | `/teamem-setup` CLI fallback (no source tree) |
-| `teamem-space-no-source-tree.test.ts` | `/teamem-space` CLI fallback (no source tree) |
+| `teamem-setup-no-source-tree.test.ts` | `/teamem:setup` CLI fallback (no source tree) |
+| `teamem-space-no-source-tree.test.ts` | `/teamem:space` CLI fallback (no source tree) |
 | `teamem-onboarding-no-source-tree.test.ts` | `/teamem-onboarding` CLI fallback (no source tree) |
 | `dispute-end-to-end.test.ts` | Deferred dispute runtime boundaries — no Notification agents, monitor classification still matches server events |
 
@@ -118,6 +119,7 @@ Claude Code plugin tests that verify the integration between the bridge, git hoo
 
 - **Bundle freshness** (bundle-freshness.test.ts) must run after any change to `src/bridge/`, `src/cli/setup.ts`, or `src/channel/` — the test fails if committed bundles are stale.
 - All slash command tests must verify command output (stdout parsing) matches expected format.
+- Command manifest tests must reject `teamem-*.md` command filenames; Claude Code supplies the `/teamem:` namespace from the plugin manifest.
 - Tests that invoke git hooks (`post-checkout`, `post-commit`) must set up a real git repo with HEAD state.
 - CLI fallback tests ("no-source-tree" variants) verify the bridge can run in stdio fallback mode without accessing `plugin/` directory.
 - SessionStart tests must ensure decisions and gotcha notices come from `teamem.session_sync`, while durable unread notifications remain in `fetchUnreadNotifications`. Gotchas must not be surfaced twice.
@@ -176,7 +178,7 @@ TEAMEM_CLAUDE_PLUGIN_E2E=1 TEAMEM_CLAUDE_PLUGIN_INTERACTIVE_E2E=1 TEAMEM_CLAUDE_
 - `plugin/lib/{bridge,setup,channel}.js` — committed bundles (freshness test compares against these)
 - `plugin/scripts/gate-claim.sh` — gate claim shell script (invoked in tests)
 - `plugin/git-hooks/post-checkout`, `plugin/git-hooks/post-commit` — git hook scripts
-- `plugin/commands/teamem-*.md` — slash command definitions
+- `plugin/commands/*.md` — slash command definitions
 - `tests/helpers/migrations.js`, `tests/helpers/auth.js` — database and auth setup
 - `tests/helpers/marketplace-env.ts` — marketplace environment simulation
 

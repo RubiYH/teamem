@@ -14,4 +14,4 @@ Steps:
 
 3. On success: print "Cleared <N> pending_edit row(s)." If `cleared` is 0, say "Your queue was already empty." either way.
 
-4. On any error: print the error code/message and tell the user to check `/teamem-status`.
+4. On any error: print the error code/message and tell the user to check `/teamem:status`.

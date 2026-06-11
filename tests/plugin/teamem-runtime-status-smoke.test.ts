@@ -32,7 +32,7 @@ const describeLiveRuntime =
 const repoRoot = process.cwd();
 const teamemPluginDir = join(repoRoot, 'plugin');
 const LIVE_SMOKE_TEST_TIMEOUT_MS = 180_000;
-const statusSlashCommand = '/teamem:teamem-status';
+const statusSlashCommand = '/teamem:status';
 const pluginScopedToolPrefix = 'mcp__plugin_teamem_teamem__teamem_';
 const requiredStatusTools = [
   'whoami',
@@ -52,7 +52,7 @@ describeLiveRuntime(
   `Teamem runtime status live smoke${runtimePrerequisite.ok ? '' : ` (${runtimePrerequisite.reason})`}`,
   () => {
     it(
-      'invokes /teamem:teamem-status through the core Teamem MCP proxy',
+      'invokes /teamem:status through the core Teamem MCP proxy',
       async () => {
         if (!runtimePrerequisite.ok) {
           throw new Error(runtimePrerequisite.reason);
@@ -83,8 +83,7 @@ describeLiveRuntime(
           expect(boot.plugin.pluginDir).toBe(teamemPluginDir);
           await expectOnlyTeamemMcpIsProxied(boot);
 
-          const commandPrompt =
-            await tester.slashCommandPrompt('teamem-status');
+          const commandPrompt = await tester.slashCommandPrompt('status');
           expect(commandPrompt).toBe(statusSlashCommand);
 
           const result = await tester.prompt(commandPrompt, {

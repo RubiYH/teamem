@@ -72,51 +72,55 @@ Start Claude Code through the Teamem launcher and choose Teamem, or pass
 activation command is no longer shipped; restart an already-open pure session
 through the launcher when you need hooks and monitor delivery.
 
-Use `/teamem-off` to turn it off for the current session.
+Use `/teamem:off` to turn it off for the current session.
 
 ## Common commands
 
+Claude Code always namespaces plugin commands with the plugin name. Teamem uses
+short command filenames, so commands appear as `/teamem:sprint` rather than the
+duplicated `/teamem:teamem-sprint`.
+
 | Command | Purpose |
 | --- | --- |
-| `/teamem-briefing` | Read the current plan, claims, decisions, risks, and progress. |
-| `/teamem-status` | Check activation state, monitor health, and recent notifications. |
-| `/teamem-decide` | Record a durable decision. |
-| `/teamem-gotcha` | Share a persistent lesson or warning. |
-| `/teamem-discuss` | Send a direct or broadcast team message. |
-| `/teamem-sprint` | Create, join, leave, list, inspect history, archive, or reopen a Sprint. |
-| `/teamem-space` | Manage membership actions. |
+| `/teamem:briefing` | Read the current plan, claims, decisions, risks, and progress. |
+| `/teamem:status` | Check activation state, monitor health, and recent notifications. |
+| `/teamem:decide` | Record a durable decision. |
+| `/teamem:gotcha` | Share a persistent lesson or warning. |
+| `/teamem:discuss` | Send a direct or broadcast team message. |
+| `/teamem:sprint` | Create, join, leave, list, inspect history, archive, or reopen a Sprint. |
+| `/teamem:space` | Manage membership actions. |
 
 ## Space mode, Sprint mode, and messages
 
 Space mode is the default operating mode when you are not joined to a Sprint.
-Sprint mode starts when you join a Sprint with `/teamem-sprint join` or create
-one with `/teamem-sprint create <name> -- <goal>`. A Sprint narrows live
+Sprint mode starts when you join a Sprint with `/teamem:sprint join` or create
+one with `/teamem:sprint create <name> -- <goal>`. A Sprint narrows live
 monitoring, briefing/status context, and claim conflicts to a work goal inside
 the Space. It is not a privacy boundary: Space membership remains the trust
-boundary, and Space members can explicitly use `/teamem-sprint list` and
-`/teamem-sprint history <slug-or-id>` to inspect Sprint metadata and non-private
+boundary, and Space members can explicitly use `/teamem:sprint list` and
+`/teamem:sprint history <slug-or-id>` to inspect Sprint metadata and non-private
 Sprint lifecycle history.
 
 The Sprint command surface is:
 
 ```text
-/teamem-sprint create <name> -- <goal>
-/teamem-sprint join <slug-or-id>
-/teamem-sprint leave
-/teamem-sprint list
-/teamem-sprint history <slug-or-id> [--limit N]
-/teamem-sprint archive <slug-or-id>
-/teamem-sprint reopen <slug-or-id>
+/teamem:sprint create <name> -- <goal>
+/teamem:sprint join <slug-or-id>
+/teamem:sprint leave
+/teamem:sprint list
+/teamem:sprint history <slug-or-id> [--limit N]
+/teamem:sprint archive <slug-or-id>
+/teamem:sprint reopen <slug-or-id>
 ```
 
-Direct `/teamem-discuss <principal> -- <message>` messages reach the named
+Direct `/teamem:discuss <principal> -- <message>` messages reach the named
 teammate regardless of their current Sprint. The `*` marker in
-`/teamem-discuss * -- <message>` broadcasts to the current Sprint in Sprint mode
+`/teamem:discuss * -- <message>` broadcasts to the current Sprint in Sprint mode
 and to the Space in Space mode. The `**` marker in
-`/teamem-discuss ** -- <message>` is an explicit Space-wide escalation,
+`/teamem:discuss ** -- <message>` is an explicit Space-wide escalation,
 including teammates currently working in Sprints.
 
-`teamem.get_updates`, `/teamem-status`, and SessionStart briefings follow the
+`teamem.get_updates`, `/teamem:status`, and SessionStart briefings follow the
 same boundary. In Space mode they show Space-mode updates, direct-to-me
 messages, and explicit Space-wide messages; Space mode is not an all-Sprints
 feed. In Sprint mode they show the current Sprint, direct-to-me messages, and
@@ -126,5 +130,5 @@ activity is left out of the live/current surface.
 ## Experimental Channels
 
 Teamem currently uses Claude Code's experimental Channels feature for live
-delivery. If Channels are unavailable, use `/teamem-briefing`,
-`/teamem-status`, and unread notifications as the fallback.
+delivery. If Channels are unavailable, use `/teamem:briefing`,
+`/teamem:status`, and unread notifications as the fallback.

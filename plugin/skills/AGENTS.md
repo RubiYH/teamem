@@ -26,7 +26,7 @@ Skill workflows that provide structured, multi-step interactions for common Team
 
 - **Skill registration**: Skills are declared in `plugin.json` via the `"skills": "./skills/"` field. Claude Code auto-discovers all `.md` files in the `skills/` directory and registers them as available skills. Each skill must have valid YAML frontmatter.
 
-- **Skill invocation patterns**: Skills are invoked via `/oh-my-claudecode:skill <name>` or when a slash command delegates to them. Example: `/teamem-setup` delegates to `teamem-onboarding`. The skill receives input via `$ARGUMENTS` environment variable.
+- **Skill invocation patterns**: Skills are invoked via `/oh-my-claudecode:skill <name>` or when a slash command delegates to them. Example: `/teamem:setup` delegates to `teamem-onboarding`. The skill receives input via `$ARGUMENTS` environment variable.
 
 - **Confirmation gates are mandatory**: Both `teamem-handoff` and `teamem-onboarding` require explicit user confirmation before taking destructive actions (creating space, releasing claims, posting messages). Always show the user what you're about to do and ask "ship it?" before proceeding.
 

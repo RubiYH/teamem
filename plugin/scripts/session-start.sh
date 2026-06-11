@@ -203,7 +203,7 @@ try {
       process.stderr.write(
         `teamem: [force-release] ${p.path ?? "unknown"} (branch=${p.branch ?? "?"}) ` +
         `was force-released by ${p.released_by ?? "unknown"} at ${p.released_at ?? n.created_at}. ` +
-        `Review their edits before resuming. Use /teamem-discuss to coordinate.\n`
+        `Review their edits before resuming. Use /teamem:discuss to coordinate.\n`
       );
     } else {
       process.stderr.write(

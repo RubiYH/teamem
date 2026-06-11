@@ -56,8 +56,8 @@ const describeLiveRuntime =
 const repoRoot = process.cwd();
 const teamemPluginDir = join(repoRoot, 'plugin');
 const LIVE_SMOKE_TEST_TIMEOUT_MS = 240_000;
-const decisionSlashCommand = '/teamem:teamem-decide';
-const briefingSlashCommand = '/teamem:teamem-briefing';
+const decisionSlashCommand = '/teamem:decide';
+const briefingSlashCommand = '/teamem:briefing';
 const pluginScopedToolPrefix = 'mcp__plugin_teamem_teamem__teamem_';
 
 describeLiveRuntime(
@@ -101,7 +101,7 @@ describeLiveRuntime(
           await expectOnlyTeamemMcpIsProxied(boot);
 
           const commandPrompt = await tester.slashCommandPrompt(
-            'teamem-decide',
+            'decide',
             decisionArgs
           );
           expect(commandPrompt.startsWith(`${decisionSlashCommand} `)).toBe(
@@ -141,7 +141,7 @@ describeLiveRuntime(
           });
 
           const briefingPrompt = await tester.slashCommandPrompt(
-            'teamem-briefing',
+            'briefing',
             '1200'
           );
           expect(briefingPrompt).toBe(`${briefingSlashCommand} 1200`);

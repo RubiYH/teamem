@@ -23139,7 +23139,7 @@ var TOOL_BINDINGS = {
     handler: async (input, client) => callServer(client, "/spaces/unwipe", input)
   },
   "teamem.space_leave": {
-    description: "Leave the current space. Marks `members.left_at = now`; the next API call from this principal returns 401 `member_left`. Creators cannot leave \u2014 they must `/teamem-disband` instead (returns 409 `creator_must_disband`).",
+    description: "Leave the current space. Marks `members.left_at = now`; the next API call from this principal returns 401 `member_left`. Creators cannot leave \u2014 they must `/teamem:disband` instead (returns 409 `creator_must_disband`).",
     inputSchema: exports_external.object({}).passthrough(),
     responseSchema: exports_external.object({
       ok: exports_external.literal(true),
@@ -23547,7 +23547,7 @@ function summarizeTeamemChannelEvent(ev) {
       const incumbent = String(ev.payload?.incumbent_principal ?? "incumbent");
       const reqId = String(ev.payload?.req_id ?? ev.event_id);
       const pathText = paths && paths.length > 0 ? paths.join(", ") : "the requested paths";
-      return `${p} requests permission from ${incumbent} for ${pathText} (req ${reqId}). Urgent: /teamem-grant ${reqId} or /teamem-deny ${reqId}`;
+      return `${p} requests permission from ${incumbent} for ${pathText} (req ${reqId}). Urgent: /teamem:grant ${reqId} or /teamem:deny ${reqId}`;
     }
     case "blocker_raised":
       return `${p} raised blocker: ${String(ev.payload?.summary ?? "")}`;
@@ -23595,7 +23595,7 @@ function createTeamemChannelEnvelope(ev) {
     payload: publicChannelPayload(ev),
     summary: summarizeTeamemChannelEvent(ev),
     ...reqId ? {
-      instructions: `Urgent: run /teamem-grant ${reqId} to allow the edit or /teamem-deny ${reqId} to reject it.`
+      instructions: `Urgent: run /teamem:grant ${reqId} to allow the edit or /teamem:deny ${reqId} to reject it.`
     } : {}
   };
 }
@@ -23820,7 +23820,7 @@ function resolveSpaceInput() {
 async function resolveCredential() {
   const creds = await loadCredentials();
   if (!creds) {
-    throw new Error("No credentials found. Run '/teamem-setup' first.");
+    throw new Error("No credentials found. Run '/teamem:setup' first.");
   }
   try {
     const entry = pickEntry({

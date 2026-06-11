@@ -103,7 +103,7 @@ const INTERACTIVE_CLOSE_TIMEOUT_MS = 10_000;
 const INTERACTIVE_STARTUP_SETTLE_MS = 2_000;
 const INTERACTIVE_TYPE_DELAY_MS = 20;
 const FILE_POLL_TIMEOUT_MS = 45_000;
-const ruleInitSlashCommand = '/teamem:teamem-rule init';
+const ruleInitSlashCommand = '/teamem:rule init';
 const pluginScopedToolPrefix = 'mcp__plugin_teamem_teamem__teamem_';
 const canonicalTeamemToolPrefix = 'mcp__teamem__teamem_';
 
@@ -283,7 +283,7 @@ async function runPersonaRuleInit(input: {
     launchCwd: input.workspaceRoot
   });
 
-  const ruleInitPrompt = await tester.slashCommandPrompt('teamem-rule', 'init');
+  const ruleInitPrompt = await tester.slashCommandPrompt('rule', 'init');
   expect(ruleInitPrompt).toBe(ruleInitSlashCommand);
 
   const session = await tester.launchInteractive({
@@ -648,7 +648,7 @@ function assertSpaceRulesFilesystemEvidence(input: {
     expect(input.teamem).toContain('# TEAMEM.md');
     expect(input.teamem).toContain('## Local Notes');
     expect(input.teamem).toContain('## Teamem Space Rules');
-    expect(input.teamem).toContain('Run `/teamem-rule init`');
+    expect(input.teamem).toContain('Run `/teamem:rule init`');
     expect(input.teamem).not.toContain(
       input.expectedSnapshot.metadata.managed_begin
     );
@@ -853,7 +853,7 @@ function assertNoTeamemMcpToolCallTrace(
 
   if (toolCalls.length > 0) {
     throw new Error(
-      `Expected /teamem:teamem-rule init to use Bash/direct teamem-call rather than Teamem MCP tool calls. Observed ${toolCalls
+      `Expected /teamem:rule init to use Bash/direct teamem-call rather than Teamem MCP tool calls. Observed ${toolCalls
         .map((message) => message.metadata?.toolName ?? 'unknown')
         .join(', ')}. Artifacts: ${artifactsDir}`
     );

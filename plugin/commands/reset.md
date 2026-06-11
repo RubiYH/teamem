@@ -42,6 +42,6 @@ This is a **destructive operation** that wipes local Teamem state on the user's 
    "${CLAUDE_PLUGIN_ROOT}/bin/teamem-flag" disable
    ```
 
-5. Remind the user to run `/teamem-setup` if they want to reconnect.
+5. Remind the user to run `/teamem:setup` if they want to reconnect.
 
-Refuse to proceed if the user did not type "yes" (case-insensitive). Server-side data (events, claims, the team's space row) is **NOT** touched by this command — it only resets the user's own local connection state. To remove server-side data, the team lead uses `/teamem-disband` (soft) or `/teamem-wipe --hard` (compliance).
+Refuse to proceed if the user did not type "yes" (case-insensitive). Server-side data (events, claims, the team's space row) is **NOT** touched by this command — it only resets the user's own local connection state. To remove server-side data, the team lead uses `/teamem:disband` (soft) or `/teamem:wipe --hard` (compliance).

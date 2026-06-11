@@ -750,7 +750,7 @@ export async function joinSpace(
         // spaces. `/spaces/join` is unauthenticated (the room code IS the auth),
         // so it never hits the JWT middleware that 410s disbanded spaces. Without
         // this filter, a leaked room code admits a member during the 7-day
-        // grace; a subsequent `/teamem-restore` reactivates that membership.
+        // grace; a subsequent `/teamem:restore` reactivates that membership.
         const codeRow = db
           .prepare(
             `SELECT rc.space_id, rc.expires_at,
