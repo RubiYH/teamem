@@ -1082,7 +1082,7 @@ export const TOOL_BINDINGS: Record<string, ToolBinding> = {
 
   'teamem.space_unwipe': {
     description:
-      'Reverse the most recent soft-wipe (creator only). Clears tombstones whose timestamp matches the most recent `space_wiped` event and writes a `space_unwiped` event. Returns 409 not_wiped if there is nothing to reverse — including the case where the last operation was a hard-wipe (which left no events to anchor against).',
+      'Reverse all outstanding soft-wipes (creator only). Clears every tombstone stamped by a `space_wiped` event and writes a `space_unwiped` event. Returns 409 not_wiped if there is nothing to reverse — including the case where the last operation was a hard-wipe (which left no events to anchor against).',
     inputSchema: z.object({}).passthrough(),
     responseSchema: z.object({
       ok: z.literal(true),
@@ -1127,7 +1127,7 @@ export const TOOL_BINDINGS: Record<string, ToolBinding> = {
 
   'teamem.space_rotate_code': {
     description:
-      "Rotate the current space's room code (any member). Issues a fresh 8-character code that expires in 30 days; the previous code is replaced atomically. Returns the new code in `data.room_code` — share via a SECURE channel only.",
+      "Rotate the current space's room code (creator only — returns 403 `not_creator` otherwise). Issues a fresh 8-character code that expires in 30 days; the previous code is replaced atomically. Returns the new code in `data.room_code` — share via a SECURE channel only.",
     inputSchema: z.object({}).passthrough(),
     responseSchema: z.object({
       ok: z.literal(true),

@@ -5,8 +5,9 @@ import { setupAuthApp } from '../auth/helpers.js';
 //
 // Soft-wipe stamps `tombstoned_at` on every row in the projection tables and
 // appends a `space_wiped` event. Briefing reads then return empty.  An
-// unwipe call clears tombstones whose timestamp matches the most recent
-// `space_wiped` event, restoring pre-wipe state.
+// unwipe call clears tombstones whose timestamp matches ANY `space_wiped`
+// event, restoring pre-wipe state — including rows stamped by an earlier
+// wipe that was never unwiped (see the double-wipe regression below).
 
 async function post(
   app: ReturnType<typeof setupAuthApp>['app'],

@@ -310,7 +310,8 @@ export function createRouter(
       return c.json(result);
     });
 
-    // POST /spaces/unwipe — requireCreator. Reverses the most recent soft-wipe.
+    // POST /spaces/unwipe — requireCreator. Reverses all outstanding
+    // soft-wipes (clears every wipe-stamped tombstone).
     // Returns 409 not_wiped if there's nothing to reverse (never wiped, or
     // last operation was a hard-wipe that left no events).
     app.post('/spaces/unwipe', requireCreator!, async (c) => {
