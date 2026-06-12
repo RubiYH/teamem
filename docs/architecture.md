@@ -29,3 +29,23 @@ maintains projections for current team state, and serves tools such as
 
 The primary read path is `teamem.get_briefing`, which returns current plan,
 active claims, recent decisions, active risks, and recent progress.
+
+## Trust model and known limitations
+
+Teamem's threat model is "trusted teammates on a small shared server." Two
+properties follow from that and should not be relied on as security
+boundaries:
+
+- **Member names are reusable identities.** A member's identity is the
+  free-chosen name they joined with, and name uniqueness is only enforced
+  among active members. After someone leaves or is kicked, anyone holding the
+  room code can join under that name, and historical events attributed to
+  that principal become indistinguishable from the new holder's activity.
+  Treat the event log's `principal` as "whoever the team admitted under that
+  name at the time," not as a verified person. Rotate the room code when
+  someone departs, and avoid reusing departed names.
+- **Claims are cooperative, not enforced.** Any member can force-release a
+  teammate's claim (deliberate — recovering a stale claim must not require
+  the creator), and the plugin's edit gate fails open when the bridge or
+  server is unavailable. Claims prevent accidental collisions between
+  cooperating agents; they are not an access-control mechanism.

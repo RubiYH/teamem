@@ -1,5 +1,5 @@
 ---
-description: Reverse the most recent soft-wipe (creator only). Clears tombstones and brings briefing data back. Cannot reverse a hard-wipe.
+description: Reverse all outstanding soft-wipes (creator only). Clears tombstones and brings briefing data back. Cannot reverse a hard-wipe.
 allowed-tools: mcp__teamem__space_unwipe
 argument-hint: ""
 ---
@@ -15,4 +15,4 @@ Steps:
    - **`space_disbanded`** (410): tell the user the space is currently disbanded — they must `/teamem:restore` before they can unwipe.
    - any other error: surface the typed code verbatim.
 
-This command only reverses the **most recent** soft-wipe. Earlier wipes that were already reversed leave no tombstones to clear.
+This command reverses **every outstanding** soft-wipe in one call — including rows stranded by an earlier wipe that was never unwiped. Wipes that were already reversed leave no tombstones to clear.

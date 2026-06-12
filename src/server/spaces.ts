@@ -1283,7 +1283,10 @@ export function wipeSpace(
   const space_id = requester.space_id;
   const wipedAt = new Date().toISOString();
   const eventId = ulid();
-  const idempotencyKey = `space_wiped:${space_id}:${wipedAt}`;
+  // Keyed on the event ULID, not wipedAt: two wipes inside the same
+  // millisecond produce identical ISO timestamps, and a timestamp-based key
+  // collides on the events UNIQUE constraint (500 on the second wipe).
+  const idempotencyKey = `space_wiped:${space_id}:${eventId}`;
   const hard = opts.hard === true;
 
   return db
@@ -1375,10 +1378,15 @@ export function wipeSpace(
 export type UnwipeError = 'not_creator' | 'space_disbanded' | 'not_wiped';
 
 /**
- * Reverse a soft-wipe by clearing tombstones whose timestamp matches the
- * most recent `space_wiped` event's timestamp. Earlier wipes (that were
- * already unwiped) leave no tombstones — there is nothing to clear from
- * them. A hard-wipe leaves no events to find, so this returns `not_wiped`.
+ * Reverse soft-wipes by clearing tombstones whose timestamp matches ANY
+ * `space_wiped` event for the space. A hard-wipe leaves no events to find,
+ * so this returns `not_wiped`.
+ *
+ * Matching against every wipe event (not just the most recent) matters when
+ * the creator soft-wiped twice without unwiping in between: the second wipe
+ * only stamps rows that were still un-tombstoned, so the first wipe's rows
+ * keep the older timestamp. Clearing only the latest timestamp stranded
+ * those rows permanently — no API path could ever recover them.
  *
  * Appends a `space_unwiped` event so audit history shows the reversal.
  */
@@ -1399,7 +1407,8 @@ export function unwipeSpace(
   const space_id = requester.space_id;
   const unwipedAt = new Date().toISOString();
   const eventId = ulid();
-  const idempotencyKey = `space_unwiped:${space_id}:${unwipedAt}`;
+  // ULID-keyed for the same same-millisecond reason as wipeSpace.
+  const idempotencyKey = `space_unwiped:${space_id}:${eventId}`;
 
   return db
     .transaction(() => {
@@ -1419,18 +1428,24 @@ export function unwipeSpace(
         .get(space_id) as { timestamp: string } | undefined;
       if (!lastWipe) return 'not_wiped' as const;
 
-      // Clear only tombstones stamped at the most recent wipe. Older wipes
-      // (that the user already unwiped) leave no tombstones at their time
-      // — nothing to clear from them. Newer rows (post-wipe) have
-      // tombstoned_at = NULL — we filter them in the WHERE anyway.
+      // Clear tombstones stamped by ANY wipe event. Only wipeSpace writes
+      // tombstoned_at, so matching against the space_wiped event timestamps
+      // exactly identifies wipe-generated tombstones — including rows left
+      // behind by an earlier wipe that a later wipe could no longer re-stamp
+      // (its UPDATE filters on tombstoned_at IS NULL). Rows created after
+      // the latest wipe have tombstoned_at = NULL and are untouched.
       let clearedAny = false;
       for (const table of TOMBSTONED_PROJECTION_TABLES) {
         const res = db
           .prepare(
             `UPDATE ${table} SET tombstoned_at = NULL
-              WHERE space_id = ?1 AND tombstoned_at = ?2`
+              WHERE space_id = ?1
+                AND tombstoned_at IN (
+                  SELECT timestamp FROM events
+                   WHERE space_id = ?1 AND event_type = 'space_wiped'
+                )`
           )
-          .run(space_id, lastWipe.timestamp);
+          .run(space_id);
         if ((res.changes ?? 0) > 0) clearedAny = true;
       }
       if (!clearedAny) return 'not_wiped' as const;

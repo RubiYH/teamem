@@ -183,7 +183,14 @@ function resolveGitContext(env: NodeJS.ProcessEnv): GitContext {
         'GITHUB_EVENT_PATH must point to a readable push event payload in GitHub Actions'
       );
     }
-    if (event.before && !/^0+$/.test(event.before)) {
+    // ^{commit} forces an object-existence check: rev-parse --verify accepts
+    // any well-formed 40-hex SHA without it. A force-push makes the event's
+    // `before` unreachable, so fall back to the default branch in that case.
+    if (
+      event.before &&
+      !/^0+$/.test(event.before) &&
+      refExists(`${event.before}^{commit}`)
+    ) {
       return { baseRef: event.before, diffSpec: `${event.before}..HEAD` };
     }
 
@@ -318,13 +325,14 @@ describe('plugin version bump guard', () => {
   });
 
   it('uses the full GitHub push range when push event metadata has a before SHA', () => {
+    const before = git(['rev-parse', 'HEAD']);
     const work = mkdtempSync(join(tmpdir(), 'teamem-version-guard-'));
     try {
       const eventPath = join(work, 'event.json');
       writeFileSync(
         eventPath,
         JSON.stringify({
-          before: 'abc123',
+          before,
           repository: { default_branch: 'master' }
         })
       );
@@ -334,7 +342,33 @@ describe('plugin version bump guard', () => {
           GITHUB_ACTIONS: 'true',
           GITHUB_EVENT_PATH: eventPath
         })
-      ).toEqual({ baseRef: 'abc123', diffSpec: 'abc123..HEAD' });
+      ).toEqual({ baseRef: before, diffSpec: `${before}..HEAD` });
+    } finally {
+      rmSync(work, { recursive: true, force: true });
+    }
+  });
+
+  it('falls back to the default branch when the push before SHA is unreachable (force push)', () => {
+    const work = mkdtempSync(join(tmpdir(), 'teamem-version-guard-'));
+    try {
+      const eventPath = join(work, 'event.json');
+      writeFileSync(
+        eventPath,
+        JSON.stringify({
+          before: 'f'.repeat(40),
+          repository: { default_branch: 'master' }
+        })
+      );
+
+      expect(
+        resolveGitContext({
+          GITHUB_ACTIONS: 'true',
+          GITHUB_EVENT_PATH: eventPath
+        })
+      ).toEqual({
+        baseRef: 'origin/master',
+        diffSpec: 'origin/master...HEAD'
+      });
     } finally {
       rmSync(work, { recursive: true, force: true });
     }

@@ -12,14 +12,14 @@ Steps:
    - `list` → use `/teamem:status` instead. That command surfaces every space in the user's local credentials file and is the supported v1 path. Tell the user to run `/teamem:status` and stop.
    - `leave` → call `mcp__teamem__space_leave` with `{}`. The bridge fills `space_id` and `principal` from the verified JWT.
    - `kick <member_name>` → confirm with the user (destructive — kicked member's next API call returns 401), then call `mcp__teamem__space_kick` with `{ member_name: "<arg>" }`. Creator-only.
-   - `rotate-code` → call `mcp__teamem__space_rotate_code` with `{}`. Surface the new room code to the user with a reminder it must be shared via a SECURE channel.
+   - `rotate-code` → call `mcp__teamem__space_rotate_code` with `{}`. Creator-only — rotation invalidates the standing invite code for everyone. Surface the new room code to the user with a reminder it must be shared via a SECURE channel.
    - Any other subcommand: refuse and remind the user `/teamem:disband` and `/teamem:restore` have their own slash commands.
 
 2. For destructive subcommands (`kick`, `leave`): show the user what will happen and ask for explicit "yes" confirmation before invoking the MCP tool.
 
 3. Branch on the typed error code:
    - `creator_must_disband` (leave): tell the user the creator can't leave; they must `/teamem:disband` instead.
-   - `not_creator` (kick): tell the user only the creator can kick.
+   - `not_creator` (kick, rotate-code): tell the user only the creator can kick members or rotate the room code.
    - `cannot_self_kick`: refuse — use `/teamem:disband` if the creator wants to leave the team.
    - `target_not_found` (kick): the named member is not in the space.
    - `member_kicked` / `space_disbanded` (any): the user's own JWT is rejecting; redirect to `/teamem:setup`.

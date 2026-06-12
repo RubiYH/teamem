@@ -4,12 +4,30 @@ import type { Context, Next } from 'hono';
 const WINDOW_MS = 60 * 1000; // 1 minute
 const MAX_ATTEMPTS = 10;
 
+// Bounded with opportunistic sweep + hard cap to prevent unbounded growth
+// under IP rotation (e.g., IPv6 /64 randomization or botnet flood) — same
+// pattern as the auth_check log buckets in src/server/auth.ts.
+const BUCKET_CAP = 50_000;
+
 interface BucketEntry {
   count: number;
   window_start: number;
 }
 
 const buckets = new Map<string, BucketEntry>();
+
+function evictIfAtCap(now: number): void {
+  if (buckets.size < BUCKET_CAP) return;
+  // Sweep entries whose window has expired — best-effort eviction.
+  for (const [k, e] of buckets) {
+    if (now - e.window_start >= WINDOW_MS) buckets.delete(k);
+  }
+  // If still at cap (every entry within window), drop the oldest by insertion order.
+  if (buckets.size >= BUCKET_CAP) {
+    const oldestKey = buckets.keys().next().value;
+    if (oldestKey !== undefined) buckets.delete(oldestKey);
+  }
+}
 
 // Resolve the client IP for rate-limit bucketing.
 //
@@ -43,23 +61,39 @@ function getClientIp(c: Context): string {
   return 'no-ip';
 }
 
+/**
+ * Records an attempt for the request's client IP and returns `null` when the
+ * request is within limits, or the Retry-After value (seconds) when the IP
+ * has exceeded MAX_ATTEMPTS in the current window. Shared by the middleware
+ * below and by route handlers that need an inline check on a single code
+ * path (e.g. the unauthenticated MCP `initialize` branch) without throttling
+ * the whole route.
+ */
+export function checkRateLimit(c: Context): number | null {
+  const ip = getClientIp(c);
+  const now = Date.now();
+
+  let entry = buckets.get(ip);
+  if (!entry || now - entry.window_start >= WINDOW_MS) {
+    evictIfAtCap(now);
+    entry = { count: 0, window_start: now };
+  }
+
+  entry.count += 1;
+  buckets.set(ip, entry);
+
+  if (entry.count > MAX_ATTEMPTS) {
+    // Compute Retry-After from the bucket's first-attempt timestamp; floor at 1s.
+    const msUntilReset = Math.max(0, entry.window_start + WINDOW_MS - now);
+    return Math.max(1, Math.ceil(msUntilReset / 1000));
+  }
+  return null;
+}
+
 export function createRateLimitMiddleware() {
   return async (c: Context, next: Next) => {
-    const ip = getClientIp(c);
-    const now = Date.now();
-
-    let entry = buckets.get(ip);
-    if (!entry || now - entry.window_start >= WINDOW_MS) {
-      entry = { count: 0, window_start: now };
-    }
-
-    entry.count += 1;
-    buckets.set(ip, entry);
-
-    if (entry.count > MAX_ATTEMPTS) {
-      // Compute Retry-After from the bucket's first-attempt timestamp; floor at 1s.
-      const msUntilReset = Math.max(0, entry.window_start + WINDOW_MS - now);
-      const retryAfter = Math.max(1, Math.ceil(msUntilReset / 1000));
+    const retryAfter = checkRateLimit(c);
+    if (retryAfter !== null) {
       c.header('Retry-After', String(retryAfter));
       return c.json({ error: 'rate_limited' }, 429);
     }

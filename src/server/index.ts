@@ -47,6 +47,19 @@ function runMigrations(db: Database, migrationsDir: string): void {
     // transactions, so any inner BEGIN/COMMIT must be removed first.
     sql = sql.replace(/^\s*BEGIN(?:\s+TRANSACTION)?\s*;\s*/im, '');
     sql = sql.replace(/\s*COMMIT\s*;\s*$/im, '');
+    // Guard: the strip above handles exactly one outer BEGIN/COMMIT pair. A
+    // migration with multiple transaction blocks would leave an inner COMMIT
+    // behind, committing the wrapper transaction early — the ledger insert
+    // then runs outside it, recreating the partial-apply scenario the wrapper
+    // exists to prevent. Requiring `;` after BEGIN keeps trigger bodies
+    // (`... FOR EACH ROW BEGIN <stmts> END;`) from false-positiving.
+    if (/^\s*(?:BEGIN(?:\s+TRANSACTION)?|COMMIT)\s*;/im.test(sql)) {
+      throw new Error(
+        `Migration ${file} contains more than one BEGIN/COMMIT pair. ` +
+          'Migrations must be a single transaction (or none) — the runner ' +
+          'wraps each file in its own transaction together with the ledger insert.'
+      );
+    }
     db.transaction(() => {
       db.exec(sql);
       db.prepare('INSERT INTO _migrations (filename) VALUES (?1)').run(file);

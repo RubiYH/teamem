@@ -73,13 +73,22 @@ export function spaceRotateCode(
   // every other tool returns.
   const member = ctx.db
     .prepare(
-      `SELECT id, space_id FROM members WHERE space_id = ?1 AND name = ?2 AND left_at IS NULL`
+      `SELECT id, space_id, is_creator FROM members WHERE space_id = ?1 AND name = ?2 AND left_at IS NULL`
     )
     .get(input.space_id, input.principal) as {
     id: string;
     space_id: string;
+    is_creator: number;
   } | null;
   if (!member) return ctx.toolError('member_not_found', 'no active member row');
+  // Creator-only, mirroring POST /spaces/rotate-code: rotation invalidates
+  // the standing invite code for everyone, so a non-creator member must not
+  // be able to grief pending joins by rotating at will.
+  if (member.is_creator !== 1)
+    return ctx.toolError(
+      'not_creator',
+      'only the creator can rotate the room code'
+    );
   // Re-implement the ctx.rotateRoomCode body inline (sync). Mirrors the
   // canonical helper one-to-one — same generated code shape, same
   // upsert SQL, same response payload.

@@ -23127,7 +23127,7 @@ var TOOL_BINDINGS = {
     handler: async (input, client) => callServer(client, "/spaces/wipe", input)
   },
   "teamem.space_unwipe": {
-    description: "Reverse the most recent soft-wipe (creator only). Clears tombstones whose timestamp matches the most recent `space_wiped` event and writes a `space_unwiped` event. Returns 409 not_wiped if there is nothing to reverse \u2014 including the case where the last operation was a hard-wipe (which left no events to anchor against).",
+    description: "Reverse all outstanding soft-wipes (creator only). Clears every tombstone stamped by a `space_wiped` event and writes a `space_unwiped` event. Returns 409 not_wiped if there is nothing to reverse \u2014 including the case where the last operation was a hard-wipe (which left no events to anchor against).",
     inputSchema: exports_external.object({}).passthrough(),
     responseSchema: exports_external.object({
       ok: exports_external.literal(true),
@@ -23163,7 +23163,7 @@ var TOOL_BINDINGS = {
     handler: async (input, client) => callServer(client, "/spaces/kick", input)
   },
   "teamem.space_rotate_code": {
-    description: "Rotate the current space's room code (any member). Issues a fresh 8-character code that expires in 30 days; the previous code is replaced atomically. Returns the new code in `data.room_code` \u2014 share via a SECURE channel only.",
+    description: "Rotate the current space's room code (creator only \u2014 returns 403 `not_creator` otherwise). Issues a fresh 8-character code that expires in 30 days; the previous code is replaced atomically. Returns the new code in `data.room_code` \u2014 share via a SECURE channel only.",
     inputSchema: exports_external.object({}).passthrough(),
     responseSchema: exports_external.object({
       ok: exports_external.literal(true),
